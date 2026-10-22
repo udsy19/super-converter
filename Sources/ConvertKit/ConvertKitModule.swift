@@ -7,9 +7,13 @@ public enum ConvertKitModule {
     @MainActor public private(set) static var coverage = CoverageReport()
     @MainActor private static var statusWatcher: Task<Void, Never>?
 
+    /// The converters of the engine ids whose module is ConvertKit (`EngineID.info.module`): `PDFOps`.
+    public static func converters() -> [any Converter] { [PDFOpsConverter()] }
+
     /// Assigns this module's services in `Services` (ARCHITECTURE §9, launch step 2) and verifies the matrix against the
     /// registry. Run it after HelperKit and every engine module have installed.
     @MainActor public static func install(collisionPolicy: @escaping () -> CollisionPolicy = { Defaults[.collisionPolicy] }) {
+        for converter in converters() { Services.converters.register(converter) }
         let helperStatus: (HelperID) -> HelperStatus = { Services.helpers?.status(of: $0) ?? .notInstalled }
         let planner = Planner(registry: Services.converters, helperReady: { helperStatus($0).isReady })
         let output = OutputRules(collisionPolicy: collisionPolicy)
