@@ -93,6 +93,7 @@ private struct ListRow: View {
             }
         }
         .frame(width: 40, height: 40)
+        .quickLookSource(card: card.id, vm: vm)
     }
 
     @ViewBuilder private var pills: some View {

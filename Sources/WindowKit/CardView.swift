@@ -121,6 +121,7 @@ private struct ThumbnailWell: View {
             if hovering && !isConverting { RemoveButton { vm.remove([card]) }.padding(6) }
         }
         .frame(width: SCMetrics.Card.thumbnailWell.width, height: SCMetrics.Card.thumbnailWell.height)
+        .quickLookSource(card: card.id, vm: vm)
     }
 
     @ViewBuilder private var artwork: some View {

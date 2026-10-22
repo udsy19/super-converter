@@ -242,7 +242,12 @@ converts built in and the done card offers "Make it look like the original — I
 ### 5.7 Done (`window-done.png`, `-dark`)
 
 Each finished card turns to its target colour, shows the new file's thumbnail, the new name, the new size ("1.9 MB ·
-was 4.2 MB") and three icon buttons: Quick Look (or Space), Share, Show in Finder. Finished cards can be dragged out
+was 4.2 MB") and three icon buttons: Quick Look (or Space), Share, Show in Finder. Quick Look is the system panel
+(`QLPreviewPanel`, so Markup, Share, Open with… and the page strip come with it): Space on any selected card, source
+or finished, toggles it, and the Quick Look button on a Done card opens the same panel on that card. A finished card
+previews its result, every file inside a "name (FORMAT)" folder for multi-file results; a waiting card previews its
+original; several selected cards page together. While it is open the arrow keys move the card selection and the panel
+follows; the card's thumbnail zooms into the panel and back. Finished cards can be dragged out
 (file promises) and double-clicked to open in the default app. Loss notes appear as an ⓘ line under the meta
 ("ⓘ Layers flattened"), with a popover listing everything. The action bar: green check, **"Done. 7 of 8 files
 converted"**, "1.7 GB → 356 MB, saved next to the originals · 1 needs a password", Show in Finder (selects all
@@ -342,7 +347,7 @@ hidden or its window closed (the menu-bar item shows progress); quitting asks "S
 
 ### 6.5 Keyboard
 
-⌘O add files · ⌘↩ convert · ⌘. stop · Space Quick Look · ⌫ remove · ⌘A select all · T open the picker for the
+⌘O add files · ⌘↩ convert · ⌘. stop · Space Quick Look (toggle) · ⌫ remove · ⌘A select all · T open the picker for the
 selection · ⌥⌘O options · arrows move between cards · ⌘1 / ⌘2 grid / list · ⇧⌘R show results in Finder · ⌘,
 Settings · ⌘W close window (conversions continue).
 

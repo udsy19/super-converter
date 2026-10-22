@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import SuperConverterCore
 
 /// Everything the window does to the outside world, behind one seam so tests inject a recorder and never open an app, a
@@ -7,7 +8,9 @@ import SuperConverterCore
 protocol FileActions: AnyObject {
     func reveal(_ urls: [URL])
     func open(_ url: URL)
-    func quickLook(_ urls: [URL])
+    /// Shows or hides the Quick Look panel; what it shows comes from the window through the responder chain.
+    var quickLookShown: Bool { get }
+    func setQuickLook(_ shown: Bool)
     /// The file chooser (`⌘O`, Choose Files…), filtered to a source format when a popular pair asked for it.
     func chooseFiles(filter: FormatID?) -> [URL]
     func chooseFolder() -> URL?
@@ -26,7 +29,12 @@ final class SystemFileActions: NSObject, FileActions {
 
     func open(_ url: URL) { NSWorkspace.shared.open(url) }
 
-    func quickLook(_ urls: [URL]) { QuickLook.shared.show(urls) }
+    var quickLookShown: Bool { QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared().isVisible }
+
+    func setQuickLook(_ shown: Bool) {
+        guard let panel = QLPreviewPanel.shared() else { return }
+        if shown { panel.makeKeyAndOrderFront(nil); panel.reloadData() } else { panel.orderOut(nil) }
+    }
 
     func chooseFiles(filter: FormatID?) -> [URL] {
         let panel = NSOpenPanel()

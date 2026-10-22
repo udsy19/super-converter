@@ -48,6 +48,8 @@ final class WindowViewModel: ObservableObject {
     @Published var sortAscending = true
     /// A grid column count the grid reports, so arrows move by rows.
     var columns = 4
+    /// Each visible card's thumbnail frame in the window's content, for Quick Look's zoom.
+    var thumbnailFrames: [UUID: CGRect] = [:]
     /// Cards spring in when added and the drop-zone border turns (ux §3.6); snapshots turn this off.
     var animates = true
     @Published private(set) var viewMode: ViewMode = Defaults[.viewMode]
@@ -629,14 +631,24 @@ final class WindowViewModel: ObservableObject {
 
     func revealResults() { actions.reveal(doneOutputs) }
 
+    /// The Done card's Quick Look button: selects the card and opens the panel (Space toggles it, `toggleQuickLook`).
     func quickLook(_ card: FileCard) {
-        if case .done(let result) = card.state { actions.quickLook(result.outputs) } else { actions.quickLook([card.url]) }
+        selection = [card.id]
+        actions.setQuickLook(true)
     }
 
-    func quickLookSelection() {
-        let list = selectedCards
-        guard !list.isEmpty else { return }
-        actions.quickLook(list.flatMap { card -> [URL] in if case .done(let r) = card.state { Array(r.outputs.prefix(1)) } else { [card.url] } })
+    func toggleQuickLook() {
+        guard actions.quickLookShown || !selection.isEmpty else { return }
+        actions.setQuickLook(!actions.quickLookShown)
+    }
+
+    /// The files a card previews: its results once done (every file inside a "name (FORMAT)" folder), else its source.
+    func previewFiles(for card: FileCard) -> [URL] {
+        guard case .done(let result) = card.state, !result.outputs.isEmpty else { return [card.url] }
+        return result.outputs.flatMap { output -> [URL] in
+            guard Self.isFolder(output) else { return [output] }
+            return Self.contents(of: output).filter { !Self.isFolder($0) }
+        }
     }
 
     func chooseFiles(filter: FormatID? = nil, target: FormatID? = nil) {
@@ -653,5 +665,26 @@ final class WindowViewModel: ObservableObject {
     /// Opens a finished card's file in its default app (double-click).
     func open(_ card: FileCard) {
         if case .done(let result) = card.state, let output = result.outputs.first { actions.open(output) }
+    }
+}
+
+extension WindowViewModel: QuickLookSource {
+    var previewEntries: [PreviewEntry] {
+        displayCards.filter { selection.contains($0.id) }.flatMap { card in previewFiles(for: card).map { PreviewEntry(url: $0, cardID: card.id) } }
+    }
+
+    var previewStartIndex: Int {
+        let selected = displayCards.filter { selection.contains($0.id) }
+        guard let primary = selected.last else { return 0 }
+        return selected.prefix { $0.id != primary.id }.reduce(0) { $0 + previewFiles(for: $1).count }
+    }
+
+    var arrowsMoveSelection: Bool { selection.count <= 1 }
+    var gridColumns: Int { columns }
+    func thumbnailFrame(of card: UUID) -> CGRect? { thumbnailFrames[card] }
+
+    func transitionImage(of card: UUID) -> NSImage? {
+        guard let card = cards.first(where: { $0.id == card }) else { return nil }
+        return card.resultThumbnail ?? card.thumbnail
     }
 }

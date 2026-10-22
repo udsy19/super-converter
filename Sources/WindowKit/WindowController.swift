@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Quartz
 import SuperConverterCore
 import SwiftUI
 import UserNotifications
@@ -11,6 +12,8 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate, W
     let viewModel: WindowViewModel
     private var subscriptions: Set<AnyCancellable> = []
     private let dock = DockProgress()
+    private lazy var quickLook = QuickLookController(source: viewModel)
+    private weak var host: NSView?
 
     public init() { self.viewModel = WindowViewModel(); super.init(window: nil); build() }
 
@@ -38,6 +41,12 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate, W
         window.setFrameAutosaveName("SuperConverterMainWindow")
         if !window.setFrameUsingName("SuperConverterMainWindow") { window.center() }
         self.window = window
+        self.host = host
+        quickLook.screenRect = { [weak self] rect in
+            guard let host = self?.host, let window = host.window else { return .zero }
+            return window.convertToScreen(host.convert(rect, to: nil))
+        }
+        viewModel.$selection.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.quickLook.refresh() }.store(in: &subscriptions)
 
         viewModel.onBatchFinished = { [weak self] title, detail, took in self?.batchFinished(title, detail, took) }
         viewModel.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.updateDock() }.store(in: &subscriptions)
@@ -74,6 +83,12 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate, W
     @objc public func revealResults(_ sender: Any?) { viewModel.revealResults() }
     @objc public func showGridView(_ sender: Any?) { viewModel.setViewMode(.grid) }
     @objc public func showListView(_ sender: Any?) { viewModel.setViewMode(.list) }
+
+    // MARK: Quick Look (ux §5.7): the panel asks the responder chain for its controller
+
+    public override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+    public override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { quickLook.begin(panel) }
+    public override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { quickLook.end(panel) }
 
     // MARK: NSWindowDelegate
 

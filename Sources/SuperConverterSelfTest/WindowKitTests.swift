@@ -20,6 +20,7 @@ func registerWindowKitTests() {
         ("WindowKit.pickerSearch", windowPickerSearch),
         ("WindowKit.pickerSections", windowPickerSections),
         ("WindowKit.folders", windowFolders),
+        ("WindowKit.quickLook", windowQuickLook),
         ("WindowKit.accessibilityAndCopy", windowAccessibility),
         ("WindowKit.renders", windowRenders),
     ]
@@ -33,7 +34,8 @@ func registerWindowKitTests() {
 final class RecordingActions: FileActions {
     var revealed: [[URL]] = []
     var opened: [URL] = []
-    var quickLooked: [[URL]] = []
+    var quickLookShown = false
+    var quickLookCalls: [Bool] = []
     var chosen: [URL] = []
     var folder: URL?
     var gotten: [HelperID] = []
@@ -42,7 +44,7 @@ final class RecordingActions: FileActions {
     var confirm = true
     func reveal(_ urls: [URL]) { revealed.append(urls) }
     func open(_ url: URL) { opened.append(url) }
-    func quickLook(_ urls: [URL]) { quickLooked.append(urls) }
+    func setQuickLook(_ shown: Bool) { quickLookShown = shown; quickLookCalls.append(shown) }
     func chooseFiles(filter: FormatID?) -> [URL] { chosen }
     func chooseFolder() -> URL? { folder }
     func get(_ helper: HelperID) { gotten.append(helper) }
@@ -429,6 +431,74 @@ private func pump(_ seconds: TimeInterval = 0.05) { RunLoop.main.run(until: Date
     check(top == ["a.heic", "b.png"], "a folder expands one level, hidden files skipped: \(top)")
     f.vm.add([root])
     check(f.vm.cards.count == 2, "folder contents become cards")
+}
+
+/// Quick Look's data source and delegate against a fake window; the real panel is never opened.
+@MainActor private func windowQuickLook() {
+    let f = Fixture()
+    let a = f.file("a.heic", bytes: 10), b = f.file("b.heic", bytes: 10)
+    f.vm.add([a, b])
+    let first = f.vm.cards[0], second = f.vm.cards[1]
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("superconverter-ql-\(UUID().uuidString)/Pages (PNG)")
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+    for name in ["p2.png", "p1.png", ".hidden"] { FileManager.default.createFile(atPath: folder.appendingPathComponent(name).path, contents: Data([0])) }
+
+    // Space toggles through the seam; nothing selected does nothing.
+    f.vm.selection = []
+    f.vm.toggleQuickLook()
+    check(f.actions.quickLookCalls.isEmpty, "Space with no selection does nothing")
+    f.vm.selection = [first.id]
+    f.vm.toggleQuickLook()
+    check(f.actions.quickLookCalls == [true] && f.actions.quickLookShown, "Space opens the panel")
+    f.vm.toggleQuickLook()
+    check(f.actions.quickLookCalls == [true, false], "Space again closes it")
+    f.vm.selection = []
+    f.vm.quickLook(second)
+    check(f.vm.selection == [second.id] && f.actions.quickLookCalls.last == true, "the Done card button selects the card and opens the panel")
+
+    // Source cards preview their own file; a folder result previews every file in it.
+    check(f.vm.previewFiles(for: first) == [a], "a waiting card previews its source")
+    second.state = .done(ConversionResult(outputs: [folder]))
+    check(f.vm.previewFiles(for: second).map(\.lastPathComponent) == ["p1.png", "p2.png"], "a result folder previews all its files, hidden skipped")
+    first.state = .done(ConversionResult(outputs: [a.deletingPathExtension().appendingPathExtension("jpg")]))
+    check(f.vm.previewFiles(for: first).map(\.lastPathComponent) == ["a.jpg"], "a single result previews that file")
+
+    // Data source and delegate.
+    f.vm.selection = [first.id, second.id]
+    let ql = QuickLookController(source: f.vm)
+    ql.refresh()
+    check(ql.numberOfPreviewItems(in: nil) == 3, "items from every selected card: \(ql.numberOfPreviewItems(in: nil))")
+    check((ql.previewPanel(nil, previewItemAt: 2) as? NSURL)?.lastPathComponent == "p2.png", "item 2")
+    check(ql.previewPanel(nil, previewItemAt: 9) == nil, "out of range is nil, not a crash")
+    check(f.vm.previewStartIndex == 1, "opens on the last-selected card's first file")
+    func key(_ code: UInt16) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                         characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+    }
+    check(!ql.previewPanel(nil, handle: key(124)), "with several selected the panel pages itself")
+    f.vm.selection = [first.id]
+    ql.refresh()
+    check(ql.previewPanel(nil, handle: key(124)), "the arrow is handled")
+    check(f.vm.selection == [second.id], "right arrow moves the card selection")
+    check(ql.numberOfPreviewItems(in: nil) == 2, "the panel followed the selection to the folder's files")
+    f.vm.columns = 2
+    check(!ql.previewPanel(nil, handle: key(0)), "other keys are left to the panel")
+    _ = ql.previewPanel(nil, handle: key(126))
+    check(f.vm.selection == [first.id], "up arrow moves a row")
+
+    // The zoom: the card's frame converted to the screen, and its thumbnail as the transition image.
+    ql.screenRect = { $0.offsetBy(dx: 100, dy: 200) }
+    f.vm.thumbnailFrames[first.id] = CGRect(x: 10, y: 20, width: 30, height: 40)
+    f.vm.selection = [first.id]
+    ql.refresh()
+    let item = ql.previewPanel(nil, previewItemAt: 0)
+    check(ql.previewPanel(nil, sourceFrameOnScreenFor: item) == NSRect(x: 110, y: 220, width: 30, height: 40), "source frame is the thumbnail on screen")
+    f.vm.thumbnailFrames[first.id] = nil
+    check(ql.previewPanel(nil, sourceFrameOnScreenFor: item) == .zero, "no zoom for a card that is off screen")
+    let image = NSImage(size: NSSize(width: 4, height: 4))
+    first.resultThumbnail = image
+    check(ql.previewPanel(nil, transitionImageFor: item, contentRect: nil) as? NSImage === image, "transition image is the card's thumbnail")
 }
 
 @MainActor private func windowAccessibility() {

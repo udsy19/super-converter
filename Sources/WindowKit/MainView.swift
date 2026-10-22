@@ -114,7 +114,7 @@ struct CardsView: View {
         .onKeyPress(.rightArrow) { vm.moveSelection(1); return .handled }
         .onKeyPress(.upArrow) { vm.moveSelection(-vm.columns); return .handled }
         .onKeyPress(.downArrow) { vm.moveSelection(vm.columns); return .handled }
-        .onKeyPress(.space) { vm.quickLookSelection(); return .handled }
+        .onKeyPress(.space) { vm.toggleQuickLook(); return .handled }
         .onKeyPress(.delete) { vm.removeSelected(); return .handled }
         .onKeyPress(.deleteForward) { vm.removeSelected(); return .handled }
         .onKeyPress("t") { if let card = vm.selectedCards.first(where: \.isEditable) { vm.pickerFor = card.id; return .handled }; return .ignored }
