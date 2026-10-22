@@ -419,7 +419,7 @@ def route_pdf(o):
     if o in VECTOR_WRITER:
         return B(f"VectorKit (CGPDFScanner) → {VECTOR_WRITER[o]}", "O-VEC", status="P3" if o == "xps" else None)
     if o in ("epub", "oeb"):
-        return B("PDFKit → LayoutKit → DocModel → EbookKit EPUB", "O-EBOOK")
+        return B(f"PDFKit → LayoutKit → DocModel → EbookKit ({o.upper()} writer)", "O-EBOOK")
     if o in ("azw3", "mobi", "lrf", "pdb"):
         return H("PDFKit → LayoutKit → EbookKit EPUB → calibre⬇", ("calibre",), "O-EBOOK")
     raise KeyError(("pdf", o))
@@ -747,6 +747,636 @@ def priority(i, o, r):
 NEED_LABEL = {"builtin": "built in", "optional": "built in · helper better", "required": "needs helper"}
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# 6. Typed steps. Every route's readable chain is turned into [{engine, from, to}] so the planner never parses prose
+#    (ARCHITECTURE §6). `from`/`to` are file formats ("docx") or model kinds ("@DocModel"). The chain strings stay the
+#    single source of the routing; this section only reads them, and fails the run if a chain does not connect.
+# ---------------------------------------------------------------------------------------------------------------------
+import re
+
+MODELS = ["ImageAsset", "VectorDocument", "DocModel", "LayoutDocument", "Workbook", "Deck", "Publication",
+          "ArchiveTree", "MediaPlan", "FontModel", "CADDrawing"]
+
+# Engine id -> (owning module, kind). Kinds: apple (system framework), own (this repository), bundled (third-party
+# code shipped in the app), helper (optional program, formats §4). Ids are formats §3's names.
+ENGINES = OrderedDict([
+    ("ImageIO", ("ImageKit", "apple")), ("CIRAWFilter", ("ImageKit", "apple")), ("ImagePipeline", ("ImageKit", "own")),
+    ("ImageCodecs", ("ImageKit", "own")), ("AVIFEncoder", ("ImageKit", "own")), ("libwebp", ("ImageKit", "bundled")),
+    ("LibRaw", ("ImageKit", "bundled")),
+    ("RenderKit", ("RenderKit", "own")),
+    ("VectorKit", ("VectorKit", "own")), ("CGPDF", ("VectorKit", "apple")), ("SVGReader", ("VectorKit", "own")), ("SVGWriter", ("VectorKit", "own")),
+    ("EMFReader", ("VectorKit", "own")), ("EMFWriter", ("VectorKit", "own")), ("WMFReader", ("VectorKit", "own")),
+    ("WMFWriter", ("VectorKit", "own")), ("CGMWriter", ("VectorKit", "own")), ("PSWriter", ("VectorKit", "own")),
+    ("SkencilReader", ("VectorKit", "own")), ("SK1Reader", ("VectorKit", "own")), ("AIReader", ("VectorKit", "own")),
+    ("XPSKit", ("XPSKit", "own")), ("XPSWriter", ("XPSKit", "own")),
+    ("VectorizeKit", ("VectorizeKit", "own")),
+    ("CADKit", ("CADKit", "own")), ("DXFReader", ("CADKit", "own")), ("DXFWriter", ("CADKit", "own")),
+    ("DWFReader", ("CADKit", "own")),
+    ("DOCXReader", ("DocKit", "own")), ("ODTReader", ("DocKit", "own")), ("MarkdownReader", ("DocKit", "own")),
+    ("HTMLReader", ("DocKit", "own")), ("PlainTextReader", ("DocKit", "own")), ("AbiWordReader", ("DocKit", "own")),
+    ("HWPReader", ("DocKit", "own")), ("HWPXReader", ("DocKit", "own")), ("MailReader", ("DocKit", "own")),
+    ("TextKitImport", ("DocKit", "apple")), ("TextKitExport", ("DocKit", "apple")),
+    ("DOCXWriter", ("DocKit", "own")), ("ODTWriter", ("DocKit", "own")), ("HTMLWriter", ("DocKit", "own")),
+    ("MarkdownWriter", ("DocKit", "own")), ("RSTWriter", ("DocKit", "own")), ("LaTeXWriter", ("DocKit", "own")),
+    ("TextWriter", ("DocKit", "own")), ("WebKitPrint", ("DocKit", "apple")), ("WebKitSnapshot", ("DocKit", "apple")),
+    ("TypesetKit", ("TypesetKit", "own")),
+    ("LayoutKit", ("LayoutKit", "own")), ("PDFOps", ("ConvertKit", "own")),
+    ("CSVReader", ("OfficeKit", "own")), ("CSVWriter", ("OfficeKit", "own")), ("XLSXReader", ("OfficeKit", "own")),
+    ("XLSXWriter", ("OfficeKit", "own")), ("ODSReader", ("OfficeKit", "own")), ("ODSWriter", ("OfficeKit", "own")),
+    ("XLSReader", ("OfficeKit", "bundled")), ("SlideReader", ("OfficeKit", "own")),
+    ("SlideRenderer", ("OfficeKit", "own")), ("PPTXWriter", ("OfficeKit", "own")), ("ODFReader", ("OfficeKit", "own")),
+    ("ODFWriter", ("OfficeKit", "own")), ("OOXMLRepackage", ("OfficeKit", "own")),
+    ("EPUBReader", ("EbookKit", "own")), ("OEBReader", ("EbookKit", "own")), ("FB2Reader", ("EbookKit", "own")),
+    ("HTMLZReader", ("EbookKit", "own")), ("TXTZReader", ("EbookKit", "own")), ("ComicReader", ("EbookKit", "own")),
+    ("CHMReader", ("EbookKit", "own")), ("EbookKit", ("EbookKit", "own")),
+    ("libarchive", ("ArchiveKit", "bundled")), ("7zz", ("ArchiveKit", "bundled")), ("hdiutil", ("ArchiveKit", "apple")),
+    ("ACEKit", ("ArchiveKit", "own")), ("ARCKit", ("ArchiveKit", "own")), ("RZipKit", ("ArchiveKit", "own")),
+    ("LZOKit", ("ArchiveKit", "own")), ("unalz", ("ArchiveKit", "bundled")), ("ArchiveKit", ("ArchiveKit", "own")),
+    ("AVFoundation", ("MediaKit", "apple")), ("FFmpeg", ("MediaKit", "bundled")),
+    ("SoundFontReader", ("MediaKit", "own")),
+    ("SFNTReader", ("FontKit", "own")), ("WOFFReader", ("FontKit", "own")), ("WOFFWriter", ("FontKit", "own")),
+    ("WOFF2Reader", ("FontKit", "bundled")), ("WOFF2Writer", ("FontKit", "bundled")), ("EOTReader", ("FontKit", "own")),
+    ("EOTWriter", ("FontKit", "own")), ("SVGFontReader", ("FontKit", "own")), ("SVGFontWriter", ("FontKit", "own")),
+    ("CFFBuilder", ("FontKit", "own")), ("GlyfBuilder", ("FontKit", "own")),
+    ("LibreOffice", ("HelperKit", "helper")), ("Pages", ("HelperKit", "helper")), ("Numbers", ("HelperKit", "helper")),
+    ("Keynote", ("HelperKit", "helper")), ("calibre", ("HelperKit", "helper")), ("Pandoc", ("HelperKit", "helper")),
+    ("Tectonic", ("HelperKit", "helper")), ("Ghostscript", ("HelperKit", "helper")),
+    ("DjVuLibre", ("HelperKit", "helper")), ("DWGConverter", ("HelperKit", "helper")),
+    ("FFmpeg-GPL", ("HelperKit", "helper")), ("RAR", ("HelperKit", "helper")), ("sfArk", ("HelperKit", "helper")),
+])
+
+# Models that need a file-to-model reader when a chain names the model while still holding a file.
+FILE_READER = {("odt", "DocModel"): "ODTReader", ("xlsx", "Workbook"): "XLSXReader", ("docx", "DocModel"): "DOCXReader",
+               ("pdf", "DocModel"): "LayoutKit", ("pdf", "Publication"): "LayoutKit"}
+# Model-to-model conversions a chain may imply.
+MODEL_BRIDGE = {("Publication", "DocModel"): "EbookKit"}
+
+READERS = {  # token prefix -> (engine, model); the model may follow the next marker token (FLEX)
+    "AbiWordReader": ("AbiWordReader", "DocModel"), "DOCXReader": ("DOCXReader", "DocModel"),
+    "ODTReader": ("ODTReader", "DocModel"), "MarkdownReader": ("MarkdownReader", "DocModel"),
+    "HTMLZReader": ("HTMLZReader", "Publication"), "HTMLReader": ("HTMLReader", "DocModel"),
+    "HWPXReader": ("HWPXReader", "DocModel"), "HWPReader": ("HWPReader", "DocModel"),
+    "PlainTextReader": ("PlainTextReader", "DocModel"), "TextKitImport": ("TextKitImport", "DocModel"),
+    "CSVReader": ("CSVReader", "Workbook"), "ODSReader": ("ODSReader", "Workbook"),
+    "XLSReader": ("XLSReader", "Workbook"), "XLSXReader": ("XLSXReader", "Workbook"),
+    "EPUBReader": ("EPUBReader", "Publication"), "OEBReader": ("OEBReader", "Publication"),
+    "FB2Reader": ("FB2Reader", "Publication"), "TXTZReader": ("TXTZReader", "Publication"),
+    "ComicReader": ("ComicReader", "Publication"), "CHMReader": ("CHMReader", "Publication"),
+    "SVGReader": ("SVGReader", "VectorDocument"), "EMFReader": ("EMFReader", "VectorDocument"),
+    "WMFReader": ("WMFReader", "VectorDocument"), "SkencilReader": ("SkencilReader", "VectorDocument"),
+    "SK1Reader": ("SK1Reader", "VectorDocument"), "AIReader": ("AIReader", "VectorDocument"),
+    "XPSKit": ("XPSKit", "VectorDocument"), "ODFReader": ("ODFReader", "ImageAsset"),
+    "CIRAWFilter": ("CIRAWFilter", "ImageAsset"), "ImageCodecs": ("ImageCodecs", "ImageAsset"),
+    "LibRaw": ("LibRaw", "ImageAsset"), "DXFReader": ("DXFReader", "CADDrawing"),
+    "DWFReader": ("DWFReader", "CADDrawing"), "SFNTReader": ("SFNTReader", "FontModel"),
+    "WOFF2Reader": ("WOFF2Reader", "FontModel"), "WOFFReader": ("WOFFReader", "FontModel"),
+    "EOTReader": ("EOTReader", "FontModel"), "SVGFontReader": ("SVGFontReader", "FontModel"),
+    "SlideReader": ("SlideReader", "DocModel"), "Pandoc": ("Pandoc", "DocModel"),
+    "MailReader": ("MailReader", "DocModel"),
+    "7zz": ("7zz", "ArchiveTree"), "hdiutil": ("hdiutil", "ArchiveTree"), "ACEKit": ("ACEKit", "ArchiveTree"),
+    "ARCKit": ("ARCKit", "ArchiveTree"), "RZipKit": ("RZipKit", "ArchiveTree"), "LZOKit": ("LZOKit", "ArchiveTree"),
+    "unalz": ("unalz", "ArchiveTree"),
+}
+FLEX = {"HTMLReader", "MailReader"}   # the model follows the next marker token
+WRITERS = {  # token prefix -> (engine, fixed target format or None = the pair's output)
+    "DOCXWriter": ("DOCXWriter", "docx"), "ODTWriter": ("ODTWriter", "odt"), "HTMLWriter": ("HTMLWriter", "html"),
+    "MarkdownWriter": ("MarkdownWriter", "md"), "RSTWriter": ("RSTWriter", "rst"), "LaTeXWriter": ("LaTeXWriter", "tex"),
+    "TextWriter": ("TextWriter", "txt"), "CSVWriter": ("CSVWriter", "csv"), "XLSXWriter": ("XLSXWriter", "xlsx"),
+    "ODSWriter": ("ODSWriter", "ods"), "PPTXWriter": ("PPTXWriter", "pptx"), "SVGWriter": ("SVGWriter", "svg"),
+    "PSWriter": ("PSWriter", None), "EMFWriter": ("EMFWriter", "emf"), "WMFWriter": ("WMFWriter", "wmf"),
+    "DXFWriter": ("DXFWriter", "dxf"), "CGMWriter": ("CGMWriter", "cgm"), "XPSWriter": ("XPSWriter", "xps"),
+    "CGPDF": ("CGPDF", "pdf"), "ODFWriter": ("ODFWriter", "odd"), "AVIFEncoder": ("AVIFEncoder", "avif"),
+    "libwebp": ("libwebp", "webp"), "CFFBuilder": ("CFFBuilder", "otf"), "GlyfBuilder": ("GlyfBuilder", "ttf"),
+    "WOFF2Writer": ("WOFF2Writer", "woff2"), "WOFFWriter": ("WOFFWriter", "woff"), "EOTWriter": ("EOTWriter", "eot"),
+    "SVGFontWriter": ("SVGFontWriter", "svg"), "EOT writer": ("EOTWriter", "eot"), "OTF writer": ("CFFBuilder", "otf"),
+    "TTF writer": ("GlyfBuilder", "ttf"), "WOFF2 writer": ("WOFF2Writer", "woff2"), "WOFF writer": ("WOFFWriter", "woff"),
+    "ArchiveKit": ("ArchiveKit", None), "RAR": ("RAR", "rar"), "VectorizeKit": ("VectorizeKit", "svg"),
+    "MediaKit encoder": ("FFmpeg", None),
+}
+PROCESS = {  # token prefix -> engine for programs and apps that turn a file into a file
+    "LibreOffice": "LibreOffice", "Pages app": "Pages", "Numbers app": "Numbers", "Keynote app": "Keynote",
+    "calibre": "calibre", "Tectonic": "Tectonic", "Ghostscript": "Ghostscript", "DjVuLibre": "DjVuLibre",
+    "ODA File Converter": "DWGConverter", "FFmpeg-GPL": "FFmpeg-GPL", "sfArk tool": "sfArk",
+    "OOXML repackage": "OOXMLRepackage", "WebKit print": "WebKitPrint", "WebKit snapshot": "WebKitSnapshot",
+    "AVFoundation": "AVFoundation", "PDFKit + PDFOps": "PDFOps",
+}
+NOOPS = ("PDFKit", "gunzip", "titles, bullets", "one page per picture", "SFZ + WAV", "WAV samples + SFZ",
+         "one FLAC per sample", "one WAV per sample")
+FORMAT_MARKERS = ("PDF", "DXF", "DOCX", "PPTX", "XLSX", "EPUB", "SF2", "ODT")
+MODEL_MARKERS = {"DocModel": "DocModel", "Workbook": "Workbook", "Publication": "Publication", "CADKit": "CADDrawing",
+                 "FontKit": "FontModel"}
+LIBARCHIVE_WRITER = re.compile(r"^libarchive (7z|tar\.bz2|tar\.gz|tar|zip) writer")
+
+
+class ChainError(Exception):
+    pass
+
+
+def _tokens(chain):
+    """Split on top-level arrows (arrows inside parentheses stay in their token)."""
+    out, depth, cur = [], 0, ""
+    i = 0
+    while i < len(chain):
+        ch = chain[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if depth == 0 and chain.startswith(" → ", i):
+            out.append(cur.strip())
+            cur = ""
+            i += 3
+            continue
+        cur += ch
+        i += 1
+    out.append(cur.strip())
+    return [t.removeprefix("→ ").strip() for t in out if t.strip()]
+
+
+def _clean(tok):
+    return tok.replace("⬇", "").strip()
+
+
+def _starts(tok, table):
+    """The longest key of `table` that `tok` starts with."""
+    hits = [k for k in table if tok.startswith(k)]
+    return max(hits, key=len) if hits else None
+
+
+def _process_hint(tok):
+    """The format a program/app step names for its result, or None."""
+    m = re.search(r"\(\.(\w+)\)", tok)
+    if m:
+        return m.group(1).lower()
+    m = re.search(r"convert-to (\w+)", tok)
+    if m:
+        return m.group(1).lower()
+    m = re.search(r"→ (?:its |the )?(\w+)\)", tok)
+    if m and m.group(1).upper() in FORMAT_MARKERS + ("JSON",):
+        return m.group(1).lower()
+    m = re.search(r"export (\w+)", tok)
+    if m and m.group(1).upper() in FORMAT_MARKERS:
+        return m.group(1).lower()
+    if "save as Pages" in tok:
+        return "pages"
+    if "save as Keynote" in tok:
+        return "key"
+    if "pdfwrite" in tok:
+        return "pdf"
+    if "eps2write" in tok:
+        return "eps"
+    if "ps2write" in tok:
+        return "ps"
+    if "ddjvu -format=pdf" in tok:
+        return "pdf"
+    if "dxf2dwg" in tok:
+        return "dwg"
+    if "original layout" in tok:
+        return "pdf"
+    if "pre-CS PostScript AI" in tok:
+        return "pdf"
+    return None
+
+
+def parse_chain(chain, i, o, start=None, prefix=None):
+    """Turn one readable chain into steps. `start` is a (kind, value) state, 'f' file or 'm' model."""
+    toks = [_clean(t) for t in _tokens(chain)]
+    state = start or ("f", i)
+    steps = list(prefix or [])
+    pending = []   # indexes into steps of process steps whose target is not known yet
+
+    def ep(s):
+        return s[1] if s[0] == "f" else "@" + s[1]
+
+    def emit(engine, frm, to, process=False):
+        steps.append({"engine": engine, "from": ep(frm), "to": ep(to) if isinstance(to, tuple) else (to or None)})
+        if process and steps[-1]["to"] is None:
+            pending.append(len(steps) - 1)
+
+    def settle(fmt):
+        for k in pending:
+            steps[k]["to"] = fmt
+        pending.clear()
+
+    def need_model(where):
+        nonlocal state
+        if state[0] == "f":
+            if state[1] == "pdf":
+                emit("LayoutKit", state, ("m", "DocModel"))
+                state = ("m", "DocModel")
+            else:
+                raise ChainError(f"{where}: needs a model but holds file {state[1]}")
+
+    def follows(k):
+        return toks[k + 1] if k + 1 < len(toks) else None
+
+    for k, t in enumerate(toks):
+        nxt = follows(k)
+        last = nxt is None
+
+        # --- markers and no-ops ----------------------------------------------------------------------------------
+        if t.startswith("PDFKit text"):
+            emit("LayoutKit", state, o)
+            state = ("f", o)
+            continue
+        if _starts(t, NOOPS) and not t.startswith("PDFKit + PDFOps"):
+            continue
+        if t in MODEL_MARKERS:
+            want = MODEL_MARKERS[t]
+            if state == ("m", want):
+                continue
+            if state[0] == "m":
+                bridge = MODEL_BRIDGE.get((state[1], want))
+                if not bridge:
+                    raise ChainError(f"no bridge {state[1]} -> {want}")
+                emit(bridge, state, ("m", want))
+                state = ("m", want)
+            else:
+                reader = FILE_READER.get((state[1], want))
+                if not reader:
+                    raise ChainError(f"no reader {state[1]} -> {want}")
+                emit(reader, state, ("m", want))
+                state = ("m", want)
+            continue
+        fm = re.match(r"^(PDF|DXF|DOCX|PPTX|XLSX|EPUB|SF2|ODT)\b", t) or re.match(r"^the embedded (PDF)", t)
+        if fm and state[0] == "f" and (pending or state[1] != fm.groups()[-1].lower()):
+            fmt = fm.groups()[-1].lower()
+            if pending:
+                settle(fmt)
+                state = ("f", fmt)
+            elif state[1] in ("docm", "dotx") and fmt == "docx":
+                emit("OOXMLRepackage", state, fmt)
+                state = ("f", fmt)
+            else:
+                raise ChainError(f"marker {t} while holding file {state[1]}")
+            continue
+        if fm:
+            continue   # the file is already that format
+        if t == "slide images":
+            emit("RenderKit", state, ("m", "ImageAsset"))
+            state = ("m", "ImageAsset")
+            continue
+        if t == "plot":
+            emit("CADKit", state, ("m", "VectorDocument"))
+            state = ("m", "VectorDocument")
+            continue
+
+        # --- dual engines: reader or writer depending on what is held ----------------------------------------------
+        if t.startswith("ImageIO"):
+            if state[0] == "f":
+                emit("ImageIO", state, ("m", "ImageAsset"))
+                state = ("m", "ImageAsset")
+            else:
+                emit("ImageIO", state, o if last else None)
+                state = ("f", o)
+            continue
+        if t.startswith("VectorKit"):
+            if state[0] == "f":
+                emit("VectorKit", state, ("m", "VectorDocument"))
+                state = ("m", "VectorDocument")
+            elif state != ("m", "VectorDocument"):
+                raise ChainError(f"VectorKit holding {state}")
+            continue
+        if t.startswith("RenderKit"):
+            if state[0] == "f" or state[1] == "VectorDocument":
+                emit("RenderKit", state, ("m", "ImageAsset"))
+                state = ("m", "ImageAsset")
+            else:
+                raise ChainError(f"RenderKit holding {state}")
+            continue
+        if t.startswith("ImagePipeline"):
+            if state != ("m", "ImageAsset"):
+                raise ChainError(f"ImagePipeline holding {state}")
+            emit("ImagePipeline", state, state)
+            continue
+        if t.startswith("LayoutKit"):
+            if state != ("f", "pdf"):
+                raise ChainError(f"LayoutKit holding {state}")
+            if "tables" in t:
+                model = "Workbook"
+            elif nxt in MODEL_MARKERS and MODEL_MARKERS[nxt] != "CADDrawing":
+                model = MODEL_MARKERS[nxt]
+            elif nxt and nxt.startswith("PPTXWriter"):
+                model = "Deck"
+            elif nxt and nxt.startswith("XLSXWriter"):
+                model = "Workbook"
+            elif nxt and nxt.startswith("HTMLWriter"):
+                model = "LayoutDocument"
+            elif nxt and nxt.startswith("EbookKit"):
+                model = "Publication"
+            elif nxt and (nxt.startswith("DOCXWriter") or nxt.startswith("MarkdownWriter")):
+                model = "DocModel"
+            else:
+                raise ChainError(f"LayoutKit followed by {nxt}")
+            emit("LayoutKit", state, ("m", model))
+            state = ("m", model)
+            continue
+        if t.startswith("TypesetKit"):
+            if state[0] == "f":
+                need_model("TypesetKit")
+            if state[1] not in ("DocModel", "Workbook", "Publication"):
+                raise ChainError(f"TypesetKit holding {state}")
+            emit("TypesetKit", state, "pdf")
+            state = ("f", "pdf")
+            continue
+        if t.startswith("SlideRenderer"):
+            emit("SlideRenderer", state, "pdf")
+            state = ("f", "pdf")
+            continue
+        if t.startswith("SoundFontReader"):
+            if nxt and nxt.startswith("WAV samples + SFZ map"):
+                emit("SoundFontReader", state, ("m", "ArchiveTree"))
+                state = ("m", "ArchiveTree")
+            else:
+                emit("SoundFontReader", state, o)
+                state = ("f", o)
+            continue
+        if t.startswith("FFmpeg-GPL"):
+            emit("FFmpeg-GPL", state, o)
+            state = ("f", o)
+            continue
+        if t.startswith("FFmpeg"):
+            emit("FFmpeg", state, o)
+            state = ("f", o)
+            continue
+        if t.startswith("EbookKit") or t.startswith("fixed-layout"):
+            if state[0] == "f":
+                need_model("EbookKit")
+            fmt = "oeb" if "OEB" in t else "epub"
+            emit("EbookKit", state, fmt)
+            state = ("f", fmt)
+            continue
+        lw = LIBARCHIVE_WRITER.match(t)
+        if lw:
+            if state != ("m", "ArchiveTree"):
+                raise ChainError(f"libarchive writer holding {state}")
+            emit("libarchive", state, lw.group(1))
+            state = ("f", lw.group(1))
+            continue
+        if t.startswith("libarchive"):
+            emit("libarchive", state, ("m", "ArchiveTree"))
+            state = ("m", "ArchiveTree")
+            continue
+        if t.startswith("MailReader (attachments"):
+            emit("MailReader", state, ("m", "ArchiveTree"))
+            state = ("m", "ArchiveTree")
+            continue
+
+        # --- readers --------------------------------------------------------------------------------------------
+        r = _starts(t, READERS)
+        if r:
+            eng, model = READERS[r]
+            if r in FLEX:
+                if nxt in MODEL_MARKERS:
+                    model = MODEL_MARKERS[nxt]
+                elif nxt and nxt.startswith("TypesetKit (book"):
+                    model = "Publication"
+            if state[0] != "f":
+                raise ChainError(f"{eng} reader holding model {state[1]}")
+            emit(eng, state, ("m", model))
+            state = ("m", model)
+            continue
+
+        if t.startswith("TextKitExport"):
+            if state[0] == "f":
+                need_model("TextKitExport")
+            fmt = re.search(r"\.(\w+)", t).group(1)
+            emit("TextKitExport", state, fmt)
+            state = ("f", fmt)
+            continue
+
+        # --- writers --------------------------------------------------------------------------------------------
+        w = _starts(t, WRITERS)
+        if w:
+            eng, fixed = WRITERS[w]
+            if state[0] == "f":
+                need_model(eng)
+            fmt = fixed or o
+            emit(eng, state, fmt)
+            state = ("f", fmt)
+            continue
+
+        # --- programs and apps (file in, file out) ---------------------------------------------------------------
+        p = _starts(t, PROCESS)
+        if p:
+            eng = PROCESS[p]
+            if state[0] != "f":
+                raise ChainError(f"{eng} holding model {state[1]}")
+            hint = _process_hint(t)
+            if eng in ("OOXMLRepackage", "WebKitPrint", "WebKitSnapshot", "AVFoundation", "PDFOps", "Tectonic",
+                       "FFmpeg-GPL"):
+                hint = o
+            if hint is None and "open + save" in t:
+                hint = o
+            if hint is None and last:
+                hint = o
+            emit(eng, state, hint, process=True)
+            if hint:
+                state = ("f", hint)
+            else:
+                state = ("f", "?")   # settled by the next marker
+            continue
+        raise ChainError(f"unknown token {t!r}")
+
+    if pending:
+        raise ChainError("unsettled process step")
+    # Fix the file state of process steps settled by a later marker: re-derive continuity below.
+    return steps
+
+
+def check_steps(steps, i, o, label):
+    """Continuity: the first step starts at the input, each step starts where the last ended, the last gives the output."""
+    if not steps:
+        raise ChainError(f"{label}: no steps")
+    cur = i
+    for s in steps:
+        if s["engine"] not in ENGINES:
+            raise ChainError(f"{label}: engine {s['engine']} not in ENGINES")
+        if s["from"] != cur:
+            raise ChainError(f"{label}: {s} does not start at {cur}")
+        if s["to"] in (None, "?"):
+            raise ChainError(f"{label}: {s} has no target")
+        cur = s["to"]
+    if cur != o:
+        raise ChainError(f"{label}: ends at {cur}, wanted {o}")
+
+
+def route_steps(i, o, row):
+    """{"builtin": [...]|None, "helper": [...]|None, "alternates": [...]} for one matrix row."""
+    label = f"{i}>{o}"
+    out = {"builtin": None, "helper": None, "alternates": []}
+    for kind in ("builtin", "helper"):
+        chain = row[kind]
+        if not chain:
+            continue
+        look = None
+        if " · LaTeX look: " in chain:
+            chain, look = chain.split(" · LaTeX look: ", 1)
+            # What follows TypesetKit in the alternative (page rendering) applies to both looks.
+            lt = _tokens(look)
+            cut = next(n for n, x in enumerate(lt) if x.startswith("TypesetKit"))
+            tail = lt[cut + 1:]
+            if tail:
+                chain = " → ".join([chain] + tail)
+                look = " → ".join(lt[:cut + 1] + tail)
+        elif " · " in chain:
+            chain = chain.split(" · ")[0]
+        steps = parse_chain(chain, i, o)
+        out[kind] = steps
+        if look is not None:
+            prefix, start = [], None
+            if kind == "helper":
+                mid = "xlsx" if CAT_OF[i] == "spreadsheet" else "odt"
+                prefix = [{"engine": "LibreOffice", "from": i, "to": mid}]
+                start = ("f", mid)
+            alt = parse_chain(look, i, o, start=start, prefix=prefix)
+            check_steps(alt, i, o, label + " latex-look")
+            out["alternates"].append({"look": "latex", "via": kind, "steps": alt})
+    for kind in ("builtin", "helper"):
+        if out[kind]:
+            check_steps(out[kind], i, o, f"{label} {kind}")
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 7. Swift data for SuperConverterCore (Sources/SuperConverterCore/Catalog/Generated/*.swift): the engine list, the
+#    format list and every route with its typed steps. Generated; never edit by hand.
+# ---------------------------------------------------------------------------------------------------------------------
+SWIFT_DIR = os.path.join(ROOT, "Sources/SuperConverterCore/Catalog/Generated")
+SWIFT_HEADER = "// Generated by scripts/gen-format-matrix.py from docs/specs/data/format-matrix.json. Do not edit.\n\n"
+HELPER_CASE = {"libreoffice": "libreoffice", "iwork": "iwork", "calibre": "calibre", "pandoc": "pandoc",
+               "tectonic": "tectonic", "ghostscript": "ghostscript", "djvulibre": "djvulibre", "oda": "oda",
+               "libredwg": "libredwg", "ffmpeg-gpl": "ffmpegGPL", "rar": "rar", "sfark": "sfark"}
+CASE_OVERRIDE = {"FFmpeg": "ffmpeg", "FFmpeg-GPL": "ffmpegGPL", "7zz": "sevenZip", "CGPDF": "cgPDF", "RAR": "rar",
+                 "CIRAWFilter": "ciRAWFilter", "LaTeXWriter": "latexWriter", "RZipKit": "rzipKit", "DjVuLibre": "djvuLibre"}
+
+
+def swift_case(name):
+    if name in CASE_OVERRIDE:
+        return CASE_OVERRIDE[name]
+    run = 0
+    while run < len(name) and (name[run].isupper() or name[run].isdigit()):
+        run += 1
+    if run == len(name):
+        return name.lower()
+    if run > 1 and name[run].islower():
+        run -= 1
+    return name[:run].lower() + name[run:]
+
+
+def sw(text):
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def endpoint(v):
+    if v.startswith("@"):
+        return "." + swift_case(v[1:])
+    return sw(v)
+
+
+def step_literal(s):
+    return f".{swift_case(s['engine'])}, {endpoint(s['from'])}, {endpoint(s['to'])}"
+
+
+def write_swift(matrix):
+    os.makedirs(SWIFT_DIR, exist_ok=True)
+    used = set()
+    for f in matrix:
+        for r in f["outputs"]:
+            st = r["steps"]
+            if st:
+                for k in ("builtin", "helper"):
+                    used.update(x["engine"] for x in st[k] or [])
+                for a in st["alternates"]:
+                    used.update(x["engine"] for x in a["steps"])
+    unused = [e for e in ENGINES if e not in used]
+    if unused:
+        raise SystemExit(f"engines no route uses (remove from ENGINES): {unused}")
+    cases = [swift_case(e) for e in ENGINES]
+    assert len(set(cases)) == len(cases), "engine case names collide"
+
+    out = [SWIFT_HEADER, "public enum EngineID: String, CaseIterable, Codable, Hashable, Sendable {\n"]
+    for e in ENGINES:
+        out.append(f"    case {swift_case(e)} = {sw(e)}\n")
+    out.append("\n    /// The module that registers this engine's converter, and what kind of code it is.\n")
+    out.append("    public var info: EngineInfo {\n        switch self {\n")
+    for e, (mod, kind) in ENGINES.items():
+        out.append(f"        case .{swift_case(e)}: EngineInfo(module: .{swift_case(mod)}, kind: .{kind})\n")
+    out.append("        }\n    }\n}\n")
+    open(os.path.join(SWIFT_DIR, "GeneratedEngines.swift"), "w").write("".join(out))
+
+    # formats
+    out = [SWIFT_HEADER, "extension FormatCatalog {\n    /// Every catalog format in CloudConvert's order, then the output-only formats.\n",
+           "    static let seeds: [FormatSeed] = [\n"]
+    inputs = {f["input"] for f in matrix}
+    for f in matrix:
+        out.append(f"        FormatSeed({sw(f['input'])}, .{f['category']}, {sw(f['name'])}),\n")
+    outputs_only = OrderedDict()
+    for f in matrix:
+        for r in f["outputs"]:
+            if r["output"] not in inputs:
+                outputs_only.setdefault(r["output"], f["category"])
+    OUTPUT_ONLY_NAMES = {"sfz": "SFZ instrument"}
+    for o, cat in outputs_only.items():
+        out.append(f"        FormatSeed({sw(o)}, .{cat}, {sw(OUTPUT_ONLY_NAMES[o])}, outputOnly: true),\n")
+    out.append("    ]\n}\n")
+    open(os.path.join(SWIFT_DIR, "GeneratedFormats.swift"), "w").write("".join(out))
+
+    # routes, one file per input category; chains are shared constants
+    by_cat = OrderedDict()
+    for f in matrix:
+        by_cat.setdefault(f["category"], []).append(f)
+    for old in os.listdir(SWIFT_DIR):
+        if old.startswith("GeneratedRoutes"):
+            os.remove(os.path.join(SWIFT_DIR, old))
+    for cat, fs in by_cat.items():
+        chains = OrderedDict()
+
+        def chain_ref(steps):
+            key = tuple((x["engine"], x["from"], x["to"]) for x in steps)
+            if key not in chains:
+                chains[key] = f"c{len(chains)}"
+            return chains[key]
+
+        rows = []
+        for f in fs:
+            for r in f["outputs"]:
+                args = [sw(f["input"]), sw(r["output"]), "." + r["origin"], "." + {"builtin": "builtin", "optional": "optional",
+                        "required": "required", "no": "notOffered"}[r["need"]]]
+                st = r["steps"]
+                if st:
+                    if st["builtin"]:
+                        args.append(f"builtin: {chain_ref(st['builtin'])}")
+                    if st["helper"]:
+                        args.append(f"helper: {chain_ref(st['helper'])}")
+                    if r["helpers"]:
+                        args.append("helpers: [" + ", ".join("." + HELPER_CASE[h] for h in r["helpers"]) + "]")
+                    if r["prefer"] == "helper" and st["builtin"]:
+                        args.append("prefer: .helper")
+                    if st["alternates"]:
+                        args.append("alternates: [" + ", ".join(
+                            f"RouteAlternate(.{a['look']}, via: .{a['via']}, steps: {chain_ref(a['steps'])})"
+                            for a in st["alternates"]) + "]")
+                args.append(f"options: {sw(r['options'])}")
+                args.append(f".{r['priority'].lower()}" if r["priority"] != "no" else ".p3")
+                if r["note"]:
+                    args.append(f"note: {sw(r['note'])}")
+                rows.append("        Route(" + ", ".join(args) + "),\n")
+        name = "".join(w.capitalize() for w in cat.split("_"))
+        out = [SWIFT_HEADER]
+        for key, ref in chains.items():
+            body = ", ".join(f"Step({step_literal(dict(engine=e, **{'from': a, 'to': b}))})" for e, a, b in key)
+            out.append(f"private let {ref}: [Step] = [{body}]\n")
+        out.append(f"\nextension GeneratedMatrix {{\n    static let {cat}: [Route] = [\n")
+        out.extend(rows)
+        out.append("    ]\n}\n")
+        open(os.path.join(SWIFT_DIR, f"GeneratedRoutes{name}.swift"), "w").write("".join(out))
+
+    out = [SWIFT_HEADER, "enum GeneratedMatrix {\n    static var all: [Route] {\n        ", " + ".join(by_cat), "\n    }\n}\n"]
+    open(os.path.join(SWIFT_DIR, "GeneratedMatrix.swift"), "w").write("".join(out))
+
+
+
 def main():
     snap = json.load(open(SNAPSHOT))
     cc_pairs = defaultdict(dict)
@@ -766,17 +1396,25 @@ def main():
             rows = []
             for o, (origin, cc_engine, cc_opts) in outs.items():
                 r = route(ext, o)
+                row = dict(builtin=r.builtin, helper=r.helper)
+                steps = route_steps(ext, o, row) if r.need != "no" else None
                 rows.append(OrderedDict([
                     ("output", o), ("origin", origin), ("cloudconvert", {"engine": cc_engine, "options": cc_opts}),
                     ("need", r.need), ("builtin", r.builtin), ("helper", r.helper), ("helpers", list(r.helpers)),
                     ("prefer", r.prefer if r.need != "no" else None), ("options", r.options),
-                    ("priority", "no" if r.need == "no" else priority(ext, o, r)), ("note", r.note)]))
+                    ("priority", "no" if r.need == "no" else priority(ext, o, r)), ("note", r.note),
+                    ("steps", steps)]))
             matrix.append(OrderedDict([("input", ext), ("category", cat), ("name", name), ("outputs", rows)]))
 
+    text = json.dumps({"generated_by": "scripts/gen-format-matrix.py", "parity_snapshot": os.path.basename(SNAPSHOT),
+                       "helpers": HELPERS, "formats": matrix}, indent=1, ensure_ascii=False)
+    # One line per step keeps the file readable: {"engine": "ImageIO", "from": "heic", "to": "@ImageAsset"}.
+    text = re.sub(r'\{\n\s+"engine": ("[^"]*"),\n\s+"from": ("[^"]*"),\n\s+"to": ("[^"]*")\n\s+\}',
+                  r'{"engine": \1, "from": \2, "to": \3}', text)
     with open(OUT_JSON, "w") as fh:
-        json.dump({"generated_by": "scripts/gen-format-matrix.py", "parity_snapshot": os.path.basename(SNAPSHOT),
-                   "helpers": HELPERS, "formats": matrix}, fh, indent=1, ensure_ascii=False)
-        fh.write("\n")
+        fh.write(text + "\n")
+
+    write_swift(matrix)
 
     # ---- Markdown ----------------------------------------------------------------------------------------------------
     lines = [BEGIN, ""]

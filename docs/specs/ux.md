@@ -63,13 +63,13 @@ backgrounds), **deep** (fills under white text). Dark mode keeps base and deep a
 | Category | Base | Ink | Tint | Deep | Dark ink | Dark tint | Ink/tint contrast (light · dark) | Filled pill text |
 |---|---|---|---|---|---|---|---|---|
 | Documents | `#3D6CF2` | `#1E46B4` | `#E6ECFD` | `#2F5BD6` | `#94AEF8` | `#2B3659` | 6.9 · 5.4 | white on deep (5.9) |
-| Images | `#EE4A8C` | `#AE1757` | `#FDE7F0` | `#D13374` | `#F69BC0` | `#522F43` | 5.9 · 5.6 | white on deep (4.7) |
+| Images | `#EE4A8C` | `#AE1757` | `#FDE7F0` | `#D13374` | `#F69BC0` | `#522F43` | 5.8 · 5.6 | white on deep (4.7) |
 | Video | `#7A5AF0` | `#5132C2` | `#EEEAFD` | `#6848DB` | `#B6A4F7` | `#383259` | 6.9 · 5.4 | white on deep (5.9) |
 | Audio | `#FF8A1F` | `#A9500A` | `#FFF0E2` | `#D87016` | `#FFBF84` | `#563D2B` | 4.9 · 6.2 | `#16171C` on base (7.6) |
 | Spreadsheets | `#1FB36B` | `#0C7642` | `#E2F5EC` | `#169859` | `#84D5AE` | `#24463B` | 5.0 · 6.0 | `#16171C` on base (6.6) |
 | Slides | `#F2554B` | `#B02A21` | `#FDE9E8` | `#D44238` | `#F8A29C` | `#533134` | 5.6 · 5.7 | white on deep (4.5) |
-| E-books | `#12ADA6` | `#06716C` | `#E0F4F3` | `#0D928C` | `#7DD2CE` | `#224448` | 5.2 · 6.0 | `#16171C` on base (6.4) |
-| Archives | `#F2B705` | `#7F5C00` | `#FDF6DE` | `#BE8E03` | `#F8D776` | `#534725` | 5.7 · 6.6 | `#16171C` on base (9.8) |
+| E-books | `#12ADA6` | `#06716C` | `#E0F4F3` | `#0D928C` | `#7DD2CE` | `#224448` | 5.1 · 6.0 | `#16171C` on base (6.4) |
+| Archives | `#F2B705` | `#7F5C00` | `#FDF6DE` | `#BE8E03` | `#F8D776` | `#534725` | 5.7 · 6.5 | `#16171C` on base (9.8) |
 | Vector | `#B04FE0` | `#7B20AB` | `#F5E8FB` | `#983AC8` | `#D49EEE` | `#443055` | 6.8 · 5.5 | white on deep (5.6) |
 | CAD | `#1C9FE3` | `#0A6A9E` | `#E1F3FB` | `#1487C4` | `#82CAF0` | `#244156` | 5.2 · 5.9 | `#16171C` on base (6.1) |
 | Fonts | `#7DBE22` | `#4A740C` | `#EEF7E2` | `#669D18` | `#B8DB85` | `#39482B` | 5.0 · 6.3 | `#16171C` on base (7.9) |

@@ -65,13 +65,13 @@ an output wherever a pair exists. Extensions that are the same format (JPG/JPEG/
    gets a patent check in WP-M before release.
 8. **Every bundled component** is listed with version, SHA-256, licence text and source URL in
    `THIRD_PARTY_NOTICES.md`, which the app shows in Settings › About.
-9. **Where one-click helpers come from.** (a) Upstream's own signed release when there is one (LibreOffice, calibre,
-   Pandoc, Tectonic): pinned version + SHA-256, Apple code signature and notarisation checked before first run. (b) For
-   GPL/AGPL tools with no official macOS build (Ghostscript, DjVuLibre, LibreDWG, sfArk tool, FFmpeg with GPL encoders),
-   a separate **public** repository, `udsy19/super-converter-helpers`, builds them in CI from upstream source and
-   publishes each binary next to its complete corresponding source and licence. The app pins each artifact by version
-   and SHA-256. That repository does not exist yet (ARCHITECTURE open question 1); until it does, these helpers are
-   detected from Homebrew (`/opt/homebrew/bin`) and "Get…" explains how to install them.
+9. **Where helpers come from [D].** (a) Upstream's own signed release when there is one (LibreOffice, calibre, Pandoc,
+   Tectonic): one click installs it, pinned version + SHA-256, Apple code signature and notarisation checked before first
+   run. (b) Vendor pages for proprietary tools (ODA File Converter, RARLAB's `rar`) and the App Store for iWork: "Get…"
+   opens the page. (c) GPL/AGPL tools with no official macOS build (Ghostscript, DjVuLibre, LibreDWG, the sfArk tool,
+   FFmpeg with GPL encoders) are **only detected** where people already have them (Homebrew's `/opt/homebrew/bin` and
+   `/usr/local/bin`, the known install paths, or a path set in Settings › Helpers); "Get…" explains how to install them
+   (`brew install ghostscript`). There is no public helpers repository: we do not build or publish those binaries.
 
 ## 3. Built-in engines
 
@@ -159,13 +159,13 @@ with `--norestore --nologo --headless` and a private profile).
 | `calibre` | AZW, AZW3, AZW4, LIT, LRF, MOBI, PDB, PML, PRC, RB, SNB, TCR input; AZW3, MOBI, LRF, PDB output | GPL-3.0 | Official signed DMG from download.calibre-ebook.com → `~/Applications/calibre.app` | ~160 MB | `/Applications`, `~/Applications` | `calibre.app/Contents/MacOS/ebook-convert in.x out.epub` |
 | `pandoc` | RST input; TEX → anything but PDF | GPL-2.0+ | Official `pandoc-<v>-arm64-macOS.zip` / `x86_64` from GitHub releases | ~35 MB | Homebrew, `/usr/local/bin` | `pandoc -t json` → our DocModel (we read Pandoc's AST, never its writers) |
 | `tectonic` | TEX → PDF (a real LaTeX run) | MIT | Official release tarball from GitHub; the install compiles a warm-up document that caches the common packages, after which runs use `--only-cached` (offline). An installed MacTeX (`/Library/TeX/texbin/latexmk`) is used instead when present | ~25 MB + ~120 MB cache | MacTeX, Homebrew | `tectonic -X compile --only-cached --outdir …` |
-| `ghostscript` | EPS, PS input; legacy (non-PDF) AI | AGPL-3.0 | helpers repository (§2.9) | ~25 MB | Homebrew | `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=pdfwrite …` |
-| `djvulibre` | DJVU input | GPL-2.0+ | helpers repository | ~8 MB | Homebrew | `ddjvu -format=pdf` |
+| `ghostscript` | EPS, PS input; legacy (non-PDF) AI | AGPL-3.0 | **Get…** explains `brew install ghostscript` (§2.9c) | — | Homebrew | `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=pdfwrite …` |
+| `djvulibre` | DJVU input | GPL-2.0+ | **Get…** explains `brew install djvulibre` | — | Homebrew | `ddjvu -format=pdf` |
 | `oda` | DWG input and output (all AutoCAD versions) | Proprietary freeware (ODA EULA) | **Get…** opens opendesign.com's ODA File Converter page | — | `/Applications/ODAFileConverter.app` | `ODAFileConverter <in> <out> ACAD2018 DXF 0 1 *.DWG` |
-| `libredwg` | DWG input and output when ODA is absent (DWG R13–2018 read; write experimental) | GPL-3.0 | helpers repository | ~10 MB | Homebrew | `dwg2dxf`, `dxf2dwg` |
-| `ffmpeg-gpl` | CAVS output (libxavs); optional x264/x265 software encoders for people who want them | GPL-2.0+ | helpers repository | ~45 MB | Homebrew `ffmpeg` built with `--enable-gpl` | separate `ffmpeg` executable |
+| `libredwg` | DWG input and output when ODA is absent (DWG R13–2018 read; write experimental) | GPL-3.0 | **Get…** explains `brew install libredwg` | — | Homebrew | `dwg2dxf`, `dxf2dwg` |
+| `ffmpeg-gpl` | CAVS output (libxavs); optional x264/x265 software encoders for people who want them | GPL-2.0+ | **Get…** explains `brew install ffmpeg` (a build with `--enable-gpl`) | — | Homebrew `ffmpeg` built with `--enable-gpl` | separate `ffmpeg` executable |
 | `rar` | RAR output | Proprietary (RARLAB, shareware) | **Get…** opens rarlab.com | — | `rar` on `PATH`, Homebrew | `rar a -ma5 -m3 …` |
-| `sfark` | SFARK input | GPL-3.0 (sfArkLib) | helpers repository | ~1 MB | — | `sfarkxtc in.sfark out.sf2` |
+| `sfark` | SFARK input | GPL-3.0 (sfArkLib) | **Get…** explains building `sfarkxtc` from source | — | `/opt/homebrew/bin`, `/usr/local/bin` | `sfarkxtc in.sfark out.sf2` |
 
 Helpers never run automatically on download; the first run of each is the conversion the person asked for. Settings ›
 Helpers lists every helper with status, version, size on disk, licence, **Remove**, and **Look again**.
@@ -710,11 +710,11 @@ profiles §5's. ⁺ marks a target CloudConvert does not offer for that input. R
 | DXF | VectorKit (CGPDFScanner) → DXFWriter | — | O-VEC | P1 |
 | EMF | VectorKit (CGPDFScanner) → EMFWriter | — | O-VEC | P1 |
 | EPS PS | VectorKit (CGPDFScanner) → PSWriter | — | O-VEC | P1 |
-| EPUB | PDFKit → LayoutKit → DocModel → EbookKit EPUB | — | O-EBOOK | P1 |
+| EPUB | PDFKit → LayoutKit → DocModel → EbookKit (EPUB writer) | — | O-EBOOK | P1 |
 | HTML | PDFKit → LayoutKit → HTMLWriter (reflowed, or positioned pages) | — | O-PDF-HTML | P1 |
 | MD | PDFKit → LayoutKit → DocModel → MarkdownWriter | — | O-DOC+MD | P1 |
 | ODD | RenderKit (CGPDF + ColorSync) → ImagePipeline → ODFWriter | — | O-RENDER | P2 |
-| OEB | PDFKit → LayoutKit → DocModel → EbookKit EPUB | — | O-EBOOK | P2 |
+| OEB | PDFKit → LayoutKit → DocModel → EbookKit (OEB writer) | — | O-EBOOK | P2 |
 | PDF | PDFKit + PDFOps (pages, split, passwords, permissions, watermark; PDF/A via RenderKit) | — | O-PDF-PDF | P1 |
 | PPT | — | **LibreOffice**: PDFKit → LayoutKit → PPTXWriter → LibreOffice⬇ (.ppt) | O-PDF-OFFICE | P1 |
 | PPTX | PDFKit → LayoutKit → PPTXWriter (text editable, art as vectors) | — | O-PDF-OFFICE | P1 |

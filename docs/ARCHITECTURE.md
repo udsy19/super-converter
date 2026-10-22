@@ -60,9 +60,10 @@ each engine has a self-test file. Ports of third-party permissive code follow fo
 ```
 Sources/
   SuperConverterCore/   contracts and shared data, no conversion logic:
-                          Catalog/      FormatID, FormatCategory, Format (extensions, UTTypes, MIME, names, magic),
-                                        the matrix (format-matrix.json as a resource + typed loader), OptionProfile
-                                        definitions (formats §5 as data), default targets (ux §6.1)
+                          Catalog/      FormatID, FormatCategory, Format (extensions, UTTypes, MIME, names, synonyms),
+                                        the magic-byte table, the matrix and engine list (generated Swift data from
+                                        format-matrix.json, typed steps), the helper catalog, OptionProfile definitions
+                                        (formats §5 as data), default targets (ux §6.1)
                           Models/       the intermediate models (data only): ImageAsset, VectorDocument, DocModel,
                                         LayoutDocument, Workbook, Deck, Publication, ArchiveTree, MediaPlan, FontModel,
                                         LossNote
@@ -72,8 +73,8 @@ Sources/
                           Design/       SCColor (ux §3.2–3.3, light/dark/high contrast), SCFont, SCMetrics, SCMotion
                           Strings, Defaults (typed keys), Services (registry), SuperConverterPaths, Logging
   ImageKit/             engine: ImagePipeline (Core Image, vImage, ColorSync), CIRAW development, ImageCodecs (PSB,
-                          XCF, PPM), encoders (ImageIO, libwebp, AVIF, GIF quantiser, ICO/ICNS sets), raster PSWriter
-                          bridge, metadata; LibRaw adapter for X3F
+                          XCF, PPM), encoders (ImageIO, libwebp, AVIF, GIF quantiser, ICO/ICNS sets),
+                          metadata; LibRaw adapter for X3F
   VectorKit/            engine: VectorDocument readers (CGPDFScanner, SVG, EMF/WMF, SK/SK1) and writers (CGPDF, SVG,
                           PostScript/EPS, EMF, WMF, CGM)
   XPSKit/               engine: XPS/OpenXPS/DWFx reader → VectorDocument, XPS writer
@@ -133,6 +134,9 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
   (from, to) kinds it handles and `availability()` (built in; needs helper X; unavailable on this macOS). The planner
   only follows routes the matrix lists; a self-test fails if the matrix names an engine id no converter registers, or
   a converter is registered that no route uses (no dead code).
+  Which module registers an engine id's converter is `EngineID.info.module` (the table `ENGINES` in
+  `scripts/gen-format-matrix.py`): helper-run engines belong to HelperKit, `PDFOps` to ConvertKit (WP-L), `WebKitPrint`
+  and `WebKitSnapshot` to DocKit.
 - **Helpers run only through HelperKit**: never `Process` elsewhere. No GPL/AGPL code is linked or loaded (formats §2);
   the build script's licence check fails the build if a vendored artifact's licence is not on the allow-list.
 - **Main actor** for UI and `Services`; engines are `Sendable` and run on a cooperative pool or their own processes;
@@ -160,9 +164,12 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
 
 ## 6. Engine adapters and the planner
 
-- `format-matrix.json` today holds each route as a readable chain. **WP1 extends `scripts/gen-format-matrix.py`** to
-  also emit `steps: [{engine, from, to}]` per route (engine ids are formats §3's names; `from`/`to` are formats or
-  model kinds), and copies the JSON into Core's resources. The planner never parses prose.
+- `format-matrix.json` holds each route as a readable chain and, since WP1, as `steps: [{engine, from, to}]` (engine ids
+  are formats §3's names; `from`/`to` are formats, or `@Model` kinds). `scripts/gen-format-matrix.py` also writes the
+  same data as Swift into `Sources/SuperConverterCore/Catalog/Generated/` (the engine list, the format list, every
+  route): Core carries the catalog as compiled data, with no resource bundle to find at run time, and a self-test
+  fails when the Swift and the JSON disagree. A route is a built-in chain, a helper chain, or both, plus alternates
+  (the LaTeX look). The planner never parses prose.
 - **Choosing a route**: offered pairs have a built-in route, a helper route, or both. With both, the matrix's
   `prefer` decides when the helper is present (original-layout office rendering prefers the helper); the person can
   switch on the card ("Look: Original / As written / LaTeX" is the visible form of that switch for documents).
@@ -287,8 +294,9 @@ category runs against fakes.
 
 **WP-I — ImageKit** (fable). `Sources/ImageKit/**`. quality §2 in full: pipeline, ColorSync rules (§2.2), encoders
 and defaults (§2.3, including the ImageIO-JPEG subsampling measurement and the libjpeg-turbo decision), Lanczos
-resampling (§2.4), RAW (§2.5), metadata (§2.6), GIF quantiser (§2.7), PSB/XCF/PPM codecs, ICO/ICNS sets, raster
-PS/EPS writer, ODD picture writer, X3F via LibRaw. Converters for every image route in formats §6.2. Bench: all of
+resampling (§2.4), RAW (§2.5), metadata (§2.6), GIF quantiser (§2.7), PSB/XCF/PPM codecs, ICO/ICNS sets, X3F via
+LibRaw (raster PS/EPS pages are VectorKit's `PSWriter`, the ODD picture writer is OfficeKit's `ODFWriter`; both take an
+`ImageAsset`). Converters for every image route in formats §6.2. Bench: all of
 quality §2.8.
 
 **WP-V — VectorKit, XPSKit, VectorizeKit** (fable). `Sources/{VectorKit,XPSKit,VectorizeKit}/**`. VectorDocument
@@ -384,10 +392,11 @@ outputs verified by the bench's checks).
 
 ## 12. Open questions (decided provisionally; revisit with evidence)
 
-1. **Public helpers repository.** GPL/AGPL helpers without official macOS builds (Ghostscript, DjVuLibre, LibreDWG,
-   sfArk tool, FFmpeg with GPL encoders) need a public `udsy19/super-converter-helpers` repository that builds them
-   from source and publishes binaries with their source (formats §2.9). Not created yet: it is a public repository and
-   needs the owner's go-ahead. Until then those helpers are detected from Homebrew and "Get…" explains the install.
+1. **No public helpers repository [D].** GPL/AGPL helpers without official macOS builds (Ghostscript, DjVuLibre, LibreDWG,
+   sfArk tool, FFmpeg with GPL encoders) are not built or published by us. They are detected from Homebrew
+   (`/opt/homebrew/bin`, `/usr/local/bin`) and the known install paths, or a path set in Settings › Helpers, and "Get…"
+   explains how to install them (formats §2.9). One-click install stays for upstream's own signed releases (LibreOffice,
+   calibre, Pandoc, Tectonic). A pair that needs one of these helpers shows its Get… notice until the helper is found.
 2. **ImageIO on macOS 14.** AVIF writing is confirmed on macOS 26.5 only; the app checks at run time and falls back to
    libavif. JPEG chroma subsampling at quality ≥ 90 decides libjpeg-turbo (quality §2.3). WP-I measures both on 14.
 3. **`sandbox-exec`** is deprecated; WP-H confirms it still enforces the no-network profile on 14 through 26.
