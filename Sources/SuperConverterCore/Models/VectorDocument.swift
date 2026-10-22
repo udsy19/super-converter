@@ -75,13 +75,23 @@ public enum VectorPaint: Hashable, Codable, Sendable {
     case rasterised(ImageAsset)
 }
 
+/// How a path's interior is decided where outlines overlap or nest.
+public enum FillRule: String, Hashable, Codable, Sendable { case nonZero, evenOdd }
+public enum LineCap: String, Hashable, Codable, Sendable { case butt, round, square }
+public enum LineJoin: String, Hashable, Codable, Sendable { case miter, round, bevel }
+
 public struct VectorStroke: Hashable, Codable, Sendable {
     public var paint: VectorPaint
     public var width: Double
     public var dash: [Double]
-    public var round: Bool
-    public init(paint: VectorPaint, width: Double, dash: [Double] = [], round: Bool = false) {
-        self.paint = paint; self.width = width; self.dash = dash; self.round = round
+    public var dashPhase: Double
+    public var cap: LineCap
+    public var join: LineJoin
+    public var miterLimit: Double
+    public init(paint: VectorPaint, width: Double, dash: [Double] = [], dashPhase: Double = 0, cap: LineCap = .butt,
+                join: LineJoin = .miter, miterLimit: Double = 10) {
+        self.paint = paint; self.width = width; self.dash = dash; self.dashPhase = dashPhase
+        self.cap = cap; self.join = join; self.miterLimit = miterLimit
     }
 }
 
@@ -99,8 +109,10 @@ public struct VectorTextRun: Hashable, Codable, Sendable {
 }
 
 public indirect enum VectorNode: Hashable, Codable, Sendable {
-    case path([PathSegment], fill: VectorPaint?, stroke: VectorStroke?)
+    case path([PathSegment], fill: VectorPaint?, stroke: VectorStroke?, rule: FillRule = .nonZero)
     case text(VectorTextRun)
+    /// A picture drawn into the unit square (bottom-left (0,0), top-right (1,1), y up) mapped by `transform`: the PDF
+    /// image convention.
     case image(ImageAsset, transform: VectorTransform)
     /// A group with a transform, an optional clip path and an opacity.
     case group([VectorNode], transform: VectorTransform, clip: [PathSegment]?, opacity: Double)
