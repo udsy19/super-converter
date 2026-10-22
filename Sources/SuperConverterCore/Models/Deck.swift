@@ -40,7 +40,10 @@ public struct SlideShape: Hashable, Codable, Sendable {
         case vector([VectorNode])
     }
 
+    /// Points, origin at the slide's top left, y down (as PowerPoint places shapes; unlike `LayoutDocument`'s y-up page boxes).
+    /// A `.vector` shape's nodes are in points relative to the top left of this box.
     public var box: LayoutBox
+    /// Degrees clockwise.
     public var rotation: Double
     public var content: Content
     public init(box: LayoutBox, rotation: Double = 0, content: Content) {
