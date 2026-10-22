@@ -1,0 +1,62 @@
+name: Bundled executables
+
+# Builds ffmpeg, ffprobe (LGPL-only) and 7zz as universal binaries, checks their licence and linkage, runs the smoke
+# conversions on both slices, and (manual run with publish=true) publishes them as a PRERELEASE of this repository.
+# After publishing, commit the updated Tools.lock (release tag + SHA-256 pins) that the job prints.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a tools-<date> prerelease (binaries + complete LGPL source)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - Tools.lock
+      - THIRD_PARTY_NOTICES.md
+      - scripts/build-ffmpeg.sh
+      - scripts/build-7zz.sh
+      - scripts/tools.sh
+      - scripts/tools-common.sh
+      - scripts/make-archive-fixtures.py
+      - .github/workflows/tools.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build prerequisites
+        run: brew install cmake pkg-config autoconf automake libtool
+      - name: Rosetta (runs the x86_64 slices)
+        run: softwareupdate --install-rosetta --agree-to-license || true
+      - name: Notices match Tools.lock and the pinned sources
+        run: scripts/tools.sh notices check
+      - name: Build FFmpeg (LGPL)
+        run: scripts/build-ffmpeg.sh build
+      - name: Build 7-Zip
+        run: scripts/build-7zz.sh build
+      - name: Check licence, slices and linkage
+        run: scripts/tools.sh check
+      - name: Smoke tests, both slices
+        run: scripts/tools.sh smoke
+      - name: Package
+        run: scripts/tools.sh package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tools
+          path: |
+            dist/tools-macos-universal.zip
+            dist/tools-sources.tar.gz
+      - name: Publish prerelease
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/tools.sh release
+          echo "Commit this Tools.lock:" && grep -E '^(release|asset)' Tools.lock
