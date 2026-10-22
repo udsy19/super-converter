@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — converting</title><link rel="stylesheet" href="shared.css"></head>
+<body><script src="shared.js"></script><script src="files.js"></script>
+<script>
+const { I, T, card } = SC, F = FILES;
+const cards = [
+  { ...F.heic, state: "done", meta: "1.9 MB · was 4.2 MB" },
+  { ...F.docx, state: "done", meta: "312 KB · 12 pages" },
+  { ...F.mov, state: "progress", progress: 62, meta: "62 % · about 40 s left" },
+  { ...F.pptx, state: "progress", progress: 35, meta: "Slide 7 of 18 · about 20 s left" },
+  { ...F.mobi, state: "helper", meta: "Waiting for calibre" },
+  { ...F.md, state: "queued", meta: "Waiting…" },
+  { ...F.wav, state: "queued", meta: "Waiting…" },
+  { ...F.ttf, state: "queued", meta: "Waiting…" },
+].map(card).join("");
+SC.render({
+  subtitle: "Converting 2 of 8",
+  tools: SC.defaultTools(),
+  content: `<div class="grid">${cards}</div>
+  <div class="actionbar">
+    <div class="summary"><b>Converting… 2 of 8 done</b><span>About 1 minute left · the video takes longest</span></div>
+    <div style="width:300px;height:6px;border-radius:3px;background:var(--control-hover);overflow:hidden;margin-left:18px"><div style="width:34%;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--img),var(--doc),var(--vid),var(--sld))"></div></div>
+    <span class="spacer"></span>
+    <span class="secondary">${I.stop}Stop</span>
+  </div>`
+});
+</script></body></html>

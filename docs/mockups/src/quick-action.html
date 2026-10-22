@@ -1,0 +1,52 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — Finder Quick Action</title><link rel="stylesheet" href="shared.css">
+<style>
+.finder { position: absolute; left: 90px; top: 70px; width: 980px; height: 620px; border-radius: 12px; background: #FFFFFF; box-shadow: var(--shadow-window); overflow: hidden; display: flex; }
+.side { width: 190px; background: rgba(236,238,244,.9); padding: 46px 10px 10px; font-size: 13px; }
+.side .h { font-size: 11px; font-weight: 600; color: #9A9EAA; margin: 10px 8px 4px; }
+.side .it { padding: 4px 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; color: #16171C; }
+.side .it.on { background: rgba(0,0,0,.08); }
+.side .it i { width: 14px; height: 14px; border-radius: 3px; background: #0A7AFF; opacity: .75; display: block; }
+.fmain { flex: 1; display: flex; flex-direction: column; }
+.ftool { height: 52px; display: flex; align-items: center; padding: 0 16px; gap: 10px; border-bottom: 0.5px solid rgba(0,0,0,.08); font-weight: 700; font-size: 13px; }
+.files { padding: 24px 28px; display: grid; grid-template-columns: repeat(5, 130px); gap: 26px 22px; }
+.fi { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; text-align: center; color: #16171C; }
+.fi .ic { width: 110px; height: 90px; display: flex; align-items: center; justify-content: center; }
+.fi.sel .ic { background: rgba(0,0,0,.07); border-radius: 8px; }
+.fi.sel span { background: #0A7AFF; color: #fff; border-radius: 4px; padding: 1px 5px; }
+.menu { position: absolute; background: rgba(246,247,250,.86); backdrop-filter: blur(30px) saturate(1.8); border-radius: 9px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.18), 0 12px 36px rgba(0,0,0,.22); padding: 5px; font-size: 13px; color: #16171C; z-index: 10; }
+.menu .mi { height: 22px; padding: 0 10px 0 22px; border-radius: 5px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.menu .mi.hi { background: #0A7AFF; color: #fff; }
+.menu .sep { height: 1px; background: rgba(0,0,0,.1); margin: 5px 10px; }
+.menu .mi .sub { margin-left: auto; padding-left: 24px; opacity: .6; }
+.menu .tags { display: flex; gap: 7px; padding: 4px 22px; }
+.menu .tags i { width: 12px; height: 12px; border-radius: 6px; display: block; }
+.appicon { width: 16px; height: 16px; border-radius: 4px; background: linear-gradient(135deg, var(--img), var(--doc) 50%, var(--ebk)); color: #fff; display: flex; align-items: center; justify-content: center; margin-left: -18px; }
+.appicon svg { width: 11px; height: 11px; }
+</style></head>
+<body><script src="shared.js"></script>
+<script>
+const { I, T } = SC;
+const sm = (svg, s) => `<div style="transform:scale(${s})">${svg}</div>`;
+const files = [["Beach at golden hour.heic", T.photo(0), 1], ["Sunset pier.heic", T.photo(3), 1], ["Lake morning.heic", T.photo(1), 1], ["Trip budget.xlsx", T.sheet()], ["Notes.md", T.page("doc", { title: 1 })],
+  ["Boarding pass.pdf", T.page("doc")], ["Drone flight.mov", T.video("4:02", 9)], ["Voice memo.m4a", T.audio()]];
+const grid = files.map(([n, t, s]) => `<div class="fi ${s ? "sel" : ""}"><div class="ic">${sm(t, .78)}</div><span>${n}</span></div>`).join("");
+SC.scene(`
+  <div class="finder"><div class="side" style="padding-top:16px"><div class="lights" style="margin:0 0 22px 6px"><i></i><i></i><i></i></div><div class="h">Favourites</div><div class="it"><i></i>AirDrop</div><div class="it"><i></i>Recents</div><div class="it"><i></i>Applications</div><div class="it"><i></i>Desktop</div><div class="it on"><i></i>Pictures</div><div class="it"><i></i>Documents</div><div class="it"><i></i>Downloads</div></div>
+    <div class="fmain"><div class="ftool">‹ › &nbsp; Holiday 2026</div><div class="files">${grid}</div></div></div>
+  <div class="menu" style="left:420px;top:228px;width:232px">
+    <div class="mi">Open</div><div class="mi">Open With<span class="sub">›</span></div><div class="sep"></div>
+    <div class="mi">Move to Trash</div><div class="sep"></div>
+    <div class="mi">Get Info</div><div class="mi">Rename 3 Items…</div><div class="mi">Compress 3 Items</div><div class="mi">Duplicate</div><div class="mi">Make Alias</div><div class="mi">Quick Look 3 Items</div><div class="sep"></div>
+    <div class="mi">Copy 3 Items</div><div class="mi">Share…</div><div class="sep"></div>
+    <div class="tags"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#FFD60A"></i><i style="background:#28C840"></i><i style="background:#0A7AFF"></i><i style="background:#BF5AF2"></i><i style="background:#98989D"></i></div><div class="mi">Tags…</div><div class="sep"></div>
+    <div class="mi hi">Quick Actions<span class="sub" style="opacity:1">›</span></div>
+  </div>
+  <div class="menu" style="left:648px;top:508px;width:286px">
+    <div class="mi hi"><span class="appicon">${I.logo}</span>Convert with Super Converter…</div>
+    <div class="mi"><span class="appicon" style="background:var(--img)">${I.logo}</span>Convert to JPG</div>
+    <div class="mi"><span class="appicon" style="background:var(--doc)">${I.logo}</span>Convert to PDF</div>
+    <div class="sep"></div>
+    <div class="mi">Rotate Left</div><div class="mi">Create PDF</div><div class="mi">Markup</div><div class="sep"></div>
+    <div class="mi">Customise…</div>
+  </div>`);
+</script></body></html>

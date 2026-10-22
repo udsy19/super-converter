@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — JPG options</title><link rel="stylesheet" href="shared.css"></head>
+<body><script src="shared.js"></script><script src="files.js"></script>
+<script>
+const { I, card } = SC, F = FILES;
+const cards = [{ ...F.heic, selected: true, optsOn: true }, { ...F.raw, selected: true }, F.docx, F.mov, F.wav, F.xlsx, F.pptx, F.svg].map(card).join("");
+SC.render({
+  subtitle: "8 files · 1.7 GB",
+  tools: SC.defaultTools(),
+  content: `<div class="grid">${cards}</div>
+  <div class="actionbar">
+    <span class="label">Set all to</span><span class="popup">Choose a format${I.updown}</span>
+    <span class="label" style="margin-left:10px">Save to</span><span class="popup">Next to the originals${I.updown}</span>
+    <span class="spacer"></span>
+    <span class="primary" style="background:linear-gradient(100deg,var(--img-deep) 0%,var(--doc-deep) 38%,var(--vid-deep) 70%,var(--aud-deep) 100%);color:#fff">Convert 8 files${I.right}</span>
+  </div>`,
+  after: `<div class="sheet c-img" style="left:340px;top:112px;width:600px;padding:22px 26px 20px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="pill src c-img">HEIC</span>${SC.flow("img", "img")}<span class="pill dst c-img" style="padding-right:11px">JPG</span>
+      <div style="margin-left:6px"><div style="font:700 17px/22px var(--rounded)">JPG options</div><div class="hint">Beach at golden hour.heic and 1 more photo</div></div>
+    </div>
+    <div style="margin-top:14px;border-top:0.5px solid var(--hair);padding-top:8px">
+      <div class="frow"><div class="k">Quality</div>
+        <div><div style="display:flex;align-items:center;gap:12px"><div class="slider" style="flex:1"><div class="track"><i style="width:88%"></i></div><div class="knob" style="left:calc(88% - 10px)"></div></div><span style="font:700 13px var(--rounded);width:24px;text-align:right">90</span></div>
+        <div style="display:flex;justify-content:space-between;margin:3px 36px 0 0" class="hint"><span>Smaller file</span><span>Best quality</span></div>
+        <div style="margin-top:6px;font-size:12px;color:var(--text)"><b style="font-weight:600">About 2.1 MB each</b> <span class="hint">— looks the same as the original</span></div></div></div>
+      <div class="frow"><div class="k">Size</div><div><span class="seg"><span class="on">Original</span><span>Half</span><span>Quarter</span><span>Custom…</span></span> <span class="hint" style="margin-left:8px">4032 × 3024</span></div></div>
+      <div class="frow"><div class="k">Colours</div><div><span class="popup">Keep the photo’s colours (Display P3)${I.updown}</span></div></div>
+      <div class="frow"><div class="k">Photo details</div><div><span class="seg"><span class="on">Keep all</span><span>Remove location</span><span>Remove all</span></span></div></div>
+      <div class="frow" style="padding-top:12px"><div class="k"></div><div class="disclosure">${I.down.replace('viewBox', 'style="transform:rotate(-90deg)" viewBox')}More options<span class="hint" style="margin-left:6px">progressive, colour detail, background, resizing</span></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:0.5px solid var(--hair)">
+      <span class="check off"></span><span style="font-size:12.5px">Use these settings for every JPG</span>
+      <span style="flex:1"></span><span class="btn">Cancel</span><span class="btn default">Done</span>
+    </div>
+  </div>`
+});
+</script></body></html>

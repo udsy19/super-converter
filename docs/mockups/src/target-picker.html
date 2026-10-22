@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — choosing a format</title><link rel="stylesheet" href="shared.css"></head>
+<body><script src="shared.js"></script><script src="files.js"></script>
+<script>
+const { I, card } = SC, F = FILES;
+const cards = [{ ...F.heic, selected: true, dst: "JPG" }, F.docx, F.mov, F.wav, F.xlsx, F.pptx, F.epub, F.svg].map(card).join("");
+const big = [["JPG", "Any app", 1], ["HEIC", "Smallest"], ["PNG", "No loss"], ["WEBP", "For the web"], ["PDF", "Document", 0, "doc"]]
+  .map(([f, h, sel, c]) => `<div class="big-chip c-${c || "img"} ${sel ? "sel" : ""}"><b>${f}</b><span>${h}</span></div>`).join("");
+const img = ["AVIF", "BMP", "EPS", "GIF", "HEIC", "ICNS", "ICO", "JPG", "ODD", "PNG", "PS", "PSD", "TIFF", "WEBP"].map(f => `<span class="chip c-img ${f === "JPG" ? "sel" : ""}">${f}</span>`).join("");
+SC.render({
+  subtitle: "8 files · 1.7 GB",
+  tools: SC.defaultTools(),
+  content: `<div class="grid">${cards}</div>
+  <div class="actionbar">
+    <span class="label">Set all to</span><span class="popup">Choose a format${I.updown}</span>
+    <span class="label" style="margin-left:10px">Save to</span><span class="popup">Next to the originals${I.updown}</span>
+    <span class="spacer"></span>
+    <span class="primary" style="background:linear-gradient(100deg,var(--img-deep) 0%,var(--doc-deep) 38%,var(--vid-deep) 70%,var(--aud-deep) 100%);color:#fff">Convert 8 files${I.right}</span>
+  </div>`,
+  after: `<div class="popover" style="left:216px;top:376px;width:452px;padding:14px 16px 12px">
+    <div class="tip" style="left:88px;top:-8px"></div>
+    <div class="search">${I.search}<span>Search 16 formats for HEIC</span></div>
+    <div class="sec-head c-img"><i></i>Best for photos</div>
+    <div style="display:flex;gap:7px">${big}</div>
+    <div class="sec-head c-img"><i></i>Images</div>
+    <div class="chips">${img}</div>
+    <div style="display:flex;gap:28px">
+      <div><div class="sec-head c-doc"><i></i>Documents</div><div class="chips"><span class="chip c-doc">PDF</span><span class="hint" style="align-self:center">one page per photo</span></div></div>
+      <div><div class="sec-head c-vec"><i></i>Vector</div><div class="chips"><span class="chip c-vec">SVG</span><span class="hint" style="align-self:center">traced into shapes</span></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:10px;border-top:0.5px solid var(--hair)">
+      <span class="check">${I.check}</span><span style="font-size:12px">Use JPG for HEIC files from now on</span>
+      <span class="spacer" style="flex:1"></span><span class="kbd">↩</span><span class="hint">choose</span><span class="kbd">esc</span><span class="hint">close</span>
+    </div>
+  </div>`
+});
+</script></body></html>

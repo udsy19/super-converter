@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — Settings, Helpers</title><link rel="stylesheet" href="shared.css">
+<style>
+.tabs { display: flex; gap: 4px; justify-content: center; padding: 6px 0 10px; border-bottom: 0.5px solid var(--hair); background: var(--window); }
+.tab { width: 84px; padding: 6px 0; border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--text-2); }
+.tab svg { width: 22px; height: 22px; }
+.tab.on { background: var(--control); color: var(--accent); }
+.hrow { display: grid; grid-template-columns: 40px 1fr 150px; align-items: center; gap: 14px; padding: 9px 20px; border-bottom: 0.5px solid var(--hair); }
+.hicon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font: 800 13px var(--rounded); color: #fff; }
+.hname { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.hname .st { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 9px; }
+.st.ok { background: rgba(31,168,85,.14); color: #157A3D; }
+html.dark .st.ok { color: #6FD69A; }
+.unlocks { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.unlocks .pill { height: 18px; font-size: 9.5px; padding: 0 6px; }
+.hmeta { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+.hact { justify-self: end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.inst { height: 28px; padding: 0 14px; border-radius: 14px; background: var(--text); color: var(--window); font: 600 12.5px/28px var(--rounded); display: inline-flex; align-items: center; gap: 6px; }
+.inst svg { width: 12px; height: 12px; }
+</style></head>
+<body><script src="shared.js"></script>
+<script>
+const { I } = SC;
+const pills = (list) => list.map(([c, f]) => `<span class="pill src c-${c}">${f}</span>`).join("");
+const rows = [
+  { n: "LibreOffice", c: "doc", g: "LO", st: "Installed", meta: "Version 25.8 · 1.0 GB · Mozilla Public License 2.0", u: [["doc", "Original layout"], ["doc", "WPD"], ["doc", "LWP"], ["sht", "XLS out"], ["sld", "PPT"], ["sld", "ODP"], ["img", "PUB"], ["vec", "CDR"], ["vec", "VSD"]], act: `<span class="secondary" style="height:28px;font-size:12px">Remove</span>` },
+  { n: "Pages, Numbers and Keynote", c: "sld", g: "", st: "Pages and Keynote found", meta: "Free from Apple · opens briefly to export, with your permission", u: [["doc", "PAGES"], ["sht", "NUMBERS"], ["sld", "KEY"]], act: `<span class="secondary" style="height:28px;font-size:12px">Get Numbers…</span>`, icon: "linear-gradient(135deg,#FF9F0A,#0A84FF)" },
+  { n: "calibre", c: "ebk", g: "Ca", meta: "Free · 160 MB download · GNU GPL 3", u: [["ebk", "MOBI"], ["ebk", "AZW3"], ["ebk", "AZW"], ["ebk", "LIT"], ["ebk", "LRF"], ["ebk", "PDB"], ["ebk", "+6"]], act: `<span class="inst">${I.dl}Install</span>` },
+  { n: "Pandoc", c: "doc", g: "Pd", meta: "Free · 35 MB · GNU GPL 2", u: [["doc", "RST"], ["doc", "TEX → DOCX"]], act: `<div style="width:140px"><div class="hint" style="text-align:right;margin-bottom:5px">Installing… 64 %</div><div style="height:5px;border-radius:3px;background:var(--control-hover);overflow:hidden"><div style="width:64%;height:100%;background:var(--doc)"></div></div></div>` },
+  { n: "Tectonic", c: "doc", g: "TeX", meta: "Free · 25 MB + 120 MB of LaTeX packages · MIT", u: [["doc", "TEX → PDF"]], act: `<span class="inst">${I.dl}Install</span>` },
+  { n: "Ghostscript", c: "img", g: "Gs", meta: "Free · 25 MB · GNU AGPL 3", u: [["img", "EPS"], ["img", "PS"], ["vec", "Old AI"]], act: `<span class="inst">${I.dl}Install</span>` },
+  { n: "ODA File Converter", c: "cad", g: "ODA", meta: "Free from the Open Design Alliance · their licence", u: [["cad", "DWG"]], act: `<span class="secondary" style="height:28px;font-size:12px">Get…</span>` },
+];
+const list = rows.map(r => `<div class="hrow c-${r.c}"><div class="hicon" style="background:${r.icon || "var(--fill)"};color:var(--on)">${r.g}</div>
+  <div><div class="hname">${r.n}${r.st ? `<span class="st ok">${r.st}</span>` : ""}</div><div class="unlocks">${pills(r.u)}</div><div class="hmeta">${r.meta}</div></div>
+  <div class="hact">${r.act}</div></div>`).join("");
+const tab = (n, svg, on) => `<div class="tab ${on ? "on" : ""}">${svg}${n}</div>`;
+SC.render({
+  window: { x: 230, y: 24, w: 820, h: 772 },
+  title: "Helpers",
+  tools: "",
+  content: `<div class="tabs">${tab("General", I.gear)}${tab("Formats", I.grid)}${tab("Helpers", I.dl, 1)}${tab("Quick Actions", I.logo)}${tab("About", I.eye)}</div>
+    <div style="padding:12px 20px 10px;font-size:13px;line-height:18px;color:var(--text-2)">Super Converter converts most files by itself. These free helpers add the rest. They install into your Library folder or Applications, never run on their own, and can be removed any time.</div>
+    <div style="margin:0 12px;background:var(--card);border-radius:12px;border:0.5px solid var(--hair);overflow:hidden">${list}</div>
+    <div class="hint" style="padding:12px 24px">Further down: DjVuLibre, LibreDWG, FFmpeg GPL encoders, RAR and sfArk.</div>`
+});
+</script></body></html>

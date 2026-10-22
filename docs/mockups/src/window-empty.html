@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — empty</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="empty.css"></head>
+<body><script src="shared.js"></script>
+<script>
+const { I, T } = SC;
+const minis = [["img", "JPG", T.photo(2), -22, -150], ["doc", "PDF", T.page("doc", { title: 1 }), -11, -76], ["vid", "MP4", T.video("0:42", 3), 0, 0], ["aud", "MP3", T.audio(), 11, 76], ["ebk", "EPUB", T.book(), 22, 150]];
+const fan = minis.map(([c, f, art, r, dx]) => `<div class="mini c-${c}" style="transform:translateX(${dx}px) rotate(${r}deg)"><div class="art"><div style="transform:scale(.56)">${art}</div></div><span class="pill src">${f}</span></div>`).join("");
+const pairs = [["img", "HEIC", "img", "JPG"], ["vid", "MOV", "vid", "MP4"], ["doc", "DOCX", "doc", "PDF"], ["doc", "PDF", "doc", "WORD"], ["img", "WEBP", "img", "PNG"], ["aud", "WAV", "aud", "MP3"], ["ebk", "EPUB", "doc", "PDF"], ["fnt", "TTF", "fnt", "WOFF2"]];
+const pop = pairs.map(([a, x, b, y]) => `<span class="pair"><b class="c-${a}">${x}</b>${SC.flow(a, b)}<b class="c-${b}">${y}</b></span>`).join("");
+SC.render({
+  subtitle: "",
+  tools: SC.defaultTools(),
+  content: `<div class="dropzone">
+    <div class="fan">${fan}</div>
+    <h1 class="drop-title">Drop files to convert</h1>
+    <p class="drop-sub">Photos, videos, documents, e-books, fonts and archives — 212 formats.<br>Everything happens on this Mac.</p>
+    <span class="choose">${I.plus}Choose Files…</span>
+    <div class="popular"><span class="label">Popular</span>${pop}</div>
+    <div class="tips">Also: drop files on <b>Super Converter in the menu bar</b>, or right-click files in Finder › <b>Quick Actions › Convert with Super Converter</b></div>
+  </div>`
+});
+</script></body></html>

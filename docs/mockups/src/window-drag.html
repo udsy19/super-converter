@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — dragging files in</title><link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="empty.css"></head>
+<body><script src="shared.js"></script>
+<script>
+const { I, T } = SC;
+const minis = [["img", "JPG", T.photo(2), -30, -190], ["doc", "PDF", T.page("doc", { title: 1 }), -15, -98], ["vid", "MP4", T.video("0:42", 3), 0, 0], ["aud", "MP3", T.audio(), 15, 98], ["ebk", "EPUB", T.book(), 30, 190]];
+const fan = minis.map(([c, f, art, r, dx]) => `<div class="mini c-${c}" style="transform:translateX(${dx}px) translateY(-8px) rotate(${r}deg)"><div class="art"><div style="transform:scale(.56)">${art}</div></div><span class="pill src">${f}</span></div>`).join("");
+SC.render({
+  tools: SC.defaultTools(),
+  content: `<div class="dropzone hot">
+    <div class="fan" style="z-index:1">${fan}</div>
+    <h1 class="drop-title" style="z-index:1">Drop 3 files to add them</h1>
+    <p class="drop-sub" style="z-index:1">2 photos and a video. You’ll pick what each becomes next.</p>
+  </div>`,
+  after: `<div class="dragged" style="left:880px;top:610px">
+      <div class="ghost c-vid" style="left:16px;top:-10px;transform:rotate(6deg)">${T.video("2:14", 5).replace('width="132" height="76"', 'width="104" height="60"')}</div>
+      <div class="ghost c-img" style="left:8px;top:-4px;transform:rotate(-4deg)">${T.photo(3).replace('width="128" height="92"', 'width="104" height="76"')}</div>
+      <div class="ghost c-img" style="left:0;top:0">${T.photo(0).replace('width="128" height="92"', 'width="104" height="76"')}</div>
+      <div class="count" style="left:96px;top:-14px">3</div>
+    </div>
+    <svg class="cursor" style="left:926px;top:650px" viewBox="0 0 22 30"><path d="M2 2 L2 24 L8 18.5 L12 27.5 L15.5 26 L11.6 17.2 L19.5 17.2Z" fill="#000" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="18" cy="24" r="6.5" fill="#28C840" stroke="#fff" stroke-width="1.4"/><path d="M18 21 V27 M15 24 H21" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>`
+});
+</script></body></html>

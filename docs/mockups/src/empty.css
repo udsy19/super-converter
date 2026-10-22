@@ -1,0 +1,23 @@
+/* empty window and drag-over (ux §5.1, §5.2) */
+.dropzone { position: absolute; inset: 18px; border-radius: 22px; border: 2px dashed var(--hair-strong); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.fan { position: relative; width: 420px; height: 150px; margin-bottom: 26px; }
+.fan .mini { position: absolute; left: 50%; top: 10px; width: 92px; height: 118px; margin-left: -46px; border-radius: 16px; background: var(--card); box-shadow: 0 10px 28px rgba(16,18,40,.14), 0 0 0 0.5px var(--hair); padding: 7px; display: flex; flex-direction: column; align-items: center; transform-origin: 50% 140%; }
+.fan .mini .art { width: 78px; height: 74px; border-radius: 10px; background: var(--tint); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.fan .mini .pill { margin-top: 8px; }
+.drop-title { font: 800 30px/36px var(--rounded); letter-spacing: -0.3px; margin: 0; }
+.drop-sub { font-size: 15px; line-height: 21px; color: var(--text-2); margin: 8px 0 22px; max-width: 640px; }
+.choose { height: 40px; padding: 0 22px; border-radius: 20px; display: inline-flex; align-items: center; gap: 8px; background: var(--text); color: var(--window); font: 700 15px/1 var(--rounded); box-shadow: 0 6px 16px rgba(16,18,40,.2); }
+.choose svg { width: 15px; height: 15px; }
+.popular { margin-top: 30px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 640px; }
+.popular .label { margin-right: 4px; }
+.pair { height: 28px; padding: 0 11px; border-radius: 14px; display: inline-flex; align-items: center; gap: 7px; font: 700 11.5px/1 var(--rounded); letter-spacing: .3px; background: var(--card); box-shadow: 0 1px 2px rgba(16,18,40,.06), inset 0 0 0 0.5px var(--hair); }
+.pair b { font-weight: 700; color: var(--ink); }
+.tips { position: absolute; bottom: 22px; left: 0; right: 0; font-size: 12px; color: var(--text-3); text-align: center; }
+.tips b { color: var(--text-2); font-weight: 600; }
+/* drag over */
+.dropzone.hot { border: 0; background: linear-gradient(var(--window), var(--window)) padding-box, linear-gradient(120deg, var(--img), var(--doc), var(--vid), var(--aud), var(--ebk)) border-box; border: 3px solid transparent; }
+.dropzone.hot::before { content: ""; position: absolute; inset: 0; border-radius: 19px; background: radial-gradient(600px 300px at 50% 40%, rgba(61,108,242,.10), transparent 70%); }
+.dragged { position: absolute; z-index: 30; }
+.dragged .ghost { position: absolute; width: 112px; height: 84px; border-radius: 10px; overflow: hidden; box-shadow: 0 16px 36px rgba(16,18,40,.3); opacity: .92; display: flex; align-items: center; justify-content: center; background: var(--tint); }
+.dragged .count { position: absolute; width: 26px; height: 26px; border-radius: 13px; background: var(--bad); color: #fff; font: 700 13px/26px var(--sans); text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+.cursor { position: absolute; width: 22px; height: 30px; z-index: 31; }

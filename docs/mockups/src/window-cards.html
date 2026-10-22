@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — files ready</title><link rel="stylesheet" href="shared.css"></head>
+<body><script src="shared.js"></script><script src="files.js"></script>
+<script>
+const { I, card } = SC, F = FILES;
+const cards = [F.heic, F.docx, { ...F.mov, selected: true, remove: true }, F.wav, F.xlsx, F.pptx, F.epub, F.svg].map(card).join("");
+SC.render({
+  subtitle: "8 files · 1.7 GB",
+  tools: SC.defaultTools(),
+  content: `<div class="grid">${cards}</div>
+  <div class="actionbar">
+    <span class="label">Set all to</span><span class="popup">Choose a format${I.updown}</span>
+    <span class="label" style="margin-left:10px">Save to</span><span class="popup">${I.folder.replace('viewBox','style="width:13px;height:13px" viewBox')}Next to the originals${I.updown}</span>
+    <span class="spacer"></span>
+    <span class="primary" style="background:linear-gradient(100deg,var(--img-deep) 0%,var(--doc-deep) 38%,var(--vid-deep) 70%,var(--aud-deep) 100%);color:#fff">Convert 8 files${I.right}</span>
+  </div>`
+});
+</script></body></html>

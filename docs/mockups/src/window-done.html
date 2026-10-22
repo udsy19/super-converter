@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Super Converter — done</title><link rel="stylesheet" href="shared.css"></head>
+<body><script src="shared.js"></script><script src="files.js"></script>
+<script>
+const { I, T, card } = SC, F = FILES;
+const cards = [
+  { ...F.heic, state: "done", meta: "1.9 MB · was 4.2 MB", name: "Beach at golden hour.jpg" },
+  { ...F.docx, state: "done", meta: "312 KB · 12 pages", name: "Quarterly report.pdf" },
+  { ...F.mov, state: "done", meta: "286 MB · was 1.4 GB", name: "Interview take 3.mp4" },
+  { ...F.pptx, state: "done", meta: "2.1 MB · 18 pages", name: "Pitch deck.pdf", thumb: SC.T.slide() },
+  { ...F.mobi, state: "done", meta: "1.4 MB · 31 chapters", name: "Middlemarch.epub" },
+  { ...F.md, state: "done", meta: "9 pages · LaTeX look", name: "Thesis notes.pdf", thumb: T.page("doc", { title: 1, math: 1, figure: 1 }) },
+  { name: "Signed contract.pdf", meta: "This PDF needs its password", cat: "doc", src: "PDF", dst: "DOCX", dstCat: "doc", thumb: T.page("doc", { title: 1 }), state: "failed" },
+  { ...F.wav, state: "done", meta: "61 MB · V0 · 41:20", name: "Podcast episode 12.mp3" },
+].map(card).join("");
+SC.render({
+  subtitle: "7 of 8 converted",
+  tools: SC.defaultTools(),
+  content: `<div class="grid">${cards}</div>
+  <div class="actionbar">
+    <span style="width:36px;height:36px;border-radius:18px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,168,85,.35)">${I.check.replace('viewBox','style="width:18px;height:18px" viewBox')}</span>
+    <div class="summary"><b>Done. 7 of 8 files converted</b><span>1.7 GB → 356 MB, saved next to the originals · 1 needs a password</span></div>
+    <span class="spacer"></span>
+    <span class="secondary">${I.folder}Show in Finder</span>
+    <span class="secondary">${I.share}Share…</span>
+    <span class="primary" style="height:40px;font-size:14px;background:var(--text);color:var(--window)">${I.plus}Convert more</span>
+  </div>`
+});
+</script></body></html>
