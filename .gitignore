@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.build-*/
+build/
+dist/
+.signing/
+.swiftpm/
+/Vendor/
+/Tests/Corpus/external/
+node_modules/
+docs/mockups/.chrome-profile/
