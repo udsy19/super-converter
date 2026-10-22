@@ -196,9 +196,9 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
 - **Bundled executables** (`ffmpeg`, `ffprobe`, `7zz`) live in `Contents/Helpers/`, are code-signed with the app's
   identity and run through the same runner (no sandbox profile needed for network: they get no network arguments).
 - **Bundled libraries**: static xcframeworks for permissive C/C++ libraries; `libraw_r.dylib` in
-  `Contents/Frameworks/`. `scripts/build-vendor.sh <lib>` builds universal (arm64 + x86_64) artifacts with CMake/
+  `Contents/Frameworks/`. `scripts/build-vendor.sh build <lib>` builds universal (arm64 + x86_64) artifacts with CMake/
   autotools from pinned upstream source, `scripts/fetch-vendor.sh` downloads the published artifacts (this
-  repository's Releases, pinned by SHA-256 in `Package.swift` and `Vendor.lock`), as Super PDF does for QPDF.
+  repository's Releases, pinned by SHA-256 in `Vendor.lock`), as Super PDF does for QPDF.
 - **App**: not sandboxed (helpers, automation and `hdiutil` need it), Hardened Runtime, Developer ID signed and
   notarised by `scripts/release.sh` (copied from Super PDF; the signing identity never changes), DMG by
   `scripts/make-dmg.sh`, updates through UpdateKit. Entitlements: Apple Events (automation of Pages, Numbers,

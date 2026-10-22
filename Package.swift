@@ -1,4 +1,5 @@
 // swift-tools-version:5.10
+import Foundation
 import PackageDescription
 
 // Super Converter — every conversion on the Mac, 212 formats. The package is self-contained (no dependency on the sister
@@ -48,12 +49,31 @@ let engineEdges: [String: [String]] = [
     "OfficeKit": ["TypesetKit", "RenderKit"],
 ]
 
-// Vendor libraries (formats §3.3): static xcframeworks and C targets built by scripts/build-vendor.sh and fetched by
-// scripts/fetch-vendor.sh (WP0b adds the binary targets here, and the engines that link them below).
-let vendorTargets: [Target] = []
+// Vendor libraries (formats §3.3): static xcframeworks (LibRaw: one dynamic library) built by scripts/build-vendor.sh
+// and fetched by scripts/fetch-vendor.sh into the git-ignored Vendor/. A library that has not been fetched is left out
+// (with the engines' dependency on it), so the rest of the package still builds; an engine that imports a missing
+// module then fails with "no such module", and `scripts/fetch-vendor.sh` fixes it. Module names equal the framework names:
+// WebP (libwebp + mux/demux), AVIF (libavif + SVT-AV1 + dav1d), Archive (libarchive + xz, zstd, lz4), XLS (libxls),
+// WOFF2 (woff2 + Brotli, C shim), UnALZ (unalz, C shim), LibRaw (libraw_r.dylib, with the X3F tools).
+let vendorRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Vendor")
+func vendorIsFetched(_ name: String) -> Bool {
+    FileManager.default.fileExists(atPath: vendorRoot.appendingPathComponent("\(name).xcframework").path)
+}
+// Engine -> the vendor libraries it links (formats §3.3, "Used by").
+let engineVendorLibraries: [String: [String]] = [
+    "ImageKit": ["WebP", "AVIF", "LibRaw"],
+    "ArchiveKit": ["Archive", "UnALZ"],
+    "OfficeKit": ["XLS"],
+    "FontKit": ["WOFF2"],
+]
+let vendorTargets: [Target] = Set(engineVendorLibraries.values.joined()).sorted().filter(vendorIsFetched).map {
+    .binaryTarget(name: $0, path: "Vendor/\($0).xcframework")
+}
 
 // What each engine links besides the Core and the engines it may import.
-let engineDependencies: [String: [Target.Dependency]] = [:]
+let engineDependencies: [String: [Target.Dependency]] = engineVendorLibraries.mapValues {
+    $0.filter(vendorIsFetched).map { .target(name: $0) }
+}
 
 let package = Package(
     name: "SuperConverter",

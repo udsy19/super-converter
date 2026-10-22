@@ -1,0 +1,32 @@
+# Pins for the vendor libraries built by scripts/build-vendor.sh and fetched by scripts/fetch-vendor.sh. Same format as
+# Tools.lock, read by scripts/tools-common.sh.
+#
+#   source  <id> <version> <file> <sha256> <url>   upstream tarball; build-vendor.sh refuses anything else
+#   release <tag>                                  GitHub prerelease on udsy19/super-converter holding the assets
+#   asset   <name> <sha256>                        published asset and its checksum (written by `build-vendor.sh release`)
+#
+# Licences and the exact build recipe: THIRD_PARTY_NOTICES.md and scripts/build-vendor.sh. nasm and meson/ninja (build
+# tools) are pinned in Tools.lock / scripts/tools-common.sh.
+
+source libwebp     1.6.0   libwebp-1.6.0.tar.gz       e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564 https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz
+source libavif     1.4.2   libavif-1.4.2.tar.gz       2b645287340ba5a631d268b551dc2d72bd73ac33335962dd36dcdb6d8366921d https://github.com/AOMediaCodec/libavif/archive/refs/tags/v1.4.2.tar.gz
+source svtav1      4.2.0   svtav1-4.2.0.tar.gz        c7b13c4a84bd3751aa35fcc72be13e6875467e7c2216879251a486e5b1e4e740 https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v4.2.0/SVT-AV1-v4.2.0.tar.gz
+source dav1d       1.5.4   dav1d-1.5.4.tar.xz         686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5 https://downloads.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz
+source libarchive  3.8.10  libarchive-3.8.10.tar.xz   56cad765459d5ee25a3b761f90c47d99379d28297fbfb72d908880d6b875fb96 https://github.com/libarchive/libarchive/releases/download/v3.8.10/libarchive-3.8.10.tar.xz
+source xz          5.8.4   xz-5.8.4.tar.xz            4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.xz
+source zstd        1.5.7   zstd-1.5.7.tar.gz          eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3 https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+source lz4         1.10.0  lz4-1.10.0.tar.gz          537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz
+source libxls      1.6.4   libxls-1.6.4.tar.gz        064ee1da6cf3d481d8af4a936e0e0ce0190114e468fb7dfef5a81610746081e0 https://github.com/libxls/libxls/releases/download/v1.6.4/libxls-1.6.4.tar.gz
+source woff2       1.0.2   woff2-1.0.2.tar.gz         add272bb09e6384a4833ffca4896350fdb16e0ca22df68c0384773c67a175594 https://github.com/google/woff2/archive/refs/tags/v1.0.2.tar.gz
+source brotli      1.2.1   brotli-1.2.1.tar.gz        98d35d11a78dc453aebb7d10c3748f3f73ff78c8267c0dc697b8631f67bf7e8f https://github.com/google/brotli/archive/refs/tags/v1.2.1.tar.gz
+source unalz       0.65    unalz-0.65.tgz             4c26699eb7545072de2ef7de79b4fff1f01c4db09cebff2d8d50ec03d5d74db0 http://kippler.com/win/unalz/unalz-0.65.tgz
+source bzip2       1.0.8   bzip2-1.0.8.tar.gz         ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269 https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz
+source libraw      0.21.5  libraw-0.21.5.tar.gz       4b7f183a68f6e46e579e80ba32ab121687e75bd30a2e5566f34c36a6bcba1679 https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
+release vendor-20261022
+asset Archive.xcframework.zip 86d3c716448abf473a30119461bce2b665980b3dc807f697eeafe988eaa3ab99
+asset AVIF.xcframework.zip 1076919707c4022b01a6503f7909913ae09cfe184d8a61ac875df1c081881381
+asset LibRaw.xcframework.zip aeb10689f52108d4aedbc685ea474c5e1790a3bd8ffc55c9ac20dd21813bc012
+asset UnALZ.xcframework.zip 5f0b25c1d81de7e49b402fd4948a0bdd136dd0c69fb8111e93ba11b54770989a
+asset WebP.xcframework.zip aabb18834a33d1f0d5e0a177d399033d186970dc4a093cc59e1c765709ae8ebb
+asset WOFF2.xcframework.zip 8e2975195622a162fcbd014dec5fdd805a27772ea55077a99afb91a8a0d8014c
+asset XLS.xcframework.zip cb911cb6b7ded31d6e079868f72c758634cec29da2e0a55a4ceaa15d482dde5c

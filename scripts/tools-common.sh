@@ -76,3 +76,16 @@ lipo_binaries() {
     strip -x "$out"
     codesign --force --sign - "$out" >/dev/null 2>&1   # ad hoc; the app build re-signs with its identity
 }
+
+# Host-side build tools shared by both architectures: nasm (x86 assembly) and meson + ninja (dav1d, HarfBuzz, FriBidi).
+build_host_tools() {
+    local tools="$WORK/host" src="$WORK/host-src"
+    mkdir -p "$tools/bin"
+    log "nasm"
+    LOCK="$ROOT/Tools.lock" unpack_source nasm "$src"   # nasm is pinned in Tools.lock only
+    (cd "$SRC_DIR" && ./configure --prefix="$tools" >/dev/null && make -j "$(sysctl -n hw.ncpu)" >/dev/null && make install >/dev/null)
+    log "meson + ninja"
+    /usr/bin/python3 -m venv "$WORK/venv"
+    "$WORK/venv/bin/pip" install -q --disable-pip-version-check "meson==1.7.2" "ninja==1.11.1.4"
+    ln -sf "$WORK/venv/bin/meson" "$WORK/venv/bin/ninja" "$tools/bin/"
+}

@@ -25,19 +25,6 @@ source "$(dirname "$0")/tools-common.sh"
 FFMPEG_LIBS=(libvpx svtav1 dav1d opus libogg libvorbis libtheora lame opencore voamrwbenc libwebp soxr zimg
              freetype fribidi harfbuzz libass)
 
-# Host-side build tools shared by both architectures: nasm (x86 assembly) and meson + ninja (dav1d, HarfBuzz, FriBidi).
-build_host_tools() {
-    local tools="$WORK/host" src="$WORK/host-src"
-    mkdir -p "$tools/bin"
-    log "nasm"
-    unpack_source nasm "$src"
-    (cd "$SRC_DIR" && ./configure --prefix="$tools" >/dev/null && make -j "$(sysctl -n hw.ncpu)" >/dev/null && make install >/dev/null)
-    log "meson + ninja"
-    /usr/bin/python3 -m venv "$WORK/venv"
-    "$WORK/venv/bin/pip" install -q --disable-pip-version-check "meson==1.7.2" "ninja==1.11.1.4"
-    ln -sf "$WORK/venv/bin/meson" "$WORK/venv/bin/ninja" "$tools/bin/"
-}
-
 build_arch() { # arch
     local arch="$1" sdk jobs host_triple
     sdk="$(xcrun --sdk macosx --show-sdk-path)"

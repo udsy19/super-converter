@@ -1,0 +1,60 @@
+# Builds and smoke-tests the vendor libraries (scripts/build-vendor.sh). Run it by hand with "publish" to upload the
+# zips to a new GitHub PRERELEASE (vendor-<date>, never "latest") and commit the printed pins as Vendor.lock.
+name: Vendor libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload dist/ to a prerelease named vendor-<date> and print Vendor.lock
+        type: boolean
+        default: false
+  pull_request:
+    paths: [scripts/build-vendor.sh, scripts/fetch-vendor.sh, scripts/tools-common.sh, scripts/vendor/**, Vendor.lock, .github/workflows/vendor.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  licences:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: |
+          bash -n scripts/build-vendor.sh
+          bash -n scripts/fetch-vendor.sh
+      - name: Licence allow-list over every pinned source
+        run: scripts/build-vendor.sh licenses
+
+  build:
+    needs: licences
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          command -v cmake || brew install cmake
+          /usr/bin/pgrep -q oahd || softwareupdate --install-rosetta --agree-to-license
+          df -h /
+      - name: Build
+        run: scripts/build-vendor.sh build all
+      - name: Smoke test (arm64 + x86_64)
+        run: scripts/build-vendor.sh verify all
+      - name: Notices are current
+        run: scripts/build-vendor.sh notices check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vendor
+          path: |
+            dist/*.xcframework.zip
+            dist/*-source.tar.gz
+      - name: Publish
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/build-vendor.sh release
+          cat Vendor.lock
