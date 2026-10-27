@@ -12,15 +12,19 @@ extension Check {
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             guard size > 0 else { throw CheckFailure("\(url.lastPathComponent) is empty") }
             guard let found = try? Services.sniffer.sniff(url).format else { throw CheckFailure("the sniffer cannot identify \(url.lastPathComponent)") }
-            guard FormatCatalog.isSameFormat(found, format) else { throw CheckFailure("the output sniffs as \(found.pill)") }
+            // A container format the sniffer cannot tell from a plain ZIP (OEB) is accepted by its extension.
+            let claimed = (try? Services.sniffer.sniff(url).claimed) ?? nil
+            guard FormatCatalog.isSameFormat(found, format) || (found == "zip" && claimed.map { FormatCatalog.isSameFormat($0, format) } == true) else {
+                throw CheckFailure("the output sniffs as \(found.pill)")
+            }
             return [.info("output bytes", Double(size), unit: "B")]
         }
     }
 
-    /// The first output, read as UTF-8 text, contains every string (case-insensitive).
+    /// The first output, read as it is (markup included; a PDF through PDFKit), contains every string (case-insensitive).
     static func textContains(_ needles: [String]) -> Check {
         Check(name: "text contains \(needles.count) strings") { ctx in
-            let text = try textOf(ctx.output)
+            let text = try rawText(ctx.output)
             let missing = needles.filter { text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) == nil }
             if !missing.isEmpty { throw CheckFailure("missing: \(missing)") }
             return [.exact("missing strings", 0, equals: 0)]
@@ -81,6 +85,83 @@ extension Check {
         }
     }
 
+    /// The output and the source say the same thing once both are converted to `format` (CSV for spreadsheets: "values
+    /// round-trip as displayed", quality §4): the words of the two conversions agree in order.
+    static func equivalentAfter(converting format: FormatID, atLeast minimum: Double = 1.0) -> Check {
+        Check(name: "output and source agree as \(format.pill)") { ctx in
+            guard let output = ctx.output else { throw CheckFailure("no output") }
+            var texts: [[String]] = []
+            for (label, file) in [("source", ctx.source), ("output", output)] {
+                if label == "source", ctx.sourceFormat == format { texts.append(words(try textOf(file))); continue }
+                let run = await Pipeline.convert(file, to: format, into: ctx.work.appendingPathComponent("equivalent-\(label)", isDirectory: true))
+                guard case .converted(let result) = run.outcome, let converted = result.outputs.first else { throw CheckFailure("the \(label) did not convert to \(format.pill): \(run.outcome)") }
+                texts.append(words(try textOf(converted)))
+            }
+            guard !texts[0].isEmpty else { throw CheckFailure("the source converts to nothing") }
+            let kept = Double(longestCommonSubsequence(texts[0], texts[1])) / Double(max(texts[0].count, texts[1].count))
+            return [Measurement(name: "agreement", value: kept, limit: .atLeast(minimum))]
+        }
+    }
+
+    /// An EPUB's first ZIP entry is `mimetype`, stored uncompressed, holding `application/epub+zip` (the EPUB container rule).
+    static func epubMimetypeFirstAndStored() -> Check {
+        Check(name: "EPUB mimetype first and stored") { ctx in
+            guard let url = ctx.output, let head = try? FileHandle(forReadingFrom: url).read(upToCount: 64), head.count >= 58 else { throw CheckFailure("not a ZIP") }
+            let bytes = [UInt8](head)
+            let name = String(decoding: bytes[30..<38], as: UTF8.self), method = Int(bytes[8]) | Int(bytes[9]) << 8
+            let body = String(decoding: bytes[38..<58], as: UTF8.self)
+            guard bytes[0] == 0x50, bytes[1] == 0x4B else { throw CheckFailure("not a ZIP") }
+            guard name == "mimetype" else { throw CheckFailure("the first entry is \(name), not mimetype") }
+            guard method == 0 else { throw CheckFailure("mimetype is compressed (method \(method))") }
+            guard body == "application/epub+zip" else { throw CheckFailure("mimetype holds \(body)") }
+            return [.exact("mimetype ok", 1, equals: 1)]
+        }
+    }
+
+    /// Every picture of a comic archive appears byte for byte (same SHA-256) in the output package.
+    static func picturesPassThrough() -> Check {
+        Check(name: "pictures pass through untouched") { ctx in
+            func hashes(_ zip: URL) -> [String] {
+                let listing = Subprocess.run(URL(fileURLWithPath: "/usr/bin/unzip"), ["-Z1", zip.path]).standardOutput ?? ""
+                return listing.split(separator: "\n").map(String.init).filter { ["png", "jpg", "jpeg", "gif"].contains(($0 as NSString).pathExtension.lowercased()) }
+                    .map { Manifest.sha256(Subprocess.run(URL(fileURLWithPath: "/usr/bin/unzip"), ["-p", zip.path, $0]).data) }
+            }
+            guard let output = ctx.output else { throw CheckFailure("no output") }
+            let source = hashes(ctx.source), made = Set(hashes(output))
+            guard !source.isEmpty else { throw CheckFailure("the source has no pictures") }
+            return [Measurement(name: "pictures kept byte-exact", value: Double(source.filter(made.contains).count) / Double(source.count), limit: .within(1, tolerance: 0))]
+        }
+    }
+
+    /// Share of the source's words that survive in order in the output's text (document → document claims of quality §3.7 and
+    /// §3.6: "character error rate 0" for born-digital PDFs). `ignoring` drops words the target legitimately omits (link URLs).
+    static func wordRecall(atLeast minimum: Double, ignoring: Set<String> = []) -> Check {
+        Check(name: "words kept from the source") { ctx in
+            let original = words(try textOf(ctx.source)).filter { !ignoring.contains($0) }, kept = words(try textOf(ctx.output)).filter { !ignoring.contains($0) }
+            guard !original.isEmpty else { throw CheckFailure("the source has no text") }
+            return [Measurement(name: "word recall", value: Double(longestCommonSubsequence(original, kept)) / Double(original.count), limit: .atLeast(minimum))]
+        }
+    }
+
+    /// The first output picture has ink: the share of non-white pixels is at least `inkAtLeast`; its bounding box has
+    /// `aspect` (width / height) within `tolerance` when given — for plots zoomed to the drawing's extents.
+    static func pictureHasInk(inkAtLeast: Double = 0.001, aspect: Double? = nil, tolerance: Double = 0.05) -> Check {
+        Check(name: "picture has ink") { ctx in
+            guard let url = ctx.output, let raster = Raster(contentsOf: url) else { throw CheckFailure("the output picture cannot be decoded") }
+            ctx.attach("output", raster: raster, name: "output.png")
+            var minX = raster.width, maxX = -1, minY = raster.height, maxY = -1, ink = 0
+            for y in 0..<raster.height { for x in 0..<raster.width {
+                let i = (y * raster.width + x) * 3
+                if raster.rgb[i] < 200 || raster.rgb[i + 1] < 200 || raster.rgb[i + 2] < 200 { ink += 1; minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y) }
+            } }
+            var out = [Measurement(name: "ink coverage", value: Double(ink) / Double(raster.pixelCount), limit: .atLeast(inkAtLeast))]
+            if let aspect, maxX >= minX, maxY >= minY {
+                out.append(Measurement(name: "ink aspect", value: Double(maxX - minX + 1) / Double(maxY - minY + 1), limit: .within(aspect, tolerance: aspect * tolerance)))
+            }
+            return out
+        }
+    }
+
     /// The output picture against a reference picture: SSIM, ΔE00 (mean and p95) and PSNR, with a difference heat map in the report.
     static func imageMatches(reference: @escaping @MainActor (CaseContext) -> URL, ssimAtLeast: Double? = nil, meanDeltaEAtMost: Double? = nil,
                              p95DeltaEAtMost: Double? = nil, psnrAtLeast: Double? = nil) -> Check {
@@ -105,12 +186,18 @@ extension Check {
 
     // MARK: Text helpers
 
-    @MainActor
+    /// The file's own text: markup and all for text formats, extracted text for a PDF.
+    static func rawText(_ url: URL?) throws -> String {
+        guard let url else { throw CheckFailure("no file") }
+        if url.pathExtension.lowercased() == "pdf" { return try TextExtraction.text(of: url) }
+        guard let data = try? Data(contentsOf: url) else { throw CheckFailure("\(url.lastPathComponent) cannot be read") }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// What a reader would read: the file's text with markup removed.
     static func textOf(_ url: URL?) throws -> String {
         guard let url else { throw CheckFailure("no file") }
-        guard let data = try? Data(contentsOf: url) else { throw CheckFailure("\(url.lastPathComponent) cannot be read") }
-        if let doc = PDFDocument(data: data), url.pathExtension.lowercased() == "pdf" { return doc.string ?? "" }
-        return String(decoding: data, as: UTF8.self)
+        return try TextExtraction.text(of: url)
     }
 
     static func zipEntry(_ zip: URL, _ entry: String) throws -> String {

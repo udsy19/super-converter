@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 
 /// SSIM and MS-SSIM (Wang, Bovik, Sheikh and Simoncelli 2004; Wang, Simoncelli and Bovik 2003) on a luma plane, with the
@@ -31,27 +32,28 @@ enum SSIM {
         return raw.map { Double($0 / sum) }
     }()
 
-    /// Valid separable convolution with `kernel`.
+    /// Valid separable convolution with `kernel` (vDSP does the multiply-adds, so debug builds stay fast).
     private static func filter(_ plane: Plane) -> Plane {
         let n = windowSize, w = plane.width, h = plane.height
         let ow = w - n + 1, oh = h - n + 1
+        // Rows: (h x w) -> (h x ow).
         var horizontal = [Double](repeating: 0, count: ow * h)
-        for y in 0..<h {
-            let row = y * w
-            for x in 0..<ow {
-                var s: Double = 0
-                for k in 0..<n { s += kernel[k] * plane.values[row + x + k] }
-                horizontal[y * ow + x] = s
+        plane.values.withUnsafeBufferPointer { input in
+            horizontal.withUnsafeMutableBufferPointer { output in
+                for y in 0..<h { vDSP_convD(input.baseAddress! + y * w, 1, kernel, 1, output.baseAddress! + y * ow, 1, vDSP_Length(ow), vDSP_Length(n)) }
+            }
+        }
+        // Columns: transpose (h x ow) -> (ow x h), filter rows -> (ow x oh), transpose back to (oh x ow).
+        var transposed = [Double](repeating: 0, count: ow * h)
+        vDSP_mtransD(horizontal, 1, &transposed, 1, vDSP_Length(ow), vDSP_Length(h))
+        var columns = [Double](repeating: 0, count: ow * oh)
+        transposed.withUnsafeBufferPointer { input in
+            columns.withUnsafeMutableBufferPointer { output in
+                for x in 0..<ow { vDSP_convD(input.baseAddress! + x * h, 1, kernel, 1, output.baseAddress! + x * oh, 1, vDSP_Length(oh), vDSP_Length(n)) }
             }
         }
         var out = [Double](repeating: 0, count: ow * oh)
-        for y in 0..<oh {
-            for x in 0..<ow {
-                var s: Double = 0
-                for k in 0..<n { s += kernel[k] * horizontal[(y + k) * ow + x] }
-                out[y * ow + x] = s
-            }
-        }
+        vDSP_mtransD(columns, 1, &out, 1, vDSP_Length(oh), vDSP_Length(ow))
         return Plane(width: ow, height: oh, values: out)
     }
 
@@ -60,9 +62,9 @@ enum SSIM {
         guard x.width == y.width, x.height == y.height, x.width >= windowSize, x.height >= windowSize else { return nil }
         let c1 = (k1 * range) * (k1 * range), c2 = (k2 * range) * (k2 * range)
         let mx = filter(x), my = filter(y)
-        let xx = filter(Plane(width: x.width, height: x.height, values: x.values.map { $0 * $0 }))
-        let yy = filter(Plane(width: y.width, height: y.height, values: y.values.map { $0 * $0 }))
-        let xy = filter(Plane(width: x.width, height: x.height, values: zip(x.values, y.values).map { $0 * $1 }))
+        let xx = filter(Plane(width: x.width, height: x.height, values: vDSP.multiply(x.values, x.values)))
+        let yy = filter(Plane(width: y.width, height: y.height, values: vDSP.multiply(y.values, y.values)))
+        let xy = filter(Plane(width: x.width, height: x.height, values: vDSP.multiply(x.values, y.values)))
         var map = [Double](repeating: 0, count: mx.values.count)
         var total = 0.0, totalCS = 0.0
         for i in 0..<map.count {

@@ -12,7 +12,7 @@ enum MetricValidation {
 
     static func runAll() -> [Outcome] {
         [deltaE2000Sharma(), colorSyncLab(), colorSyncDeltaE(), gaussianWindow(), ssimConstants(), ssimIdentity(), ssimDetectsChange(), msSSIMConstants(),
-         psnr(), thdQuantisation(), thdHarmonic(), loudnessParser(), loudnessEBUTestTone(), sha256Vectors(), manifestRoundTrip()]
+         psnr(), thdQuantisation(), thdHarmonic(), loudnessParser(), loudnessEBUTestTone(), sha256Vectors(), manifestRoundTrip(), regressionBand()]
     }
 
     private static func near(_ a: Double, _ b: Double, _ tolerance: Double) -> Bool { abs(a - b) <= tolerance }
@@ -268,5 +268,24 @@ enum MetricValidation {
             let changed = Manifest.digest(after) != digest && Manifest.differences(before, after) == ["changed a.txt"]
             return Outcome(name: "manifest records files, empty folders, links; digest and diff see changes", passed: shapeOK && changed, detail: "\(before.count) entries")
         } catch { return Outcome(name: "manifest", passed: false, detail: "\(error)") }
+    }
+
+    // MARK: Regression memory
+
+    /// A drop inside the noise band passes, a drop beyond it is flagged, an improvement ratchets the accepted value up.
+    static func regressionBand() -> Outcome {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("qbench-memory-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var memory = RegressionMemory(url: url)
+        memory.ratchet("case", [.ssim("ssim", 0.990, atLeast: 0.98), .deltaE("deltaE", 0.50, atMost: 1.0)])
+        let inside = memory.regressions("case", [.ssim("ssim", 0.989, atLeast: 0.98), .deltaE("deltaE", 0.55, atMost: 1.0)])
+        let beyond = memory.regressions("case", [.ssim("ssim", 0.986, atLeast: 0.98), .deltaE("deltaE", 0.70, atMost: 1.0)])
+        memory.ratchet("case", [.ssim("ssim", 0.995, atLeast: 0.98)])
+        let ratcheted = memory.regressions("case", [.ssim("ssim", 0.992, atLeast: 0.98)])
+        memory.save()
+        let reloaded = RegressionMemory(url: url).accepted("case")["ssim"]
+        let ok = inside.isEmpty && beyond.count == 2 && ratcheted.count == 1 && reloaded == 0.995
+        return Outcome(name: "regression memory: inside the noise band passes, beyond it fails, improvements ratchet", passed: ok,
+                       detail: "inside \(inside.count), beyond \(beyond.count), after ratchet \(ratcheted.count)")
     }
 }

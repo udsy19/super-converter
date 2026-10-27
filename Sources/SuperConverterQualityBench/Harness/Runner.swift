@@ -63,7 +63,9 @@ struct Runner {
         let out = work.appendingPathComponent("out", isDirectory: true)
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
-        let run = await Pipeline.convert(fixture, to: c.target, options: c.options, look: c.look, into: out, timeout: c.timeout)
+        let run: Pipeline.Run
+        if let route = c.route { run = await Pipeline.convertSteps(fixture, steps: route, target: c.target, options: c.options, into: out) }
+        else { run = await Pipeline.convert(fixture, to: c.target, options: c.options, look: c.look, into: out, timeout: c.timeout) }
         let converted: ConversionResult
         switch run.outcome {
         case .skipped(let why): return result(.skipped, why)
@@ -79,6 +81,10 @@ struct Runner {
         var problems: [String] = []
         for check in c.checks {
             do { measurements += try await check.run(context) } catch { problems.append("\(check.name): \(error)") }
+        }
+        // A blessed golden's thresholds replace the code's (reviewed in the PR that changed them).
+        if let thresholds = RegressionMemory.golden(c.id)?.thresholds {
+            measurements = measurements.map { var m = $0; if let limit = thresholds[m.name], m.limit != nil { m.limit = limit }; return m }
         }
         for m in measurements where !m.passes { problems.append("\(m.name) = \(Measurement.format(m.value)) \(m.unit), needs \(m.limit?.text ?? "")") }
 

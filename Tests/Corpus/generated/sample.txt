@@ -1,0 +1,5 @@
+Super Converter sample
+
+A plain text file with two paragraphs.
+
+Second paragraph: café, naïve, Zürich.

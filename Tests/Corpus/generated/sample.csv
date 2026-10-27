@@ -1,0 +1,5 @@
+Name,Quantity,Price,Note
+Widget,12,3.50,"Quoted, with comma"
+Gadget,7,12.25,plain
+Gizmo,150,0.99,"multi
+line"

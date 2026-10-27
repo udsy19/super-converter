@@ -14,7 +14,7 @@ enum Category: String, Codable, CaseIterable {
 }
 
 /// How a measured number must compare to pass.
-enum Limit: Codable, Equatable {
+enum Limit: Equatable {
     case atLeast(Double)
     case atMost(Double)
     /// Within `tolerance` of `target`.
@@ -33,6 +33,27 @@ enum Limit: Codable, Equatable {
         case .atLeast(let x): "≥ \(Measurement.format(x))"
         case .atMost(let x): "≤ \(Measurement.format(x))"
         case .within(let t, let tol): "\(Measurement.format(t)) ± \(Measurement.format(tol))"
+        }
+    }
+}
+
+extension Limit: Codable {
+    /// `{"atLeast": 0.98}`, `{"atMost": 1.0}`, `{"target": 100, "tolerance": 5}` — what `Tests/Golden/<case>/metrics.json` holds.
+    private enum Keys: String, CodingKey { case atLeast, atMost, target, tolerance }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        if let x = try c.decodeIfPresent(Double.self, forKey: .atLeast) { self = .atLeast(x) }
+        else if let x = try c.decodeIfPresent(Double.self, forKey: .atMost) { self = .atMost(x) }
+        else { self = .within(try c.decode(Double.self, forKey: .target), tolerance: try c.decode(Double.self, forKey: .tolerance)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        switch self {
+        case .atLeast(let x): try c.encode(x, forKey: .atLeast)
+        case .atMost(let x): try c.encode(x, forKey: .atMost)
+        case .within(let t, let tol): try c.encode(t, forKey: .target); try c.encode(tol, forKey: .tolerance)
         }
     }
 }
@@ -127,6 +148,10 @@ struct BenchCase {
     /// The input, relative to `Tests/Corpus/` (generated fixtures live in `generated/`, downloaded ones in `external/`).
     var fixture: String
     var target: FormatID
+    /// Run these steps straight through the registered converters instead of asking the planner — for an engine whose full
+    /// route needs a sibling that is not built yet, or to measure one engine on its own. The last step must end in a file
+    /// or an `ImageAsset` (written as PNGs). `target` still names the format of the result.
+    var route: [Step]?
     var options = OptionValues()
     var look: DocumentLook?
     var checks: [Check]

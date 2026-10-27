@@ -1,0 +1,12 @@
+# External corpus for the quality bench (quality §9), read by scripts/fetch-corpus.sh. Every entry is pinned by SHA-256 and
+# comes only from a source whose licence permits redistribution for testing. Downloads land in Tests/Corpus/external/ (git-ignored).
+#
+#   <id>   <path under external/>   <sha256>   <url>   <licence>   [extract]
+#
+# `extract` unpacks a .tar.gz next to the file. To add a source: `scripts/fetch-corpus.sh --pin <url>` prints the line (with the
+# hash of what it downloaded) for review; commit it here. Planned sources, to be pinned as the kits that need them land:
+# raw.pixls.us (CC0, RAW files), Xiph media test collection (CC/public-domain clips), Google Fonts (OFL), LibreOffice public test
+# documents (MPL-2.0), Wikimedia Commons public-domain images.
+w3c-svg11        svg/W3C_SVG_11_TestSuite.tar.gz  b5f46cca1ad79b670f9179770b2366c57efd5c671d084144090feab4b7ff1030  https://www.w3.org/Graphics/SVG/Test/20110816/archives/W3C_SVG_11_TestSuite.tar.gz  W3C-Software-and-Document  extract
+idpf-childrens   epub/childrens-literature.epub   191d14d07bcaefde647e494256f73d789f265c8edc46c404320641b23c86b76a  https://github.com/IDPF/epub3-samples/releases/download/20230704/childrens-literature.epub  CC-BY-SA-3.0
+idpf-wasteland   epub/wasteland.epub              1653b9fbe225b89a008f980744d6b89940504a4533b9036821f9d99daf8f6c9c  https://github.com/IDPF/epub3-samples/releases/download/20230704/wasteland.epub  CC-BY-SA-3.0
