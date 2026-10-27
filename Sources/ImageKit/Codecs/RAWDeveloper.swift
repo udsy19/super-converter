@@ -33,15 +33,16 @@ enum RAWDeveloper {
         guard let filter = CIRAWFilter(imageURL: url) else {
             throw ConversionError.failed("This camera’s RAW files can’t be read on this Mac.")
         }
-        filter.boostAmount = settings.neutralLook ? 0 : 1
-        if filter.isLensCorrectionSupported { filter.isLensCorrectionEnabled = settings.lensCorrection }
-        filter.exposure = Float(settings.exposure)
+        // Only what differs from Apple's defaults is set: each property set re-derives the filter's processing.
+        if settings.neutralLook { filter.boostAmount = 0 }
+        if !settings.lensCorrection, filter.isLensCorrectionSupported { filter.isLensCorrectionEnabled = false }
+        if settings.exposure != 0 { filter.exposure = Float(settings.exposure) }
         if case .kelvin(let k) = settings.whiteBalance { filter.neutralTemperature = Float(k) }
         if !settings.noiseReductionAuto {
             if filter.isLuminanceNoiseReductionSupported { filter.luminanceNoiseReductionAmount = 0 }
             if filter.isColorNoiseReductionSupported { filter.colorNoiseReductionAmount = 0 }
         }
-        guard let image = filter.outputImage else { throw ConversionError.damaged(format) }
+        guard let image = filter.outputImage, !image.extent.isInfinite, !image.extent.isEmpty else { throw ConversionError.damaged(format) }
         let space = developmentSpace(settings: settings, target: target)
         let context = CIContext(options: [.workingFormat: CIFormat.RGBAf, .cacheIntermediates: false])
         guard let cg = context.createCGImage(image, from: image.extent.integral, format: .RGBA16, colorSpace: space.cg),

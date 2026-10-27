@@ -5,10 +5,16 @@ import SuperConverterCore
 
 /// ImageIO reading (formats §3.1): one `ImageAsset` per file. A single-frame source stays a reference to the file itself
 /// (`.file(source)`, decoded when needed), so an untouched picture reaches its encoder bit for bit (quality §2.1); the
-/// frames of animations, multi-page TIFFs and icon sets are copied out losslessly into the work folder.
+/// frames of animations, multi-page TIFFs and icon sets are copied out losslessly into the work folder. Photoshop files
+/// go through `PSDCodec` first: ImageIO returns the colours of semi-transparent PSD pixels premultiplied.
 enum ImageIODecoder {
     static func decode(_ url: URL, format: FormatID, settings: ImageSettings, workFolder: URL,
                        isCancelled: () -> Bool = { false }) throws -> ImageAsset {
+        if format == "psd", let data = try? Data(contentsOf: url, options: .mappedIfSafe), let psd = try? PSDCodec.decode(data) {
+            let frame = try FrameIO.frame(from: psd.raster, depth: psd.raster.sourceDepth, folder: workFolder)
+            let metadata = CGImageSourceCreateWithURL(url as CFURL, nil).map { Metadata.capture($0, index: 0) } ?? ImageMetadata(xmp: psd.xmp)
+            return ImageAsset(frames: [frame], metadata: metadata)
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(source) > 0, CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             if let asset = try PNMDecoder.decodeIfNetpbm(url, workFolder: workFolder) { return asset }

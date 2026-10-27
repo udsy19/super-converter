@@ -1,10 +1,12 @@
 import Foundation
 import SuperConverterCore
 
-/// Photoshop files (Adobe's published "Photoshop File Formats Specification"): reading the composite of PSD and PSB
-/// ("big", version 2: 8-byte section lengths, 4-byte RLE counts) for `ImageCodecs`, and writing PSD (quality §2.3: one
-/// flattened layer, 8 or 16-bit, ICC). ImageIO's own PSD writer stores semi-transparent colours premultiplied and reads
-/// them back as straight, so ImageKit writes PSD itself.
+/// Photoshop files (Adobe's published "Photoshop File Formats Specification"), PSD and PSB ("big", version 2: 8-byte
+/// lengths, 4-byte RLE counts). Reading: a file whose one layer covers the canvas is read from that layer (straight
+/// colour, exact); otherwise from the composite, whose colours Photoshop mattes against white when the document is
+/// transparent, so they are un-matted. Writing (quality §2.3): one layer plus the composite, 8 or 16-bit, ICC.
+/// ImageIO's own PSD writer stores semi-transparent colours premultiplied and reads them back as straight, so ImageKit
+/// reads and writes PSD itself.
 enum PSDCodec {
     // MARK: Reading
 
@@ -28,6 +30,8 @@ enum PSDCodec {
     private struct Header {
         var version: Int, channels: Int, height: Int, width: Int, depth: Int, mode: Int
         var palette: [UInt8], icc: Data?, dpi: Double, xmp: Data?, layerCount: Int, imageDataOffset: Int
+        /// Channel id → the byte range of its data, when the file is one visible Normal layer covering the canvas.
+        var singleLayer: [Int: Range<Int>]?
     }
 
     /// The number of layers (0 for a flat file); nil when the file is not a Photoshop file.
@@ -67,43 +71,61 @@ enum PSDCodec {
         let layerSectionLength = version == 2 ? try r.u64() : try r.u32()
         let layerSectionEnd = r.i + layerSectionLength
         var layerCount = 0
+        var singleLayer: [Int: Range<Int>]?
         if layerSectionLength > 0, (version == 2 ? try r.u64() : try r.u32()) > 0 {
             layerCount = Int(Int16(truncatingIfNeeded: try r.u16()))
+            if abs(layerCount) == 1 {
+                // A malformed record only costs the shortcut: the composite is read instead.
+                singleLayer = try? { () throws -> [Int: Range<Int>]? in
+                    let top = try r.u32(), left = try r.u32(), bottom = try r.u32(), right = try r.u32()
+                    var lengths: [(Int, Int)] = []
+                    for _ in 0..<(try r.u16()) {
+                        let id = Int(Int16(truncatingIfNeeded: try r.u16()))
+                        lengths.append((id, version == 2 ? try r.u64() : try r.u32()))
+                    }
+                    try r.skip(4)
+                    let blend = String(decoding: try r.take(4), as: UTF8.self)
+                    let opacity = try r.u8(); _ = try r.u8()
+                    let flags = try r.u8(); _ = try r.u8()
+                    try r.skip(try r.u32())
+                    var offset = r.i, ranges: [Int: Range<Int>] = [:]
+                    for (id, length) in lengths { ranges[id] = offset..<(offset + length); offset += length }
+                    guard top == 0, left == 0, bottom == height, right == width, opacity == 255, blend == "norm", flags & 2 == 0,
+                          offset <= min(bytes.count, layerSectionEnd) else { return nil }
+                    return ranges
+                }()
+            }
         }
         return Header(version: version, channels: channels, height: height, width: width, depth: depth, mode: mode, palette: palette,
-                      icc: icc, dpi: dpi, xmp: xmp, layerCount: layerCount, imageDataOffset: layerSectionEnd)
+                      icc: icc, dpi: dpi, xmp: xmp, layerCount: layerCount, imageDataOffset: layerSectionEnd, singleLayer: singleLayer)
     }
 
     static func decode(_ data: Data) throws -> Decoded {
         let bytes = [UInt8](data)
         let h = try header(bytes)
         guard h.width > 0, h.height > 0, h.width * h.height < 1 << 31, [1, 8, 16, 32].contains(h.depth) else { throw ConversionError.damaged("psd") }
-        var r = Reader(bytes: bytes, i: h.imageDataOffset)
-        let compression = try r.u16()
         let bytesPerSample = h.depth == 1 ? 0 : h.depth / 8
         let rowBytes = h.depth == 1 ? (h.width + 7) / 8 : h.width * bytesPerSample
         let planeBytes = rowBytes * h.height
+        let colourPlanes = h.mode == 2 ? 1 : h.mode == 4 ? 4 : h.mode == 3 ? 3 : 1
         var planes: [[UInt8]] = []
-        switch compression {
-        case 0:
-            for _ in 0..<h.channels { planes.append(Array(try r.take(planeBytes))) }
-        case 1:
-            var counts: [Int] = []
-            for _ in 0..<(h.channels * h.height) { counts.append(h.version == 2 ? try r.u32() : try r.u16()) }
-            for c in 0..<h.channels {
-                var plane = [UInt8](); plane.reserveCapacity(planeBytes)
-                for y in 0..<h.height { plane += unpackBits(try r.take(counts[c * h.height + y]), expected: rowBytes) }
-                planes.append(plane)
+        var fromLayer = false
+        if let layer = h.singleLayer, h.mode != 2, (0..<colourPlanes).allSatisfy({ layer[$0] != nil }) {
+            // Colour channels 0…n−1, then the transparency channel (−1) where there is one.
+            let ids = Array(0..<colourPlanes) + (layer[-1] != nil ? [-1] : [])
+            if let read = try? ids.map({ id -> [UInt8] in
+                var c = Reader(bytes: bytes, i: layer[id]!.lowerBound)
+                return try readPlanes(&c, count: 1, compression: try c.u16(), version: h.version, rowBytes: rowBytes, height: h.height,
+                                      bytesPerSample: bytesPerSample)[0]
+            }) {
+                planes = read
+                fromLayer = true
             }
-        case 2, 3:
-            guard let all = Zlib.decompress(Data(bytes[r.i...]), expectedSize: planeBytes * h.channels) else { throw ConversionError.damaged("psd") }
-            for c in 0..<h.channels {
-                var plane = [UInt8](all[(c * planeBytes)..<((c + 1) * planeBytes)])
-                if compression == 3 { undoPrediction(&plane, rowBytes: rowBytes, height: h.height, bytesPerSample: bytesPerSample) }
-                planes.append(plane)
-            }
-        default:
-            throw ConversionError.damaged("psd")
+        }
+        if !fromLayer {
+            var r = Reader(bytes: bytes, i: h.imageDataOffset)
+            planes = try readPlanes(&r, count: h.channels, compression: try r.u16(), version: h.version, rowBytes: rowBytes, height: h.height,
+                                    bytesPerSample: bytesPerSample)
         }
 
         let profile = h.icc.flatMap { ColourSpace(icc: $0) }
@@ -116,8 +138,10 @@ enum PSDCodec {
         }
         let sourcePlanes = h.mode == 2 ? 1 : comps
         guard planes.count >= sourcePlanes, planes.allSatisfy({ $0.count >= planeBytes }) else { throw ConversionError.damaged("psd") }
-        // A negative layer count says the first extra channel is the merged transparency (other extra channels are masks).
-        let alpha = h.layerCount < 0 && planes.count > sourcePlanes
+        // A layer's transparency channel, or (composite) a negative layer count: the first extra channel is the merged
+        // transparency; other extra channels are masks.
+        let alpha = planes.count > sourcePlanes && (fromLayer || h.layerCount < 0)
+        let matted = alpha && !fromLayer
         let stride = comps + (alpha ? 1 : 0)
         let count = h.width * h.height
         var values = [Float](repeating: 0, count: count * stride)
@@ -140,12 +164,48 @@ enum PSDCodec {
                     values[i * stride + c] = h.mode == 4 ? 1 - v : v   // Photoshop stores CMYK as 1 − ink
                 }
             }
-            if alpha { values[i * stride + comps] = sample(planes[sourcePlanes], i) }
+            if alpha {
+                let a = sample(planes[sourcePlanes], i)
+                values[i * stride + comps] = a
+                if matted {   // white is no ink in CMYK and full value elsewhere
+                    for c in 0..<comps {
+                        let m = values[i * stride + c]
+                        values[i * stride + c] = a > 0 ? min(max(h.mode == 4 ? m / a : (m - (1 - a)) / a, 0), 1) : 0
+                    }
+                }
+            }
         }
         let depth = h.depth == 32 ? 32 : h.depth == 16 ? 16 : 8
         return Decoded(raster: Raster(width: h.width, height: h.height, space: space, hasAlpha: alpha, data: values, sourceDepth: depth,
                                       extended: depth == 32),
                        dpi: h.dpi, layerCount: abs(h.layerCount), xmp: h.xmp)
+    }
+
+    /// `count` planes of channel data with the given compression (0 raw, 1 RLE, 2 zip, 3 zip with prediction).
+    private static func readPlanes(_ r: inout Reader, count: Int, compression: Int, version: Int, rowBytes: Int, height: Int,
+                                   bytesPerSample: Int) throws -> [[UInt8]] {
+        let planeBytes = rowBytes * height
+        switch compression {
+        case 0:
+            return try (0..<count).map { _ in Array(try r.take(planeBytes)) }
+        case 1:
+            var counts: [Int] = []
+            for _ in 0..<(count * height) { counts.append(version == 2 ? try r.u32() : try r.u16()) }
+            return try (0..<count).map { c in
+                var plane = [UInt8](); plane.reserveCapacity(planeBytes)
+                for y in 0..<height { plane += unpackBits(try r.take(counts[c * height + y]), expected: rowBytes) }
+                return plane
+            }
+        case 2, 3:
+            guard let all = Zlib.decompress(Data(r.bytes[r.i...]), expectedSize: planeBytes * count) else { throw ConversionError.damaged("psd") }
+            return (0..<count).map { c in
+                var plane = [UInt8](all[(c * planeBytes)..<((c + 1) * planeBytes)])
+                if compression == 3 { undoPrediction(&plane, rowBytes: rowBytes, height: height, bytesPerSample: bytesPerSample) }
+                return plane
+            }
+        default:
+            throw ConversionError.damaged("psd")
+        }
     }
 
     static func unpackBits(_ packed: ArraySlice<UInt8>, expected: Int) -> [UInt8] {
@@ -188,17 +248,21 @@ enum PSDCodec {
 
     // MARK: Writing
 
-    /// A PSD of `raster` (values already quantised for `depth`, 8 or 16): one layer when there is alpha (so Photoshop
-    /// shows transparency) plus the composite with straight colours (what ImageIO, Preview and Quick Look read).
+    /// A PSD of `raster` (values already quantised for `depth`, 8 or 16): with alpha, one layer holding the straight
+    /// colours and transparency (what Photoshop edits) plus the composite matted against white (Photoshop's convention).
     static func encode(_ raster: Raster, depth: Int, dpi: Double, exif: Data?, xmp: Data?, layerName: String) -> Data {
         let comps = raster.space.components
         let mode = raster.space.model == .gray ? 1 : raster.space.model == .cmyk ? 4 : 3
         let channels = raster.stride
         let w = raster.width, h = raster.height, s = raster.stride
-        func plane(_ c: Int) -> [UInt8] {
+        func plane(_ c: Int, matted: Bool) -> [UInt8] {
             var out = [UInt8](repeating: 0, count: w * h * depth / 8)
             for i in 0..<(w * h) {
                 var v = min(max(raster.data[i * s + c], 0), 1)
+                if matted && c < comps {
+                    let a = min(max(raster.data[i * s + comps], 0), 1)
+                    v = v * a + (1 - a)
+                }
                 if mode == 4 && c < comps { v = 1 - v }
                 if depth == 8 { out[i] = UInt8(v * 255 + 0.5) } else {
                     let q = UInt16(v * 65535 + 0.5)
@@ -207,7 +271,8 @@ enum PSDCodec {
             }
             return out
         }
-        let planes = (0..<channels).map(plane)
+        let planes = (0..<channels).map { plane($0, matted: raster.hasAlpha) }
+        let layerPlanes = raster.hasAlpha ? (0..<channels).map { plane($0, matted: false) } : planes
         var out: [UInt8] = Array("8BPS".utf8) + be16(1) + [UInt8](repeating: 0, count: 6)
         out += be16(channels) + be32(h) + be32(w) + be16(depth) + be16(mode)
         out += be32(0)   // colour mode data
@@ -226,7 +291,7 @@ enum PSDCodec {
 
         if raster.hasAlpha {
             let ids = [-1] + Array(0..<comps)
-            let channelData = ids.map { id in channelBlock(planes[id < 0 ? comps : id], width: w, height: h, depth: depth) }
+            let channelData = ids.map { id in channelBlock(layerPlanes[id < 0 ? comps : id], width: w, height: h, depth: depth) }
             var record: [UInt8] = be32(0) + be32(0) + be32(h) + be32(w) + be16(ids.count)
             for (id, data) in zip(ids, channelData) { record += be16(id & 0xFFFF) + be32(data.count) }
             record += Array("8BIMnorm".utf8) + [255, 0, 0, 0]   // opacity, clipping, flags (visible), filler

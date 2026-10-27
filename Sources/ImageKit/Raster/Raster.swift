@@ -32,6 +32,8 @@ struct Raster: @unchecked Sendable {
         if let imageSpace = image.colorSpace, imageSpace.model == .indexed, let base = imageSpace.baseColorSpace {
             guard let expanded = Raster.expandIndexed(image, base: base) else { return nil }
             source = expanded
+        } else if image.pixelFormatInfo != .packed, let unpacked = Raster.unpack(image) {
+            source = unpacked   // 10-bit packed pixels (HEIC, AVIF) are beyond vImage's layouts
         }
         let alpha: Bool = {
             switch source.alphaInfo {
@@ -68,6 +70,19 @@ struct Raster: @unchecked Sendable {
         let isFloat = source.bitmapInfo.contains(.floatComponents)
         self.init(width: w, height: h, space: space, hasAlpha: alpha, data: data,
                   sourceDepth: isFloat ? 32 : (source.bitsPerComponent > 8 ? 16 : 8), extended: extended || isFloat)
+    }
+
+    /// 16 bits per component drawn in the image's own colour space (no colour conversion: the spaces are equal).
+    private static func unpack(_ image: CGImage) -> CGImage? {
+        guard let space = image.colorSpace, space.model == .rgb || space.model == .monochrome else { return nil }
+        let alpha = ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+        let info = (alpha ? CGImageAlphaInfo.premultipliedLast : space.model == .rgb ? .noneSkipLast : .none).rawValue
+            | CGBitmapInfo.byteOrder16Little.rawValue
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 16, bytesPerRow: 0,
+                                      space: space, bitmapInfo: info) else { return nil }
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
     }
 
     private static func expandIndexed(_ image: CGImage, base: CGColorSpace) -> CGImage? {

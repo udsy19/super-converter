@@ -3,8 +3,9 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Own writers where ImageIO falls short (checked on macOS 26.5): BMP (ImageIO drops the ICC profile; BMP v5 can embed
-/// it, quality §2.2), ICO (ImageIO writes one image per file) and ICNS (ImageIO's writer drops 64 and 1024 px and the
+/// Own writers where ImageIO falls short (checked on macOS 26.5): BMP (ImageIO cannot write a v5 header's alpha masks
+/// and colour space; it also cannot read a BMP with an embedded profile, so ImageKit converts BMP pixels to sRGB and
+/// declares LCS_sRGB), ICO (ImageIO writes one image per file) and ICNS (ImageIO's writer drops 64 and 1024 px and the
 /// @2x entries).
 enum BitmapWriters {
     /// PNG bytes for one image, with `icc` embedded byte for byte.
@@ -21,25 +22,20 @@ enum BitmapWriters {
     private static func le32(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24 & 0xFF)] }
     private static func be32(_ v: Int) -> [UInt8] { [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
 
-    /// BMP with a BITMAPV5HEADER: 24-bit, or 32-bit BGRA with bit-field masks when there is alpha; the ICC profile is
-    /// embedded (sRGB is declared as LCS_sRGB, which every reader understands).
-    static func bmp(rgba: [UInt8], width: Int, height: Int, alpha: Bool, icc: Data, dpi: Double) -> Data {
+    /// BMP with a BITMAPV5HEADER declaring sRGB: 24-bit, or 32-bit BGRA with bit-field masks when there is alpha.
+    static func bmp(rgba: [UInt8], width: Int, height: Int, alpha: Bool, dpi: Double) -> Data {
         let bpp = alpha ? 32 : 24
         let rowBytes = ((width * bpp / 8) + 3) & ~3
         let pixelBytes = rowBytes * height
-        let isSRGB = icc == ColourSpace.sRGB.icc
         let headerSize = 124
-        let pixelOffset = 14 + headerSize
-        let fileSize = pixelOffset + pixelBytes + (isSRGB ? 0 : icc.count)
-        var out: [UInt8] = Array("BM".utf8) + le32(fileSize) + le32(0) + le32(pixelOffset)
+        var out: [UInt8] = Array("BM".utf8) + le32(14 + headerSize + pixelBytes) + le32(0) + le32(14 + headerSize)
         let ppm = Int((dpi / 0.0254).rounded())
         out += le32(headerSize) + le32(width) + le32(height) + le16(1) + le16(bpp)
         out += le32(alpha ? 3 : 0) + le32(pixelBytes) + le32(ppm) + le32(ppm) + le32(0) + le32(0)
         out += alpha ? le32(0x00FF_0000) + le32(0x0000_FF00) + le32(0x0000_00FF) + le32(Int(0xFF00_0000)) : le32(0) + le32(0) + le32(0) + le32(0)
-        out += isSRGB ? Array("BGRs".utf8) : Array("DEBM".utf8)   // 'sRGB' / 'MBED' as little-endian DWORDs
-        out += [UInt8](repeating: 0, count: 36 + 12)              // endpoints and gamma (unused with a profile)
-        out += le32(2)                                            // LCS_GM_GRAPHICS: relative colorimetric
-        out += le32(isSRGB ? 0 : headerSize + pixelBytes) + le32(isSRGB ? 0 : icc.count) + le32(0)
+        out += Array("BGRs".utf8)                      // LCS_sRGB as a little-endian DWORD
+        out += [UInt8](repeating: 0, count: 36 + 12)   // endpoints and gamma (unused for sRGB)
+        out += le32(2) + le32(0) + le32(0) + le32(0)   // LCS_GM_GRAPHICS (relative colorimetric), no profile
         var pixels = [UInt8](repeating: 0, count: pixelBytes)
         for y in 0..<height {
             let row = (height - 1 - y) * rowBytes
@@ -49,9 +45,7 @@ enum BitmapWriters {
                 if alpha { pixels[d + 3] = rgba[s + 3] }
             }
         }
-        out += pixels
-        if !isSRGB { out += [UInt8](icc) }
-        return Data(out)
+        return Data(out + pixels)
     }
 
     /// ICO: 32-bit BGRA entries with an AND mask, the 256 px entry PNG-compressed (quality §2.3).

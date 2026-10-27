@@ -14,27 +14,36 @@ enum Resample {
 
     private static func lanczos3(_ x: Double) -> Double { abs(x) < 3 ? sinc(x) * sinc(x / 3) : 0 }
 
-    /// Lanczos-3 weights from `inSize` samples to `outSize` (kernel widened by the reduction factor when shrinking).
+    /// Lanczos-3 weights from `inSize` samples to `outSize` (kernel widened by the reduction factor when shrinking). Taps
+    /// beyond the edges mirror back without repeating the edge sample (reflect-101), so the kernel is never truncated and
+    /// a 1-px pattern keeps its average up to the border.
     private static func lanczosContributions(inSize: Int, outSize: Int) -> [Contribution] {
         let scale = Double(inSize) / Double(outSize)
         let filterScale = max(scale, 1)
         let support = 3 * filterScale
+        func reflect(_ i: Int) -> Int {
+            guard inSize > 1 else { return 0 }
+            var j = i
+            let period = 2 * (inSize - 1)
+            j = ((j % period) + period) % period
+            return j < inSize ? j : period - j
+        }
         return (0..<outSize).map { o in
             let centre = (Double(o) + 0.5) * scale - 0.5
-            let lo = max(Int(floor(centre - support)) + 1, 0)
-            let hi = min(Int(ceil(centre + support)) - 1, inSize - 1)
-            var weights: [Double] = []
+            let lo = Int(floor(centre - support)) + 1, hi = Int(ceil(centre + support)) - 1
+            var taps: [(Int, Double)] = []
             var sum = 0.0
-            if lo <= hi {
-                for i in lo...hi {
-                    let w = lanczos3((Double(i) - centre) / filterScale)
-                    weights.append(w); sum += w
-                }
+            for i in lo...max(lo, hi) {
+                let w = lanczos3((Double(i) - centre) / filterScale)
+                guard w != 0 else { continue }
+                taps.append((reflect(i), w)); sum += w
             }
-            if sum == 0 || weights.isEmpty {
+            guard sum != 0, let first = taps.map(\.0).min(), let last = taps.map(\.0).max() else {
                 return Contribution(first: min(max(Int(centre.rounded()), 0), inSize - 1), weights: [1])
             }
-            return Contribution(first: lo, weights: weights.map { Float($0 / sum) })
+            var weights = [Float](repeating: 0, count: last - first + 1)
+            for (j, w) in taps { weights[j - first] += Float(w / sum) }
+            return Contribution(first: first, weights: weights)
         }
     }
 

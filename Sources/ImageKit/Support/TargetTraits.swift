@@ -49,7 +49,7 @@ struct TargetTraits: Sendable {
         case .jpeg: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, false, 8, true, true, false)
         case .png: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, true, 16, true, false, false)
         case .tiff: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, true, 32, true, true, true)
-        case .bmp: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, true, 8, false, false, false)
+        case .bmp: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (false, true, 8, false, false, false)
         case .gif: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (false, true, 8, false, false, true)
         case .heic: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, true, 16, true, false, false)
         case .psd: (holdsICC, holdsAlpha, maxDepth, holdsGray, holdsCMYK, holdsSeveral) = (true, true, 16, true, true, false)

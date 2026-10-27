@@ -23,6 +23,7 @@ struct ImageIOWriter {
 
     func write(_ asset: ImageAsset, to url: URL) throws {
         if copyUntouchedSource(asset, to: url) { return }
+        if try writeOwnJPEG(asset, to: url) { return }
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, typeIdentifier as CFString, asset.frames.count, nil) else {
             throw ConversionError.folderNotWritable(name: url.deletingLastPathComponent().lastPathComponent)
         }
@@ -65,6 +66,24 @@ struct ImageIOWriter {
             if let exact = PNGChunks.settingICC(png, icc: FrameIO.space(of: frame).icc) { png = exact }
             try png.write(to: url, options: .atomic)
         }
+    }
+
+    /// JPEG at quality ≥ 90 from 8-bit RGB goes through `JPEGEncoder` (4:4:4); HDR, gray and CMYK stay with ImageIO.
+    private func writeOwnJPEG(_ asset: ImageAsset, to url: URL) throws -> Bool {
+        let quality = settings.quality(for: .jpeg)
+        guard kind == .jpeg, quality >= 90, asset.frames.count == 1, let frame = asset.frames.first, frame.bitsPerComponent <= 8,
+              FrameIO.space(of: frame).model == .rgb else { return false }
+        if case .file(let file) = frame.pixels, TargetTraits(kind).carriesHDR, HDR.isHDR(file) { return false }
+        guard let raster = FrameIO.raster(frame) else { throw ConversionError.failed("The picture couldn’t be read.") }
+        var rgb = [UInt8](repeating: 0, count: raster.pixelCount * 3)
+        let s = raster.stride
+        for i in 0..<raster.pixelCount { for c in 0..<3 { rgb[i * 3 + c] = UInt8(min(max(raster.data[i * s + c], 0), 1) * 255 + 0.5) } }
+        let (properties, xmp) = Metadata.forWriting(asset.metadata, width: frame.width, height: frame.height, orientation: frame.orientation)
+        let data = JPEGEncoder.encode(rgb: rgb, width: raster.width, height: raster.height, quality: quality, progressive: settings.progressive,
+                                      icc: raster.space.icc, dpi: (properties[kCGImagePropertyDPIWidth] as? Double) ?? 72,
+                                      exif: Metadata.exifBlock(properties), xmp: xmp.flatMap { CGImageMetadataCreateXMPData($0, nil) as Data? })
+        try data.write(to: url, options: .atomic)
+        return true
     }
 
     /// The frame's pixels as Core Graphics sees them, labelled with the frame's own profile; for HDR (a source with a gain

@@ -112,7 +112,7 @@ struct ImageWriter {
     private func writeBMP(_ asset: ImageAsset, to url: URL) throws {
         let frame = asset.frames[0]
         try BitmapWriters.bmp(rgba: try rgba8(frame), width: frame.width, height: frame.height, alpha: frame.hasAlpha,
-                              icc: FrameIO.space(of: frame).icc, dpi: dpi(asset)).write(to: url, options: .atomic)
+                              dpi: dpi(asset)).write(to: url, options: .atomic)
     }
 
     private func writePSD(_ asset: ImageAsset, to url: URL) throws {
