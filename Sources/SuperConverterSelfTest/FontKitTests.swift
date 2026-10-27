@@ -459,7 +459,7 @@ func registerFontKitTests() {
             check(cubic.glyphs.map(\.advance) == model.glyphs.map(\.advance), "\(name): advances identical")
             guard let a = fkCTFont(url, size: 100), let b = fkCTFont(otf, size: 100) else { check(false, "\(name): Core Text loads original and OTF"); continue }
             let sample: [UniChar] = Array("Hamburgefonstiv, 0123 QRS&@gjy".utf16)
-            for size in [CGFloat(12), 24, 72] {
+            for size: CGFloat in [12, 24, 72] {
                 let origin = CGPoint(x: 4, y: 40)
                 let ra = fkRender(CTFontCreateCopyWithAttributes(a, size, nil, nil), sample, side: 640, origin: origin)
                 let rb = fkRender(CTFontCreateCopyWithAttributes(b, size, nil, nil), sample, side: 640, origin: origin)
@@ -469,8 +469,10 @@ func registerFontKitTests() {
             check(fkDeviation(model, quad, steps: 24, glyphLimit: 30) <= 1.0, "\(name): TTF → OTF → TTF stays within 1 unit")
             for format: FormatID in ["woff", "woff2", "eot"] {
                 guard let file = fkWrite(model, format, stem: "web-" + name, dir: dir), let (back, _) = fkRead(file, format, dir: dir) else { continue }
-                // Hinting is dropped (with a note), so compare what the model carries: outlines, names, advances and the cmap.
-                check(back.glyphs == model.glyphs && back.characterMap == model.characterMap, "\(name): \(format) round trip keeps outlines and cmap")
+                // Hinting is dropped (with a note) and composite glyphs are flattened with their offsets rounded to whole units.
+                check(back.glyphs.map(\.name) == model.glyphs.map(\.name) && back.glyphs.map(\.advance) == model.glyphs.map(\.advance)
+                      && back.characterMap == model.characterMap, "\(name): \(format) round trip keeps names, advances and cmap")
+                check(fkDeviation(model, back, steps: 4, glyphLimit: 400) <= 0.5 + 1e-9, "\(name): \(format) round trip keeps outlines (\(fkDeviation(model, back, steps: 4, glyphLimit: 400)))")
             }
         }
         if tested == 0 { print("  (no system TrueType fonts found; skipped)") }
