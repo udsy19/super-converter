@@ -8,7 +8,7 @@ import VectorKit
 /// becomes outlines).
 public enum XPSWriter {
     public static func write(_ document: VectorDocument, options: VectorWriteOptions) throws -> VectorWriteResult {
-        let doc = document.selecting(options.pages)
+        let doc = document   // ConverterSupport.writer has already applied the page selection
         guard !doc.pages.isEmpty else { throw ConversionError.failed("There are no pages to write.") }
         var notes: Set<LossNote> = []
         let package = XPSPackageBuilder()
