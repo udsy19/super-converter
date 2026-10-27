@@ -50,7 +50,11 @@ public enum VectorRenderer {
         case .group(let children, let t, let clip, let opacity):
             ctx.saveGState()
             ctx.concatenate(t.cg)
-            if let clip { ctx.addPath(clip.cgPath); ctx.clip() }
+            if let clip {
+                // An empty clip path clips everything away.
+                if clip.isEmpty { ctx.restoreGState(); return }
+                ctx.addPath(clip.cgPath); ctx.clip()
+            }
             let layered = opacity < 0.999
             if layered { ctx.setAlpha(CGFloat(max(0, opacity))); ctx.beginTransparencyLayer(auxiliaryInfo: nil) }
             for child in children { draw(child, in: ctx) }

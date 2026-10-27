@@ -7,7 +7,7 @@ import SuperConverterCore
 enum VectorConverters {
     static let all: [VectorConverter] = [
         ConverterSupport.reader(.vectorKit, from: ["pdf"]) { url in try PDFReader.read(url) },
-        ConverterSupport.reader(.svgReader, from: ["svg", "svgz"]) { url in try SVGReader.read(try ConverterSupport.readData(url)) },
+        ConverterSupport.reader(.svgReader, from: ["svg", "svgz"]) { url in try SVGReader.read(try ConverterSupport.readData(url), baseURL: url) },
         ConverterSupport.reader(.emfReader, from: ["emf"]) { url in try EMFReader.read(try ConverterSupport.readData(url)) },
         ConverterSupport.reader(.wmfReader, from: ["wmf"]) { url in try WMFReader.read(try ConverterSupport.readData(url)) },
         ConverterSupport.reader(.aiReader, from: ["ai"]) { url in try AIReader.read(url) },
