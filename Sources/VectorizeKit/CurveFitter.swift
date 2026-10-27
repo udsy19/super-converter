@@ -202,7 +202,7 @@ enum OutlineWriter {
                 if flat { d += "L" + pair(b.p3) } else { d += "C" + pair(b.p1) + " " + pair(b.p2) + " " + pair(b.p3) }
             }
         }
-        let tol = 0.35 + 0.4 * simplification
+        let tol = 0.6 + 0.4 * simplification
         func tangent(_ pts: [Pt], fromStart: Bool) -> Pt {
             if fromStart { for p in pts.dropFirst() where length(p - pts[0]) >= 2.5 { return unit(p - pts[0]) }; return unit(pts[pts.count - 1] - pts[0]) }
             let last = pts[pts.count - 1]
