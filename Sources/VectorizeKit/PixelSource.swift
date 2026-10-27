@@ -27,14 +27,14 @@ enum PixelSource {
         case .rgba8(let data, let bytesPerRow):
             guard bytesPerRow >= w * 4, data.count >= bytesPerRow * (h - 1) + w * 4 else { throw ConversionError.damaged("png") }
             var out = [UInt8](repeating: 0, count: w * h * 4)
-            data.withUnsafeBytes { raw in
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
                 for y in 0..<h { for x in 0..<(w * 4) { out[y * w * 4 + x] = raw[y * bytesPerRow + x] } }
             }
             return Raster(width: w, height: h, rgba: out)
         case .rgbaHalf(let data, let bytesPerRow):
             guard bytesPerRow >= w * 8, data.count >= bytesPerRow * (h - 1) + w * 8 else { throw ConversionError.damaged("png") }
             var out = [UInt8](repeating: 0, count: w * h * 4)
-            data.withUnsafeBytes { raw in
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
                 for y in 0..<h {
                     for x in 0..<(w * 4) {
                         let bits = raw.loadUnaligned(fromByteOffset: y * bytesPerRow + x * 2, as: UInt16.self)
