@@ -1,13 +1,10 @@
 import Foundation
 import SuperConverterCore
 
-// Markdown → `DocModel` (formats §3.2 `MarkdownReader`). The brief names swift-markdown; this is our own CommonMark + GFM
-// parser instead, for three reasons: the package build stays offline (Package.swift is Core's, and a new dependency needs
-// a network fetch and an exact pin), swift-markdown has no footnotes or math, and the reader needs `$…$` maths, pandoc
-// inline notes, GFM task lists and front matter anyway. It follows CommonMark 0.31 for blocks, emphasis (delimiter runs,
-// flanking rules), links, references, code and entities; GFM for tables, strikethrough and autolinks.
-// The block structure and the title/summary handling follow Super PDF's MarkdownImporter (commit 058469b) in spirit; the
-// code is new because that importer writes attributed text for PDF output, not a document model.
+// Markdown → `DocModel` (formats §3.2 `MarkdownReader`): an own CommonMark + GFM parser rather than swift-markdown, because the
+// package build then stays offline (a new dependency needs a network fetch and an exact pin in Package.swift), swift-markdown
+// has no footnotes or math, and the reader needs `$…$` maths, pandoc inline notes, GFM task lists and front matter anyway.
+// Super PDF's MarkdownImporter (commit 058469b) writes attributed text for PDF output, so nothing was copied from it.
 
 enum MarkdownReader {
     static func read(_ url: URL, options: DocReadOptions = DocReadOptions()) throws -> DocReadResult {

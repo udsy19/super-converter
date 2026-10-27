@@ -41,4 +41,4 @@ Task { @MainActor in
     }
     exit(status)
 }
-dispatchMain()
+RunLoop.main.run()   // WebKit (DocKit's web engines) needs the real main thread and its run loop

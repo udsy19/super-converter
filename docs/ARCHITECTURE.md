@@ -230,8 +230,8 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
 Apple frameworks: AppKit, SwiftUI (sheets, popovers, Settings), ImageIO, Core Image, Accelerate (vImage),
 ColorSync, Core Graphics, PDFKit, Core Text, WebKit, JavaScriptCore, AVFoundation, VideoToolbox, AudioToolbox,
 Vision, NaturalLanguage, QuickLookThumbnailing, UniformTypeIdentifiers, UserNotifications, Security, CryptoKit,
-Compression, os. SwiftPM packages (pinned exactly): `swift-markdown` (Apple, Apache-2.0). Vendor artifacts: formats
-§3.3. Licences in `THIRD_PARTY_NOTICES.md`, shown in Settings › About.
+Compression, os. SwiftPM packages: none (DocKit reads Markdown with its own CommonMark + GFM parser, so the build needs no
+network). Vendor artifacts: formats §3.3. Licences in `THIRD_PARTY_NOTICES.md`, shown in Settings › About.
 
 ## 11. Work packages
 
@@ -316,8 +316,8 @@ quotes, code, booktabs tables (with splitting and landscape), title block, conte
 "As written" look with Carlito/Caladea (§3.5), MathJax in JavaScriptCore → paths with `/ActualText` (§3.4), tagged
 PDF and bookmarks. Bench: LaTeX parity against Tectonic goldens and the typographic lint (quality §3.7).
 
-**WP-D — DocKit** (heavy). `Sources/DocKit/**`. DocModel readers: DOCX (own), ODT (own), Markdown (swift-markdown +
-math), HTML (WebKit DOM walk), plain text (encoding detection, prose/code), RTF/DOC (TextKit), AbiWord/ZABW, HWP 5
+**WP-D — DocKit** (heavy). `Sources/DocKit/**`. DocModel readers: DOCX (own), ODT (own), Markdown (own CommonMark + GFM
+parser, math, footnotes), HTML (own tolerant parser: no web process, nothing fetched), plain text (encoding detection, prose/code), RTF/DOC (TextKit), AbiWord/ZABW, HWP 5
 (OLE + records), HWPX and EML (from Super PDF), Pandoc JSON AST; writers: DOCX (from Super PDF), ODT, RTF/DOC
 (TextKit), HTML, Markdown flavours, RST, LaTeX, text; OMML/MathML ↔ TeX converters. Bench: round trips (quality
 §3.7).

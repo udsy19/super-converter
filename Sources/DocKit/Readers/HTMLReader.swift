@@ -101,7 +101,7 @@ enum HTMLReader {
                     inline.add(collapse(node.text, after: inline), RunFormat())
                     continue
                 }
-                if Self.skipped.contains(node.tag) && !(node.tag == "nav" && false) { continue }
+                if Self.skipped.contains(node.tag) { continue }
                 if isFootnoteSection(node) { continue }
                 if Self.isInline(node) {
                     walkInline(node, RunFormat(), into: &inline)

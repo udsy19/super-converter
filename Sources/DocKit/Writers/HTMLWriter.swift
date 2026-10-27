@@ -90,7 +90,6 @@ enum HTMLWriter {
                     let back = " <a href=\"#fnref-\(number)\" role=\"doc-backlink\">\u{21A9}\u{FE0E}</a>"
                     if let range = inner.range(of: "</p>", options: .backwards) { inner.replaceSubrange(range, with: back + "</p>") } else { inner += "<p>" + back + "</p>" }
                     body += "<li id=\"fn-\(number)\">\(inner)</li>\n"
-                    _ = number
                 }
                 body += "</ol>\n</section>\n"
             }

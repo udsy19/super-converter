@@ -61,7 +61,7 @@ enum DOCXWriter {
             var package = OPCPackage()
             package.add("word/document.xml", xml: "<w:document \(namespaces)><w:body>\(body)</w:body></w:document>",
                         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")
-            package.add("word/styles.xml", xml: Self.styles(model.metadata.language ?? "en-US"),
+            package.add("word/styles.xml", xml: Self.styles(model.metadata.language),
                         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml")
             package.add("word/numbering.xml", xml: numberingXML(),
                         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml")
@@ -382,7 +382,7 @@ enum DOCXWriter {
 
         // MARK: Styles
 
-        static func styles(_ language: String) -> String {
+        static func styles(_ language: String?) -> String {
             func heading(_ n: Int, _ size: Int) -> String {
                 """
                 <w:style w:type="paragraph" w:styleId="Heading\(n)"><w:name w:val="heading \(n)"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>\
@@ -392,7 +392,7 @@ enum DOCXWriter {
             }
             return """
                 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\
-                <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="\(XML.escape(language))"/></w:rPr></w:rPrDefault>\
+                <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/>\(language.map { "<w:lang w:val=\"\(XML.escape($0))\"/>" } ?? "")</w:rPr></w:rPrDefault>\
                 <w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="259" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>\
                 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>\
                 <w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/></w:style>\

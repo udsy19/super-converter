@@ -2,8 +2,8 @@ import Foundation
 
 /// A forgiving HTML tokenizer and tree builder: enough of the HTML parsing algorithm (void elements, raw-text elements,
 /// implied end tags for paragraphs, list items, definition lists, table rows and cells, unmatched end tags) to read real
-/// pages. It never runs scripts or loads anything. The brief's reader walks a WebKit DOM; this one needs no web process,
-/// which keeps conversion deterministic and safe on hostile input (scripts are skipped, nothing is fetched).
+/// pages. It never runs scripts or loads anything. A WebKit DOM walk would need a web process; this keeps conversion
+/// deterministic and safe on hostile input (scripts are skipped, nothing is fetched).
 final class HTMLNode {
     let tag: String          // lower-case; "#text" for text, "#root" for the document
     var attributes: [String: String]
