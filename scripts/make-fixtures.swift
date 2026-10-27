@@ -345,7 +345,7 @@ func pdf() throws {
     // same-length constants (xref offsets stay valid) so the bytes repeat.
     var text = String(data: data as Data, encoding: .isoLatin1)!
     text = text.replacingOccurrences(of: "D:[0-9]{14}Z00'00'", with: "D:20240101000000Z00'00'", options: .regularExpression)
-    text = text.replacingOccurrences(of: "/ID \\[ <[0-9a-f]{32}> <[0-9a-f]{32}> \\]", with: "/ID [ <00000000000000000000000000000000> <00000000000000000000000000000000> ]", options: .regularExpression)
+    text = text.replacingOccurrences(of: "<[0-9a-f]{32}>", with: "<00000000000000000000000000000000>", options: .regularExpression)
     try write("sample.pdf", text.data(using: .isoLatin1)!)
 }
 
