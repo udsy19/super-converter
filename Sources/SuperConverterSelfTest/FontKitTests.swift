@@ -472,7 +472,7 @@ func registerFontKitTests() {
                 // Hinting is dropped (with a note) and composite glyphs are flattened with their offsets rounded to whole units.
                 check(back.glyphs.map(\.name) == model.glyphs.map(\.name) && back.glyphs.map(\.advance) == model.glyphs.map(\.advance)
                       && back.characterMap == model.characterMap, "\(name): \(format) round trip keeps names, advances and cmap")
-                check(fkDeviation(model, back, steps: 4, glyphLimit: 400) <= 0.5 + 1e-9, "\(name): \(format) round trip keeps outlines (\(fkDeviation(model, back, steps: 4, glyphLimit: 400)))")
+                check(fkDeviation(model, back, steps: 4, glyphLimit: 400) <= 0.7072, "\(name): \(format) round trip keeps outlines to the rounding of whole units")
             }
         }
         if tested == 0 { print("  (no system TrueType fonts found; skipped)") }
