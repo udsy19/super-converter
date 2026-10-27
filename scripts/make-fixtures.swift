@@ -1,6 +1,5 @@
 #!/usr/bin/env swift
-// Generates the small committed fixtures of the quality bench (quality §9) into Tests/Corpus/generated/. Deterministic except sample.pdf (CoreGraphics stamps
-// a creation date): the same script gives the same bytes, so a diff after re-running means the script changed.
+// Generates the small committed fixtures of the quality bench (quality §9) into Tests/Corpus/generated/. Deterministic (sample.pdf's dates and /ID are pinned): the same script gives the same bytes, so a diff after re-running means the script changed.
 //
 //     swift scripts/make-fixtures.swift [output-folder]
 //
@@ -342,7 +341,12 @@ func pdf() throws {
     text("Text on the second page, so page counts and page order can be checked.", size: 12, at: CGPoint(x: 72, y: 670))
     ctx.endPDFPage()
     ctx.closePDF()
-    try write("sample.pdf", data as Data)
+    // CoreGraphics stamps the creation/modification date and derives the trailer /ID from it. Overwrite them in place with
+    // same-length constants (xref offsets stay valid) so the bytes repeat.
+    var text = String(data: data as Data, encoding: .isoLatin1)!
+    text = text.replacingOccurrences(of: "D:[0-9]{14}Z00'00'", with: "D:20240101000000Z00'00'", options: .regularExpression)
+    text = text.replacingOccurrences(of: "/ID \\[ <[0-9a-f]{32}> <[0-9a-f]{32}> \\]", with: "/ID [ <00000000000000000000000000000000> <00000000000000000000000000000000> ]", options: .regularExpression)
+    try write("sample.pdf", text.data(using: .isoLatin1)!)
 }
 
 try images()
