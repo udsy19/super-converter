@@ -94,7 +94,8 @@ let package = Package(
         // Finder Quick Actions: one executable that scripts/build-app.sh packages as six action extensions, entered
         // through NSExtensionMain as Xcode links appexes.
         .executableTarget(
-            name: "SuperConverterQuickActions", dependencies: ["SuperConverterCore"], path: "Sources/SuperConverterQuickActions",
+            name: "SuperConverterQuickActions", dependencies: ["SuperConverterCore", "MenuBarKit"], path: "Sources/SuperConverterQuickActions",
+            exclude: ["Plists"],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
         // The command-line tool: the same engines, for scripts and the quality bench.
         .executableTarget(
