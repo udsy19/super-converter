@@ -364,6 +364,7 @@ public enum OptionProfiles {
         ],
         "O-FONT": [
             choice("subset", "Subset", [("off", "Off"), ("latin", "Latin"), ("custom", "Custom text")], "off"),
+            text("subsetText", "Characters to keep", "", more: true),
             toggle("hinting", "Keep hinting", true, more: true),
             number("curveTolerance", "Curve tolerance", 0.1...5, 1, unit: "‰ em", more: true),
             toggle("verticalMetricsFix", "Fix vertical metrics", false, more: true),
