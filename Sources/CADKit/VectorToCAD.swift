@@ -60,7 +60,7 @@ enum VectorToCAD {
     private static func walk(_ nodes: [VectorNode], transform m: Matrix, into out: inout [CADDrawing.Entity], dropped: inout Set<String>) {
         for node in nodes {
             switch node {
-            case .path(let segments, let fill, let stroke):
+            case .path(let segments, let fill, let stroke, _):
                 let loops = flatten(segments, m)
                 if let fill, let c = colour(fill, dropped: &dropped) {
                     let closed = loops.filter { $0.points.count >= 3 }.map(\.points)

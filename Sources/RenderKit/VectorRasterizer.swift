@@ -23,9 +23,9 @@ public enum VectorRasterizer {
 
     static func draw(_ node: VectorNode, in context: CGContext) {
         switch node {
-        case .path(let segments, let fill, let stroke):
+        case .path(let segments, let fill, let stroke, let rule):
             let path = cgPath(segments)
-            if let fill { paint(fill, path: path, in: context) }
+            if let fill { paint(fill, path: path, rule: rule, in: context) }
             if let stroke { strokePath(path, stroke, in: context) }
         case .text(let run):
             drawText(run, in: context)
@@ -72,14 +72,14 @@ public enum VectorRasterizer {
     // MARK: Paint
 
     /// Fills `path` with `paint`.
-    static func paint(_ paint: VectorPaint, path: CGPath, in context: CGContext) {
+    static func paint(_ paint: VectorPaint, path: CGPath, rule: FillRule = .nonZero, in context: CGContext) {
         context.saveGState()
         defer { context.restoreGState() }
         if case .solid(let colour) = paint {
-            context.setFillColor(cgColour(colour)); context.addPath(path); context.fillPath()
+            context.setFillColor(cgColour(colour)); context.addPath(path); context.fillPath(using: rule == .evenOdd ? .evenOdd : .winding)
             return
         }
-        context.addPath(path); context.clip()
+        context.addPath(path); context.clip(using: rule == .evenOdd ? .evenOdd : .winding)
         paintClip(paint, bounds: path.boundingBoxOfPath, in: context)
     }
 
@@ -88,9 +88,10 @@ public enum VectorRasterizer {
         context.saveGState()
         defer { context.restoreGState() }
         context.setLineWidth(CGFloat(stroke.width))
-        context.setLineCap(stroke.round ? .round : .butt)
-        context.setLineJoin(stroke.round ? .round : .miter)
-        if !stroke.dash.isEmpty { context.setLineDash(phase: 0, lengths: stroke.dash.map { CGFloat($0) }) }
+        context.setLineCap(stroke.cap == .round ? .round : stroke.cap == .square ? .square : .butt)
+        context.setLineJoin(stroke.join == .round ? .round : stroke.join == .bevel ? .bevel : .miter)
+        context.setMiterLimit(CGFloat(stroke.miterLimit))
+        if !stroke.dash.isEmpty { context.setLineDash(phase: CGFloat(stroke.dashPhase), lengths: stroke.dash.map { CGFloat($0) }) }
         context.addPath(path)
         if case .solid(let colour) = stroke.paint {
             context.setStrokeColor(cgColour(colour)); context.strokePath()
