@@ -154,6 +154,8 @@ struct BenchCase {
     var route: [Step]?
     var options = OptionValues()
     var look: DocumentLook?
+    /// Run `route` on `FakeEngines` instead of the registered converters (the harness's own sample cases).
+    var useFakes = false
     var checks: [Check]
     /// Compare the outputs' SHA-256 against `Tests/Golden/<id>/outputs.json` (written by `--bless`) — for byte-exact claims.
     var exactOutput = false

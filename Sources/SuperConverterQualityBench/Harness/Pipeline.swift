@@ -25,7 +25,8 @@ enum Pipeline {
 
     /// Runs `steps` through the registered converters, one after the other, and writes the last value into `folder`.
     static func convertSteps(_ source: URL, steps: [Step], target: FormatID, options: OptionValues = OptionValues(),
-                             into folder: URL) async -> Run {
+                             registry: ConverterRegistry? = nil, into folder: URL) async -> Run {
+        let registry = registry ?? Services.converters
         let started = Date()
         func done(_ format: FormatID?, _ outcome: Outcome) -> Run { Run(sourceFormat: format, outcome: outcome, seconds: Date().timeIntervalSince(started)) }
         guard let format = sourceFormat(of: source) else { return done(nil, .failed("the sniffer does not know \(source.lastPathComponent)")) }
@@ -33,7 +34,7 @@ enum Pipeline {
         var value = StepValue.file(source)
         var notes: [LossNote] = [], warnings: [String] = []
         for (index, step) in steps.enumerated() {
-            guard let converter = Services.converters.converter(for: step.engine), converter.handles(step) else { return done(format, .skipped("no converter handles \(step)")) }
+            guard let converter = registry.converter(for: step.engine), converter.handles(step) else { return done(format, .skipped("no converter handles \(step)")) }
             if case .unavailable(let why) = converter.availability() { return done(format, .skipped("\(step.engine.rawValue) is unavailable: \(why)")) }
             if case .needsHelper(let helper) = converter.availability() { return done(format, .skipped("needs \(helper.rawValue)")) }
             let context = StepContext(workFolder: folder, source: source, sourceFormat: format, targetFormat: target, options: options, isFinalStep: index == steps.count - 1)

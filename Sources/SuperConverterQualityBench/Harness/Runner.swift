@@ -64,7 +64,7 @@ struct Runner {
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
         let run: Pipeline.Run
-        if let route = c.route { run = await Pipeline.convertSteps(fixture, steps: route, target: c.target, options: c.options, into: out) }
+        if let route = c.route { run = await Pipeline.convertSteps(fixture, steps: route, target: c.target, options: c.options, registry: c.useFakes ? FakeEngines.registry : nil, into: out) }
         else { run = await Pipeline.convert(fixture, to: c.target, options: c.options, look: c.look, into: out, timeout: c.timeout) }
         let converted: ConversionResult
         switch run.outcome {

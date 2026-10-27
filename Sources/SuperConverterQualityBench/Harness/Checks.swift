@@ -103,6 +103,43 @@ extension Check {
         }
     }
 
+    /// THD+N of the first output's first channel at `frequency`, in dB (quality §5.3).
+    static func thdPlusN(frequency: Double, atMost limit: Double) -> Check {
+        Check(name: "THD+N at \(Measurement.format(frequency)) Hz") { ctx in
+            guard let url = ctx.output, let signal = AudioMetrics.read(url) else { throw CheckFailure("the audio cannot be decoded") }
+            guard let value = AudioMetrics.thdPlusN(signal, frequency: frequency) else { throw CheckFailure("THD+N could not be measured") }
+            return [Measurement(name: "THD+N", value: value, unit: "dB", limit: .atMost(limit), noise: 0.5)]
+        }
+    }
+
+    /// EBU R128 integrated loudness within `tolerance` LU of `integrated`, and the true peak at most `truePeakAtMost` dBTP,
+    /// measured by `ffmpeg ebur128`.
+    static func loudness(integrated target: Double, tolerance: Double, truePeakAtMost: Double? = nil) -> Check {
+        Check(name: "EBU R128 loudness") { ctx in
+            guard let url = ctx.output else { throw CheckFailure("no output") }
+            guard FFmpegLocator.find() != nil else { throw CheckFailure("ffmpeg was not found (scripts/tools.sh fetch, or SUPERCONVERTER_FFMPEG)") }
+            guard let m = Loudness.measure(url) else { throw CheckFailure("ffmpeg could not measure \(url.lastPathComponent)") }
+            var out = [Measurement(name: "integrated loudness", value: m.integrated, unit: "LUFS", limit: .within(target, tolerance: tolerance), noise: 0.1), .info("loudness range", m.range, unit: "LU")]
+            if let truePeakAtMost, let peak = m.truePeak { out.append(Measurement(name: "true peak", value: peak, unit: "dBTP", limit: .atMost(truePeakAtMost), noise: 0.1)) }
+            return out
+        }
+    }
+
+    /// The output folder holds exactly what an independent extraction of the source (`ditto -x -k`) holds: same paths, sizes,
+    /// SHA-256, links and empty folders (quality §8 "Content manifest").
+    static func manifestMatchesExtraction() -> Check {
+        Check(name: "manifest equals an independent extraction") { ctx in
+            guard let folder = ctx.output else { throw CheckFailure("no output") }
+            let reference = ctx.work.appendingPathComponent("reference", isDirectory: true)
+            try FileManager.default.createDirectory(at: reference, withIntermediateDirectories: true)
+            guard Subprocess.run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-x", "-k", ctx.source.path, reference.path]).status == 0 else { throw CheckFailure("the reference extraction failed") }
+            let expected = Manifest.entries(of: reference), actual = Manifest.entries(of: folder)
+            let differences = Manifest.differences(expected, actual)
+            if !differences.isEmpty { throw CheckFailure("manifest differs: \(differences.prefix(5))") }
+            return [.count("entries", actual.count, atLeast: 1), .exact("manifest differences", 0, equals: 0)]
+        }
+    }
+
     /// An EPUB's first ZIP entry is `mimetype`, stored uncompressed, holding `application/epub+zip` (the EPUB container rule).
     static func epubMimetypeFirstAndStored() -> Check {
         Check(name: "EPUB mimetype first and stored") { ctx in
