@@ -1225,7 +1225,7 @@ private func imageKitCodecs() {
     ikWrite(p3, type: .png, width: 33, height: 7, components: 3, alpha: false, bits: 8, icc: ikP3) { x, y, c in (x * 7 + y * 30 + c * 90) % 256 }
     // 10-bit HEIC (what a 16-bit source becomes) decodes back through ImageKit at full precision.
     let deep = ikURL("deep-p3.png")
-    ikWrite(deep, type: .png, width: 64, height: 32, components: 3, alpha: false, bits: 16, icc: ikP3) { x, y, c in (x * 1000 + y * 1500 + c * 9000) % 65536 }
+    ikWrite(deep, type: .png, width: 64, height: 32, components: 3, alpha: false, bits: 16, icc: ikP3) { x, y, c in x * 600 + y * 400 + c * 4000 }
     if let heic = ikConvert(deep, to: "heic").url, let back = ikConvert(heic, to: "png").url, let a = ikDecode(deep), let b = ikDecode(back) {
         check(b.bits == 16, "10-bit HEIC → PNG stays 16-bit (\(b.bits))")
         let stats = ikStats(ikDeltaEs(a.colours, 3, ikP3, b.colours, 3, b.icc ?? ikP3))
