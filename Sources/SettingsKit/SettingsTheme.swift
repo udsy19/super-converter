@@ -23,7 +23,7 @@ extension View {
     /// Applies a Core type style (family, size, weight, tracking, tabular figures).
     func scFont(_ style: SCTextStyle) -> some View {
         let font = style.tabularFigures ? Font(style.font).monospacedDigit() : Font(style.font)
-        return self.font(font).tracking(style.tracking)
+        return self.font(font).tracking(style.tracking).textCase(style.uppercase ? .uppercase : nil)
     }
 }
 

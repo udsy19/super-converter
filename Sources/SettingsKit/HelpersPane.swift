@@ -97,9 +97,9 @@ private struct HelperRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Text(progress.text).scFont(SCFont.body).foregroundStyle(Color.scSecondary)
                 if let fraction = progress.fraction {
-                    ProgressView(value: fraction).progressViewStyle(.linear).frame(width: 220)
+                    ProgressView(value: fraction).progressViewStyle(.linear).tint(Color.scAccent).frame(width: 220)
                 } else {
-                    ProgressView().progressViewStyle(.linear).frame(width: 220)
+                    ProgressView().progressViewStyle(.linear).tint(Color.scAccent).frame(width: 220)
                 }
             }
         } else {

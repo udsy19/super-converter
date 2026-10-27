@@ -26,11 +26,14 @@ enum HelperUnlocks {
 
     private static let order: [FormatID: Int] = Dictionary(uniqueKeysWithValues: FormatCatalog.all.enumerated().map { ($1.id, $0) })
 
+    /// The helpers that improve pairs which already work by reproducing the original office layout.
+    private static let officeHelpers: Set<HelperID> = [.libreoffice, .iwork, .msoffice]
+
     /// At most `limit` pills; the rest are counted in a final "+N".
     static func items(for helper: HelperID, limit: Int = 8) -> [Item] {
         let routes = FormatMatrix.offered.filter { $0.helpers.contains(helper) }
         var result: [Item] = []
-        if routes.contains(where: { $0.need == .optional }) { result.append(Item(text: "Original layout", category: .document)) }
+        if officeHelpers.contains(helper), routes.contains(where: { $0.need == .optional }) { result.append(Item(text: "Original layout", category: .document)) }
         let required = routes.filter { $0.need == .required }
         func sorted(_ ids: Set<FormatID>) -> [FormatID] { ids.sorted { (order[$0] ?? 0, $0) < (order[$1] ?? 0, $1) } }
         let inputs = Set(required.map(\.from).filter(index.inputOnly.contains))
