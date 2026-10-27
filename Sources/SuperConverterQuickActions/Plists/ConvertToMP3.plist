@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Convert to MP3</string>
+	<key>CFBundleExecutable</key>
+	<string>SuperConverterQuickActions</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.udsy.superconverter.quickactions.ConvertToMP3</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>ConvertToMP3</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionActivationRule</key>
+			<string>SUBQUERY(extensionItems, $extensionItem, SUBQUERY($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.flash.video" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.coreaudio-format" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.m4a-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.m4v-video" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.quicktime-movie" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.microsoft.waveform-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.microsoft.windows-media-wma" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.microsoft.windows-media-wmv" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.real.realmedia" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.real.realmedia-vbr" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.3gpp.adaptive-multi-rate-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.matroska.mkv" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.smpte.mxf" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.webmproject.webm" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.xiph.flac" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.xiph.ogg-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.xiph.ogg-video" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.3gpp" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.3gpp2" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.aac-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.ac3-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.aifc-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.aiff-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.au-audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.avchd-mpeg-2-transport-stream" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.avi" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.dv-movie" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.movie" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.mpeg" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.mpeg-2-transport-stream" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.mpeg-4").@count &gt;= 1).@count &gt;= 1</string>
+			<key>NSExtensionServiceAllowsFinderPreviewItem</key>
+			<true/>
+			<key>NSExtensionServiceAllowsTouchBarItem</key>
+			<false/>
+			<key>NSExtensionServiceFinderPreviewIconName</key>
+			<string>NSActionTemplate</string>
+			<key>NSExtensionServiceFinderPreviewLabel</key>
+			<string>Convert to MP3</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.services</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>QuickActionRequestHandler</string>
+	</dict>
+	<key>SuperConverterQuickAction</key>
+	<string>convert-to-mp3</string>
+</dict>
+</plist>

@@ -10,7 +10,6 @@ extension Color {
     init(_ token: SCColorToken) { self.init(nsColor: token.color) }
     init(hex: String) { self.init(nsColor: NSColor(hex: hex)) }
 
-    static let scWindow = Color(SCColor.windowBackground)
     static let scCard = Color(SCColor.card)
     static let scHairline = Color(SCColor.hairline)
     static let scStrongHairline = Color(SCColor.strongHairline)
@@ -18,7 +17,6 @@ extension Color {
     static let scSecondary = Color(SCColor.secondaryLabel)
     static let scTertiary = Color(SCColor.tertiaryLabel)
     static let scControl = Color(SCColor.controlFill)
-    static let scControlHover = Color(SCColor.controlHover)
     static let scSuccess = Color(SCColor.success)
     static let scFailure = Color(SCColor.failure)
     static let scAccent = Color(SCColor.accent)

@@ -21,7 +21,6 @@ struct BatchItem: Identifiable, Equatable {
 
     let id = UUID()
     var url: URL
-    var sizeBytes: Int64
     var source: FormatID?
     var target: FormatID?
     var options = OptionValues()
@@ -41,7 +40,7 @@ enum BatchRunner {
     static func prepare(_ urls: [URL], preset: FormatID? = nil) -> [BatchItem] {
         urls.compactMap { url in
             let sniff = (try? Services.sniffer.sniff(url)) ?? SniffResult(format: nil, claimed: nil)
-            var item = BatchItem(url: url, sizeBytes: sniff.sizeBytes, source: sniff.format)
+            var item = BatchItem(url: url, source: sniff.format)
             guard let source = sniff.format else { item.state = .unreadable; return item }
             if let preset {
                 if FormatCatalog.isSameFormat(source, preset) { return nil }

@@ -45,6 +45,6 @@ struct RecentList {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: now)
+        return formatter.localizedString(for: date, relativeTo: now).replacingOccurrences(of: ". ", with: " ")
     }
 }

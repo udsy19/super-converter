@@ -101,12 +101,12 @@ public enum QuickAction: String, CaseIterable, Sendable {
     }
 
     /// The type identifiers the action's activation rule and Services entry list, sorted: the broad system types of its
-    /// categories, and the catalog's own identifiers for formats those do not cover (documents, books, video containers).
+    /// categories, and the catalog's own identifiers (PostScript and ODF drawings are "images" that are not `public.image`;
+    /// documents, books and video containers have no broad type).
     public var activationTypes: [String] {
         guard target != nil else { return ["public.item"] }
         var identifiers = Set(categories.flatMap { Self.broadTypes[$0] ?? [] })
-        for format in FormatCatalog.inputs where categories.contains(format.category) && takes(format.id)
-            && ![.image, .audio].contains(format.category) {
+        for format in FormatCatalog.inputs where categories.contains(format.category) && takes(format.id) {
             identifiers.formUnion(format.utTypeIdentifiers)
         }
         identifiers.remove("com.adobe.pdf")   // a PDF is not offered "Convert to PDF"

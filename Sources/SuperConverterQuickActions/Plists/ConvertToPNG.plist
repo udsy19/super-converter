@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Convert to PNG</string>
+	<key>CFBundleExecutable</key>
+	<string>SuperConverterQuickActions</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.udsy.superconverter.quickactions.ConvertToPNG</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>ConvertToPNG</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionActivationRule</key>
+			<string>SUBQUERY(extensionItems, $extensionItem, SUBQUERY($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.encapsulated-postscript" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.photoshop-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.photoshop-large-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.postscript" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.icns" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.canon.cr2-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.canon.cr3-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.canon.crw-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.compuserve.gif" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.epson.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.fuji.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.hasselblad.3fr-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.kodak.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.konicaminolta.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.leafamerica.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.microsoft.bmp" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.microsoft.ico" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.nikon.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.olympus.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.panasonic.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.panasonic.rw2-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.pentax.raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.sony.arw-raw-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.truevision.tga-image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.oasis-open.opendocument.graphics" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.webmproject.webp" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.avif" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.heic" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.heif" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.jpeg" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.pbm" OR $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.tiff").@count &gt;= 1).@count &gt;= 1</string>
+			<key>NSExtensionServiceAllowsFinderPreviewItem</key>
+			<true/>
+			<key>NSExtensionServiceAllowsTouchBarItem</key>
+			<false/>
+			<key>NSExtensionServiceFinderPreviewIconName</key>
+			<string>NSActionTemplate</string>
+			<key>NSExtensionServiceFinderPreviewLabel</key>
+			<string>Convert to PNG</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.services</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>QuickActionRequestHandler</string>
+	</dict>
+	<key>SuperConverterQuickAction</key>
+	<string>convert-to-png</string>
+</dict>
+</plist>
