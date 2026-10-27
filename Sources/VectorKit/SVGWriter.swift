@@ -8,7 +8,7 @@ import SuperConverterCore
 /// as `@font-face` data.
 public enum SVGWriter {
     public static func write(_ document: VectorDocument, options: VectorWriteOptions) throws -> VectorWriteResult {
-        var doc = document.selecting(options.pages)
+        var doc = document
         var notes: [LossNote] = []
         if options.textAsOutlines, doc.containsText { doc = doc.outlinedText(); notes.append(LossNote(.textAsOutlines)) }
         guard let page = doc.pages.first else { throw ConversionError.failed("There are no pages to write.") }

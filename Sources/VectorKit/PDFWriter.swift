@@ -44,7 +44,7 @@ public enum PDFWriter {
     }
 
     public static func write(_ document: VectorDocument, options: VectorWriteOptions) throws -> VectorWriteResult {
-        var doc = document.selecting(options.pages)
+        var doc = document
         var notes: [LossNote] = []
         if options.textAsOutlines, doc.containsText { doc = doc.outlinedText(); notes.append(LossNote(.textAsOutlines)) }
         guard !doc.pages.isEmpty, let builder = Builder(title: doc.title ?? options.title, pdfA: options.pdfA) else { throw ConversionError.failed("There are no pages to write.") }
