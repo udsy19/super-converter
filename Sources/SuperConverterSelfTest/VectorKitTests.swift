@@ -78,4 +78,5 @@ func svtSVG(_ body: String, size: Int = 100) -> Data {
 func registerVectorKitTests() {
     registerVectorKitMetafileTests()
     registerVectorKitSVGTests()
+    registerVectorKitPDFTests()
 }
