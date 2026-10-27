@@ -45251,21 +45251,15 @@
        "trim_end"
       ]
      },
-     "need": "builtin",
-     "builtin": "FFmpeg LGPL (AudioToolbox AAC, LAME MP3, libopus, libvorbis)",
+     "need": "no",
+     "builtin": null,
      "helper": null,
      "helpers": [],
-     "prefer": "builtin",
-     "options": "O-AUDIO",
-     "priority": "P3",
-     "note": "",
-     "steps": {
-      "builtin": [
-       {"engine": "FFmpeg", "from": "amr", "to": "amr"}
-      ],
-      "helper": null,
-      "alternates": []
-     }
+     "prefer": null,
+     "options": "—",
+     "priority": "no",
+     "note": "the AMR encoder’s patent status couldn’t be confirmed, so AMR files aren’t written (AMR still converts to other formats)",
+     "steps": null
     },
     {
      "output": "flac",

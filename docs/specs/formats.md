@@ -61,8 +61,12 @@ an output wherever a pair exists. Extensions that are the same format (JPG/JPEG/
    `// Adapted from <project> <path> (<licence>, <version/commit>)`.
 7. **Codecs and patents.** H.264, HEVC, ProRes and AAC are encoded by Apple's VideoToolbox and AudioToolbox, licensed
    with macOS. Our FFmpeg build has no software H.264/HEVC encoder (x264/x265 are GPL anyway); AV1, VP8/VP9, Opus,
-   Vorbis, Theora and FLAC are royalty-free; MP3 and AC-3 patents have expired. AMR encoding (opencore-amr, Apache-2.0)
-   gets a patent check in WP-M before release.
+   Vorbis, Theora and FLAC are royalty-free; MP3 and AC-3 patents have expired. **AMR encoding is not offered [D]**
+   (checked in WP-M, 2026-10): AMR-NB (3GPP, 1999) and AMR-WB (2001) are licensed through VoiceAge's patent pool, which
+   claims about 150 essential patents; the core filings look expired, but no statement from the pool or 3GPP confirms
+   that every family has lapsed (public sources disagree on the last AMR-WB families), so the bundled opencore-amr /
+   vo-amrwbenc encoders are never invoked and AMR → AMR is "not offered" (§7). Decoding AMR to other formats stays:
+   the pool has licensed PC playback free of charge. Revisit with a patent attorney's opinion or a pool statement.
 8. **Every bundled component** is listed with version, SHA-256, licence text and source URL in
    `THIRD_PARTY_NOTICES.md`, which the app shows in Settings › About.
 9. **Where helpers come from [D].** (a) Upstream's own signed release when there is one (LibreOffice, calibre, Pandoc,
@@ -441,7 +445,7 @@ video: frame delays kept exactly (variable frame rate in MP4/MOV), transparency 
 Codecs per container: AAC/M4A → copy · AAC-LC · HE-AAC v1 (`aac_he_1`) · HE-AAC v2 (`aac_he_2`) · ALAC⁺ (M4A);
 WAV, AIFF, AIF, AIFC → PCM 16 · 24 · 32 (`pcm_s16le/s24le/s32le`; big-endian in AIFF) · 32-bit float⁺; FLAC → FLAC;
 MP3 → LAME; OGG/OGA → Vorbis · Opus · FLAC⁺; OPUS → Opus; WEBA → Opus · Vorbis; WMA → WMA v2; AC3 → AC-3; AMR →
-AMR-NB (12.2 kb/s; AMR-WB⁺ as `.awb`); AU → PCM 16 BE · µ-law · A-law; VOC → PCM 8/16; CAF → AAC · ALAC · PCM · Opus;
+not written (§2.7); AU → PCM 16 BE · µ-law · A-law; VOC → PCM 8/16; CAF → AAC · ALAC · PCM · Opus;
 M4B → AAC with chapters. CloudConvert offers AAC/Opus/Vorbis codecs for containers that cannot hold them (AC3, AIFF,
 AU, AMR, CAF, VOC, DSS); we show only codecs the container can carry.
 
@@ -484,7 +488,7 @@ profiles §5's. ⁺ marks a target CloudConvert does not offer for that input. R
 | Documents | 23 | 245 | 20 | 0 | 120 | 58 | 87 | 127 | 130 | 8 |
 | Images | 42 | 563 | 48 | 14 | 542 | 13 | 42 | 352 | 232 | 13 |
 | Video | 28 | 460 | 0 | 0 | 459 | 0 | 1 | 265 | 183 | 12 |
-| Audio | 21 | 145 | 8 | 1 | 148 | 0 | 4 | 65 | 74 | 13 |
+| Audio | 21 | 145 | 8 | 2 | 147 | 0 | 4 | 65 | 74 | 12 |
 | Spreadsheets | 8 | 56 | 8 | 0 | 20 | 15 | 29 | 43 | 16 | 5 |
 | Slides | 11 | 104 | 10 | 0 | 9 | 27 | 78 | 63 | 37 | 14 |
 | E-books | 22 | 189 | 8 | 0 | 53 | 0 | 144 | 36 | 160 | 1 |
@@ -492,7 +496,7 @@ profiles §5's. ⁺ marks a target CloudConvert does not offer for that input. R
 | Vector | 10 | 112 | 0 | 0 | 80 | 8 | 24 | 80 | 16 | 16 |
 | CAD | 3 | 35 | 0 | 0 | 21 | 0 | 14 | 9 | 14 | 12 |
 | Fonts | 5 | 25 | 0 | 0 | 25 | 0 | 0 | 16 | 9 | 0 |
-| **All** | **212** | **2156** | **112** | **15** | **1672** | **121** | **460** | **1146** | **995** | **112** |
+| **All** | **212** | **2156** | **112** | **16** | **1671** | **121** | **460** | **1146** | **995** | **111** |
 
 *Built in* runs with nothing installed. *Built in · helper better* runs built in and switches to the helper when it is present (original office layout). *Needs helper* shows the one-click helper on the card. P1/P2/P3 order the work (§7); they do not limit what ships.
 
@@ -1790,12 +1794,12 @@ profiles §5's. ⁺ marks a target CloudConvert does not offer for that input. R
 | AAC AIFF FLAC M4A WAV | AVFoundation + AudioToolbox (FFmpeg fallback) | — | O-AUDIO | P1 |
 | MP3 WMA | FFmpeg LGPL (AudioToolbox AAC, LAME MP3, libopus, libvorbis) | — | O-AUDIO | P1 |
 
-#### AMR — Adaptive Multi-Rate · 8 targets
+#### AMR — Adaptive Multi-Rate · 7 targets
 
 | To | Built in | With a helper | Options | Rank |
 |---|---|---|---|---|
 | AAC AIFF FLAC M4A MP3 WAV WMA | FFmpeg LGPL (AudioToolbox AAC, LAME MP3, libopus, libvorbis) | — | O-AUDIO | P2 |
-| AMR | FFmpeg LGPL (AudioToolbox AAC, LAME MP3, libopus, libvorbis) | — | O-AUDIO | P3 |
+| AMR | *not offered: the AMR encoder’s patent status couldn’t be confirmed, so AMR files aren’t written (AMR still converts to other formats)* | | | — |
 
 #### AU — Sun / NeXT audio · 8 targets
 
@@ -3087,8 +3091,9 @@ profiles §5's. ⁺ marks a target CloudConvert does not offer for that input. R
 P2: one end niche, or a helper other than LibreOffice/iWork is required. P3: both ends niche, or a route marked
 experimental. Ranks order the work packages (ARCHITECTURE); everything in §6 except "not offered" is in scope.
 
-**Not offered (15 pairs).** GIF and WebP → AAC, AIFF, FLAC, M4A, MP3, WAV, WMA: an image has no sound; CloudConvert
-returns an empty or silent file. DSS → DSS: nothing outside Olympus' own software writes DSS. The picker leaves these
+**Not offered (16 pairs).** GIF and WebP → AAC, AIFF, FLAC, M4A, MP3, WAV, WMA: an image has no sound; CloudConvert
+returns an empty or silent file. DSS → DSS: nothing outside Olympus' own software writes DSS. AMR → AMR: the AMR
+encoders' patent status could not be confirmed (§2.7); AMR files still convert to every other audio target. The picker leaves these
 targets out; searching for one says why ("GIF pictures have no sound").
 
 **Known gaps and risks.**

@@ -32,7 +32,7 @@ files (`formats §4`, `quality §3.3`, `ux §5.6`). Decisions are marked **[D]**
 ```
 
 Hub-and-spoke [D]: each category has one intermediate model; readers turn formats into it, writers turn it into
-formats. That is how 2,253 offered pairs come from about 150 readers and writers, and why a new format is one reader
+formats. That is how 2,252 offered pairs come from about 150 readers and writers, and why a new format is one reader
 or one writer, never N new pairs. Audio/video is the exception: AVFoundation and FFmpeg are pipelines, so MediaKit's
 "model" is a plan of streams and settings.
 
@@ -401,7 +401,8 @@ outputs verified by the bench's checks).
    libavif. JPEG chroma subsampling at quality ≥ 90 decides libjpeg-turbo (quality §2.3). WP-I measures both on 14.
 3. **`sandbox-exec`** is deprecated; WP-H confirms it still enforces the no-network profile on 14 through 26.
 4. **X3F tools licence** (formats §3.3) and **AMR encoding patents** (formats §2.7): checked by WP0b/WP-M before
-   release; either can drop to "not offered" without touching the rest.
+   release; either can drop to "not offered" without touching the rest. AMR was checked in WP-M: not offered (AMR → AMR),
+   AMR decoding kept.
 5. **Classic DWF** (W2D) decoder is timeboxed in WP-C; if it misses, DWF stays DWFx-only (formats §7).
 6. **JavaScriptCore without JIT** for MathJax: WP-T measures typesetting time for formula-heavy documents (target
    < 2 s for 200 formulas); if too slow, MathJax runs in an offscreen WKWebView instead.

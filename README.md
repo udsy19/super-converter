@@ -30,8 +30,9 @@ format from a short, searchable list if you like, press **Convert**, and the new
 
 <p align="center"><img src="docs/mockups/window-cards.png" width="860" alt="The Super Converter window with eight files of eight kinds ready to convert"></p>
 
-- **Every CloudConvert conversion that makes sense** — 2,141 of the 2,156 pairs in its public format list (the
-  other 15, like GIF → MP3, cannot produce anything real), plus 112 more — each mapped in
+- **Every CloudConvert conversion that makes sense** — 2,140 of the 2,156 pairs in its public format list (of the
+  other 16, GIF → MP3 and its kind cannot produce anything real, and AMR encoding is held back over patents), plus 112
+  more — each mapped in
   [`formats.md`](docs/specs/formats.md) to the engine that does it here.
 - **Built on the Mac's own engines first**: ImageIO, Core Image RAW and ColorSync for pictures, AVFoundation and
   VideoToolbox for audio and video, PDFKit, Core Text and WebKit for documents. FFmpeg (LGPL build), libarchive,

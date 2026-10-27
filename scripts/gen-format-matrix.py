@@ -428,6 +428,9 @@ def route_pdf(o):
 def route_media(i, o):
     if o == "dss":
         return X("no DSS encoder or muxer exists outside Olympus' own software; CloudConvert can only copy the file")
+    if o == "amr":
+        # formats §2.7, decided in WP-M: the AMR-NB/AMR-WB patent pool's expiry could not be confirmed.
+        return X("the AMR encoder’s patent status couldn’t be confirmed, so AMR files aren’t written (AMR still converts to other formats)")
     if o in VIDEO_OUT or o in ("gif", "webp"):
         if o == "cavs":
             return H("FFmpeg-GPL⬇ (libxavs encoder)", ("ffmpeg-gpl",), "O-VIDEO", status="P3")

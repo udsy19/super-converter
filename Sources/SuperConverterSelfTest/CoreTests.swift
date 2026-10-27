@@ -94,10 +94,10 @@ private func coreMatrixShape() {
     check(routes.count == 2268, "2,268 pairs (\(routes.count))")
     check(routes.filter { $0.origin == .cloudconvert }.count == 2156, "2,156 CloudConvert pairs")
     check(routes.filter { $0.origin == .added }.count + routes.filter { $0.origin == .bonus }.count == 112, "112 pairs we add")
-    check(routes.filter { !$0.isOffered }.count == 15, "15 pairs are not offered")
+    check(routes.filter { !$0.isOffered }.count == 16, "16 pairs are not offered")
     check(Set(routes.map { "\($0.from)>\($0.to)" }).count == routes.count, "no pair is listed twice")
-    check(routes.filter { $0.need == .builtin }.count == 1672 && routes.filter { $0.need == .optional }.count == 121
-          && routes.filter { $0.need == .required }.count == 460, "built in 1,672 · helper better 121 · needs helper 460")
+    check(routes.filter { $0.need == .builtin }.count == 1671 && routes.filter { $0.need == .optional }.count == 121
+          && routes.filter { $0.need == .required }.count == 460, "built in 1,671 · helper better 121 · needs helper 460")
     for route in routes {
         check(FormatCatalog.format(route.from).map { !$0.isOutputOnly } == true, "\(route.from): an input in the catalog")
         check(FormatCatalog.format(route.to) != nil, "\(route.to): a format in the catalog")
