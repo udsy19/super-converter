@@ -57,7 +57,7 @@ public enum VectorDrawing {
         case .text(let run):
             drawText(run, in: context)
         case .image(let asset, let transform):
-            guard let image = ImageBridge.cgImage(asset) else { return }
+            guard let image = asset.frames.first?.cgImage() else { return }
             context.saveGState()
             context.concatenate(transform.cg)
             context.interpolationQuality = .high
@@ -136,7 +136,7 @@ public enum VectorDrawing {
             context.drawRadialGradient(gradient, startCenter: centre.cg, startRadius: 0, endCenter: centre.cg, endRadius: CGFloat(radius),
                                        options: [.drawsAfterEndLocation])
         case .rasterised(let asset):
-            guard let image = ImageBridge.cgImage(asset) else { return }
+            guard let image = asset.frames.first?.cgImage() else { return }
             context.draw(image, in: bounds)
         }
     }

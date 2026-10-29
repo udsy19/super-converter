@@ -268,7 +268,7 @@ extension MetafileDIB {
     /// A DIB of the asset's first frame (MS-WMF 2.2.2.9): BITMAPINFOHEADER and bottom-up rows, 32-bit premultiplied BGRA
     /// when `alpha` (what AlphaBlend takes), else 24-bit BGR over white.
     static func encode(_ asset: ImageAsset, alpha: Bool) -> (info: [UInt8], bits: [UInt8], width: Int, height: Int)? {
-        guard let image = ImageBridge.cgImage(asset) else { return nil }
+        guard let image = asset.frames.first?.cgImage() else { return nil }
         let w = image.width, h = image.height
         guard w > 0, h > 0 else { return nil }
         var bgra = [UInt8](repeating: 0, count: w * h * 4)

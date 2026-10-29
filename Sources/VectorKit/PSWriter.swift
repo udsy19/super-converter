@@ -65,7 +65,7 @@ public enum PSWriter {
         var pages: [(VectorSize, String)] = []
         var preview: CGImage?
         for index in frames {
-            guard let image = ImageBridge.cgImage(asset, frame: index) else { continue }
+            guard let image = asset.frames[index].cgImage() else { continue }
             let (size, rect) = ImagePage.layout(width: image.width, height: image.height, options: options)
             guard let paint = PSImages.paint(image, level: level, encoding: encoding, jpeg: passThroughJPEG(asset.frames[index]), tagged: true) else { continue }
             let body = "gsave\n[\(fmt(Double(rect.width))) 0 0 \(fmt(Double(rect.height))) \(fmt(Double(rect.minX))) \(fmt(Double(rect.minY)))] concat\n" + paint + "grestore\n"
@@ -191,7 +191,7 @@ public enum PSWriter {
             case .text(let run):
                 text(run)
             case .image(let asset, let t):
-                guard let image = ImageBridge.cgImage(asset), let paint = PSImages.paint(image, level: 3, encoding: .flate, tagged: false) else { return }
+                guard let image = asset.frames.first?.cgImage(), let paint = PSImages.paint(image, level: 3, encoding: .flate, tagged: false) else { return }
                 out += "gsave\n\(matrix(t)) concat\n" + paint + "grestore\n"
             case .group(let children, let t, let clip, _):
                 if let clip, clip.isEmpty { return }
@@ -270,7 +270,7 @@ public enum PSWriter {
 
         /// A picture stretched over `box` (a rasterised paint, as VectorDrawing paints it); nothing when it can't be read.
         func picture(_ asset: ImageAsset, in box: CGRect) -> String {
-            guard !box.isNull, let image = ImageBridge.cgImage(asset), let paint = PSImages.paint(image, level: 3, encoding: .flate, tagged: false) else { return "" }
+            guard !box.isNull, let image = asset.frames.first?.cgImage(), let paint = PSImages.paint(image, level: 3, encoding: .flate, tagged: false) else { return "" }
             return "[\(PSWriter.fmt(Double(box.width))) 0 0 \(PSWriter.fmt(Double(box.height))) \(PSWriter.fmt(Double(box.minX))) \(PSWriter.fmt(Double(box.minY)))] concat\n" + paint
         }
 

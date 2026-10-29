@@ -59,19 +59,19 @@ public enum PDFWriter {
     // MARK: Raster pages
 
     /// The CGImage for a frame, passing a JPEG file through untouched so the PDF keeps its bytes.
-    static func pdfImage(_ frame: ImageFrame, in asset: ImageAsset, index: Int) -> CGImage? {
+    static func pdfImage(_ frame: ImageFrame) -> CGImage? {
         if case .file(let url) = frame.pixels, ["jpg", "jpeg"].contains(url.pathExtension.lowercased()),
            let provider = CGDataProvider(url: url as CFURL),
            let image = CGImage(jpegDataProviderSource: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) { return image }
-        return ImageBridge.cgImage(asset, frame: index)
+        return frame.cgImage()
     }
 
     /// Image → PDF with the O-IMG-PDF options: page size (fit/A4/Letter), margin in mm, orientation.
     public static func write(image asset: ImageAsset, options: OptionValues, title: String?) throws -> VectorWriteResult {
         guard let builder = Builder(title: title, pdfA: options["pdfA"]?.bool ?? false) else { throw ConversionError.failed("The PDF couldn’t be created.") }
         var wrote = 0
-        for (index, frame) in asset.frames.enumerated() {
-            guard let image = pdfImage(frame, in: asset, index: index) else { continue }
+        for frame in asset.frames {
+            guard let image = pdfImage(frame) else { continue }
             let (page, rect) = ImagePage.layout(width: image.width, height: image.height, options: options)
             let ctx = builder.page(page)
             ctx.interpolationQuality = .high

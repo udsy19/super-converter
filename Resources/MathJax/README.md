@@ -21,5 +21,5 @@ npx esbuild entry.js --bundle --minify --format=iife --target=es2020 --legal-com
 ## SHA-256
 
 ```
-a9ddac3b027623ac1918357e7106cb8eed0224fd8f196a8a52df9dd6c39de91d  mathjax-tex-svg.js
+97995a3d2addf5fd3280a1e25fa7017874b56cec394c2f21279a2029f999b875  mathjax-tex-svg.js
 ```

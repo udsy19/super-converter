@@ -177,16 +177,26 @@ public final class MathJax: @unchecked Sendable {
 
     // MARK: Results
 
+    /// Reads the parsed JSON's arrays and numbers in place: bridging them to `[[Double]]` first copied every number, which
+    /// was most of the Swift side's time per formula.
     private static func segments(_ value: Any, _ em: Double) -> [PathSegment] {
-        (value as? [[Double]] ?? []).compactMap { s -> PathSegment? in
-            switch Int(s.first ?? -1) {
-            case 0 where s.count >= 3: .move(VectorPoint(s[1] * em, s[2] * em))
-            case 1 where s.count >= 3: .line(VectorPoint(s[1] * em, s[2] * em))
-            case 2 where s.count >= 7: .cubic(VectorPoint(s[1] * em, s[2] * em), VectorPoint(s[3] * em, s[4] * em), VectorPoint(s[5] * em, s[6] * em))
-            case 3: .close
-            default: nil
+        guard let list = value as? NSArray else { return [] }
+        var out: [PathSegment] = []
+        out.reserveCapacity(list.count)
+        for case let s as NSArray in list {
+            let n = s.count
+            func p(_ i: Int) -> VectorPoint {
+                VectorPoint(((s[i] as? NSNumber)?.doubleValue ?? 0) * em, ((s[i + 1] as? NSNumber)?.doubleValue ?? 0) * em)
+            }
+            switch n > 0 ? (s[0] as? NSNumber)?.intValue ?? -1 : -1 {
+            case 0 where n >= 3: out.append(.move(p(1)))
+            case 1 where n >= 3: out.append(.line(p(1)))
+            case 2 where n >= 7: out.append(.cubic(p(1), p(3), p(5)))
+            case 3: out.append(.close)
+            default: break
             }
         }
+        return out
     }
 
     /// SVG colours as MathJax writes them for `\color`: `#rgb`, `#rrggbb`, `rgb(…)` or a CSS name; none is black.

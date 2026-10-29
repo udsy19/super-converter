@@ -93,7 +93,7 @@ public enum CGMWriter {
                 case .text(let run):
                     text(run, m: m, clip: clip)
                 case .image(let asset, let t):
-                    guard let image = ImageBridge.cgImage(asset) else { continue }
+                    guard let image = asset.frames.first?.cgImage() else { continue }
                     let full = t.then(m)
                     hasPictures = true
                     if asset.hasAlpha { lossNotes.insert(LossNote(.transparencyFilled)) }
@@ -240,7 +240,7 @@ public enum CGMWriter {
         }
 
         static func meanColour(_ asset: ImageAsset) -> VectorColour {
-            guard let image = ImageBridge.cgImage(asset) else { return .black }
+            guard let image = asset.frames.first?.cgImage() else { return .black }
             var px = [UInt8](repeating: 0, count: 4)
             px.withUnsafeMutableBytes { raw in
                 let ctx = CGContext(data: raw.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,

@@ -3,43 +3,10 @@ import Foundation
 import ImageIO
 import SuperConverterCore
 
-/// ImageAsset ↔ CGImage for the vector readers and writers (pictures inside drawings, raster pages for PDF and PostScript).
+/// CGImage and image bytes → ImageAsset for the vector readers (pictures inside drawings), and PNG bytes back; the other
+/// direction is Core's `ImageFrame.cgImage()`.
 public enum ImageBridge {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
-
-    /// The first (or given) frame as an un-premultiplied 8-bit RGBA `CGImage` in the frame's colour space (sRGB when untagged).
-    public static func cgImage(_ asset: ImageAsset, frame index: Int = 0) -> CGImage? {
-        guard asset.frames.indices.contains(index) else { return nil }
-        let frame = asset.frames[index]
-        let space = frame.iccProfile.flatMap { CGColorSpace(iccData: $0 as CFData) }.flatMap { $0.model == .rgb ? $0 : nil } ?? srgb
-        switch frame.pixels {
-        case .rgba8(let data, let bytesPerRow):
-            guard let provider = CGDataProvider(data: data as CFData) else { return nil }
-            return CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: bytesPerRow, space: space,
-                           bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider, decode: nil,
-                           shouldInterpolate: true, intent: .defaultIntent)
-        case .rgbaHalf(let data, let bytesPerRow):
-            // 16-bit float per channel → 8-bit.
-            var bytes = [UInt8](repeating: 0, count: frame.width * frame.height * 4)
-            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-                for y in 0..<frame.height {
-                    for x in 0..<frame.width * 4 {
-                        let bits = raw.loadUnaligned(fromByteOffset: y * bytesPerRow + x * 2, as: UInt16.self)
-                        let v = Float(Float16(bitPattern: bits))
-                        bytes[y * frame.width * 4 + x] = UInt8(max(0, min(255, (v * 255).rounded())))
-                    }
-                }
-            }
-            let out = Data(bytes)
-            guard let provider = CGDataProvider(data: out as CFData) else { return nil }
-            return CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: frame.width * 4, space: space,
-                           bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider, decode: nil,
-                           shouldInterpolate: true, intent: .defaultIntent)
-        case .file(let url):
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-            return CGImageSourceCreateImageAtIndex(source, 0, nil)
-        }
-    }
 
     /// A single-frame `ImageAsset` (8-bit RGBA, un-premultiplied) from a `CGImage`.
     public static func asset(_ image: CGImage) -> ImageAsset? {
@@ -75,7 +42,7 @@ public enum ImageBridge {
 
     /// PNG bytes of an asset's first frame.
     public static func pngData(_ asset: ImageAsset) -> Data? {
-        guard let image = cgImage(asset) else { return nil }
+        guard let image = asset.frames.first?.cgImage() else { return nil }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(dest, image, nil)

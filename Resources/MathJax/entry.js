@@ -52,12 +52,32 @@ function parseTransform(s) {
 }
 
 // SVG path data → absolute segments under `m`: [0 x y] move, [1 x y] line, [2 x1 y1 x2 y2 x y] cubic, [3] close.
-// Quadratics are raised to cubics so Swift needs one curve kind; arcs (enclose's circles) become cubics too.
+// Quadratics are raised to cubics so Swift needs one curve kind; arcs (enclose's circles) become cubics too. Each path
+// string is parsed once, in its own units (a glyph recurs in nearly every formula), and only transformed per use: the
+// curves are built before the transform, which maps them exactly, so the result is the same as parsing every time.
+const pathCache = new Map();
 function pathSegments(d, m) {
-  const out = [];
+  let local = pathCache.get(d);
+  if (!local) {
+    if (pathCache.size >= 4096) pathCache.clear();   // bars and rules carry their positions; glyphs are a few hundred
+    local = parsePath(d);
+    pathCache.set(d, local);
+  }
   // Rounded to 1/100000 em (0.0001 pt at 10 pt): keeps the JSON small, which is most of the cost per formula.
   const round = (v) => Math.round(v * 1e5) / 1e5;
-  const T = (x, y) => [round(m[0] * x + m[2] * y + m[4]), round(m[1] * x + m[3] * y + m[5])];
+  return local.map((seg) => {
+    const out = [seg[0]];
+    for (let k = 1; k < seg.length; k += 2) {
+      out.push(round(m[0] * seg[k] + m[2] * seg[k + 1] + m[4]), round(m[1] * seg[k] + m[3] * seg[k + 1] + m[5]));
+    }
+    return out;
+  });
+}
+
+// SVG path data → the same segments in the path's own units.
+function parsePath(d) {
+  const out = [];
+  const T = (x, y) => [x, y];
   const tokens = d.match(/[A-Za-z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
   let i = 0, cmd = '', x = 0, y = 0, sx = 0, sy = 0, cx = 0, cy = 0, qx = 0, qy = 0, prev = '';
   const num = () => Number(tokens[i++]);

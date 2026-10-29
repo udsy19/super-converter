@@ -28,9 +28,10 @@ public extension ImageFrame {
     }
 
     /// The frame as a CGImage (8-bit or half-float RGBA un-premultiplied, or a file ImageIO reads), in its own colour space
-    /// (sRGB when untagged): the inverse of `init(cgImage:)`.
+    /// (sRGB when untagged, or when the profile isn't an RGB one the pixels could be in): the inverse of `init(cgImage:)`.
     func cgImage() -> CGImage? {
-        let space = iccProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = iccProfile.flatMap { CGColorSpace(iccData: $0 as CFData) }.flatMap { $0.model == .rgb ? $0 : nil }
+            ?? CGColorSpace(name: CGColorSpace.sRGB)!
         switch pixels {
         case .rgba8(let data, let bytesPerRow):
             guard let provider = CGDataProvider(data: data as CFData) else { return nil }
