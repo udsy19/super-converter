@@ -183,7 +183,7 @@ values (`\textwidth` 360/390 pt, `\baselineskip` 13.6/14.5 pt, `\parindent` 17/1
 | Verbatim / code | LM Mono 10/12, unjustified, `\topsep` around |
 | Footnotes | `\footnotesize` (8/9.5), rule 0.4 pt × 0.4 `\textwidth`, `\skip\footins` 9 pt (+4 −2), `\footnotesep` 6.65 pt, superscript marks |
 | Floats | figures and tables `[tbp]`: top of this page if it fits, else top of the next; `\abovecaptionskip` 10 pt; caption centred when one line |
-| Tables (booktabs) | `\heavyrulewidth` 0.08 em, `\lightrulewidth` 0.05 em, `\aboverulesep` 0.4 ex, `\belowrulesep` 0.65 ex, `\tabcolsep` 6 pt; no vertical rules; numbers right- or decimal-aligned; a table wider than the text block steps down to `\small`, then `\footnotesize`, then gets its own landscape page |
+| Tables (booktabs) | `\heavyrulewidth` 0.08 em, `\lightrulewidth` 0.05 em, `\aboverulesep` 0.4 ex, `\belowrulesep` 0.65 ex, `\tabcolsep` 6 pt; no vertical rules; numbers right- or decimal-aligned; a table wider than the text block steps down to `\small`, then `\footnotesize`; a table of figures and short labels then gets its own landscape page (split with the header repeated), while a table with sentences in its cells (six words or more) wraps its columns as a `p{}` column would |
 | Display math | centred, `\abovedisplayskip` 10 pt (+2 −5), `\belowdisplayskip` 10 pt (+2 −5); short-skip variants when the line before is short |
 | Links | clickable with no visible box (hyperref `hidelinks`) |
 | Page breaking | `\clubpenalty` 150, `\widowpenalty` 150, `\brokenpenalty` 100, headings keep with the next two lines, `\raggedbottom` |
@@ -201,8 +201,11 @@ values (`\textwidth` 360/390 pt, `\baselineskip` 13.6/14.5 pt, `\parindent` 17/1
   `\finalhyphendemerits` 5000, `\lefthyphenmin` 2, `\righthyphenmin` 3, looseness 0, four fitness classes.
 - **Emergency pass** [D]: where TeX would leave an overfull box, TypesetKit reruns with `\emergencystretch` 3 em (what
   careful LaTeX users set). Overfull lines are never produced.
-- **Hyphenation** from `CFStringGetHyphenationLocationBeforeIndex` (Apple's dictionaries; language from
-  `NLLanguageRecognizer` per paragraph, overridable); no hyphenation in words with digits, all capitals, URLs, code, or
+- **Hyphenation** with TeX's own Liang patterns (hyph-utf8) for the languages whose pattern files are permissively
+  licensed — English (US, UK), German, French, Spanish, Dutch, Polish, Portuguese, Ukrainian, Danish, Greek
+  (`Resources/Hyphenation/README.md`) — so breaks match `pdflatex`; other languages use
+  `CFStringGetHyphenationLocationBeforeIndex` (Apple's dictionaries). Language from `NLLanguageRecognizer` per
+  paragraph, overridable; no hyphenation in words with digits, all capitals, URLs, code, or
   words shorter than 5 letters.
 - **Drawing**: each line's glue is set to its computed ratio and every box is drawn at its exact x with Core Text, so
   the PDF has real text (selectable, searchable, tagged) with subset-embedded fonts.
@@ -243,7 +246,7 @@ repeated page furniture, pictures at their native resolution, and the closest in
 
 | Test | How | Threshold |
 |---|---|---|
-| **LaTeX parity** | 40 Markdown/text fixtures (prose in 8 languages, long words, lists, footnotes, tables, math, code, quotes, links). Our `LaTeXWriter` emits `.tex`; Tectonic (dev machine) compiles the golden PDFs, which are committed. TypesetKit renders the same fixture. | Same page count; ≥ 90 % of paragraphs with identical line-ending words (differences come from Apple vs TeX hyphenation patterns); first-line baselines within 0.5 pt; page images SSIM ≥ 0.90 at 100 dpi |
+| **LaTeX parity** | 40 Markdown/text fixtures (prose in 8 languages, long words, lists, footnotes, tables, math, code, quotes, links). Our `LaTeXWriter` emits `.tex`; Tectonic (dev machine) compiles the golden PDFs, which are committed. TypesetKit renders the same fixture. | Same page count; ≥ 90 % of paragraphs with identical line-ending words (differences come from languages hyphenated with Apple's dictionaries rather than TeX's patterns); first-line baselines within 0.5 pt; page images SSIM ≥ 0.90 at 100 dpi |
 | **Typographic lint** (every TypesetKit PDF) | Own checker over TypesetKit's layout log and the PDF | No overfull line (> 0.1 pt past the margin); no line with badness > 200 except emergency-pass lines (logged); ≤ 2 consecutive hyphenated lines; no widow/orphan unless the paragraph is ≤ 2 lines; no heading as last line of a page; all fonts embedded; text extraction equals the source text (hyphens rejoined); bookmarks = headings; tagged structure present |
 | **Math** | 120 expressions from the MathJax test suite | SVG renders; widths within 0.5 pt of the TeX golden; no red error boxes |
 | **As-written fidelity** | 20 DOCX fixtures written by Word with Calibri/Cambria/Times | Line count per paragraph within ±1 of Word's PDF (golden made on a Mac with Word); page count equal |

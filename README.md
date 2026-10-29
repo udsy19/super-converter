@@ -47,8 +47,8 @@ format from a short, searchable list if you like, press **Convert**, and the new
 ## Install
 
 Download `SuperConverter.dmg` from the [latest release](https://github.com/udsy19/super-converter/releases/latest), drag
-Super Converter into Applications and open it (the DMG's notes say how to get past Gatekeeper: the app is self-signed,
-not notarized). It updates itself from GitHub Releases; Settings › General turns that off. macOS 14 or later, Apple
+Super Converter into Applications and open it (a self-signed build's DMG notes say how to get past Gatekeeper; a
+notarised one opens directly). It updates itself from GitHub Releases; Settings › General turns that off. macOS 14 or later, Apple
 silicon or Intel.
 
 What leaves the Mac, exactly: [PRIVACY.md](PRIVACY.md). Changes: [CHANGELOG.md](CHANGELOG.md).
@@ -67,6 +67,11 @@ scripts/signing-setup.sh             # once: a project-local signing identity in
 scripts/build-app.sh                 # build/Super Converter.app, signed, with its static launch checks
 scripts/make-dmg.sh                  # dist/SuperConverter-<version>.dmg (universal)
 ```
+
+Releases are Developer ID signed and notarised when `DEVELOPER_ID` ("Developer ID Application: Name (TEAMID)", in
+your keychain) and `NOTARY_PROFILE` (made once with `xcrun notarytool store-credentials`) are set for
+`scripts/release.sh <version>`; without them they are signed with the project-local identity. The updater accepts only
+updates signed like the copy that is running, so keep the identity of the first public release.
 
 `scripts/release.sh <version>` publishes a release (the maintainer's; it needs the signing identity in `.signing/`).
 Generated data: `python3 -I scripts/gen-format-matrix.py` rewrites the format matrix from the CloudConvert snapshot,

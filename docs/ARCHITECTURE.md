@@ -200,7 +200,9 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
   autotools from pinned upstream source, `scripts/fetch-vendor.sh` downloads the published artifacts (this
   repository's Releases, pinned by SHA-256 in `Vendor.lock`), as Super PDF does for QPDF.
 - **App**: not sandboxed (helpers, automation and `hdiutil` need it), Hardened Runtime, Developer ID signed and
-  notarised by `scripts/release.sh` (copied from Super PDF; the signing identity never changes), DMG by
+  notarised by `scripts/release.sh` when `DEVELOPER_ID` and `NOTARY_PROFILE` are set, else signed with the project-local
+  identity as Super PDF is (copied from Super PDF; whichever identity the first public release uses never changes, since
+  the updater installs only updates with the running copy's designated requirement), DMG by
   `scripts/make-dmg.sh`, updates through UpdateKit. Entitlements: Apple Events (automation of Pages, Numbers,
   Keynote, Microsoft Office). MathJax runs in JavaScriptCore without the JIT entitlement (interpreter is fast enough
   for formulas; WP-T measures).

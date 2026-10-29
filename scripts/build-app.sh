@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds build/Super Converter.app (release by default; `--debug` for a fast debug build; UNIVERSAL=1 for Apple silicon +
-# Intel) and signs it inside out with the project-local identity from scripts/signing-setup.sh (ad hoc when there is none).
+# Intel) and signs it inside out: with the Developer ID named in DEVELOPER_ID when set (secure timestamp, ready for
+# notarisation by make-dmg.sh), else the project-local identity from scripts/signing-setup.sh, else ad hoc.
 #
 #   Contents/MacOS/SuperConverter         the app (swift build --product SuperConverter)
 #   Contents/Helpers/{ffmpeg,ffprobe,7zz}  the bundled LGPL FFmpeg and 7-Zip from Vendor/Tools (scripts/tools.sh fetch)
@@ -104,8 +105,13 @@ EXT_ENT="$ROOT/Resources/QuickActions.entitlements"
 IDENTITY="Super Converter Local Signing"
 NESTED=("$APP/Contents/Frameworks/libraw_r.dylib")
 for tool in "${TOOLS[@]}"; do NESTED+=("$APP/Contents/Helpers/$tool"); done
-sign() { codesign -f -s "$SIGN_AS" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} -o runtime "$@"; }
-if [ -f "$KC" ]; then
+TIMESTAMP=()
+sign() { codesign -f -s "$SIGN_AS" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} -o runtime "$@"; }
+if [ -n "${DEVELOPER_ID:-}" ]; then
+  # A "Developer ID Application: …" identity in the login keychain; notarisation needs the secure timestamp.
+  security find-identity -v -p codesigning | grep -qF "$DEVELOPER_ID" || { echo "error: DEVELOPER_ID \"$DEVELOPER_ID\" is not a valid signing identity in your keychains" >&2; exit 1; }
+  SIGN_AS="$DEVELOPER_ID"; KEYCHAIN=(); TIMESTAMP=(--timestamp)
+elif [ -f "$KC" ]; then
   SIGN_AS="$IDENTITY"; KEYCHAIN=(--keychain "$KC")
   security unlock-keychain -p superconverter "$KC"
   ORIG=()
@@ -122,7 +128,7 @@ fi
 for item in "${NESTED[@]}"; do sign "$item"; done
 for ext in "${EXTENSIONS[@]}"; do sign --entitlements "$EXT_ENT" "$ext"; done
 sign --entitlements "$ENT" "$APP"
-if [ -f "$KC" ]; then restore; trap - EXIT; fi
+if [ -z "${DEVELOPER_ID:-}" ] && [ -f "$KC" ]; then restore; trap - EXIT; fi
 codesign --verify --deep --strict "$APP"
 
 # ---- Static launch checks. The app is never launched here (no GUI on a build machine); instead everything that would
