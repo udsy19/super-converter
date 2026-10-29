@@ -9,3 +9,4 @@ dist/
 /Tests/Corpus/external/
 node_modules/
 docs/mockups/.chrome-profile/
+/.claude/worktrees/
