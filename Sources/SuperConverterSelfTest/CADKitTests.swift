@@ -562,6 +562,63 @@ func registerCADKitTests() {
         check(hatches == 1 && polylines == 2 && texts == 1, "hatch \(hatches), polylines \(polylines), text \(texts)")
         if case .styled(_, let a)? = back.modelSpace.dropFirst().first { check(a.trueColour == 0xFF0000 || a.trueColour == 0x0000FF, "true colour kept") }
     }))
+
+    SelfTest.cases.append(("CADKit.damagedInputNeverCrashes", {
+        // Every entity kind the reader converts, nested blocks (a block inserting another, one inserting itself, an array of
+        // them), all four hatch edge types and a layout with a viewport, as ASCII and as binary DXF, plus the corpus sample.
+        let blocks = block("LEAF", line(0, 0, 1, 1) + circle(0, 0, 1))
+            + block("NODE", entity("INSERT", [(2, "LEAF"), (10, "0"), (20, "0"), (30, "0"), (70, "2"), (71, "1"), (44, "2"), (45, "2")])
+                + entity("INSERT", [(2, "NODE"), (10, "5"), (20, "5"), (30, "0")]))
+            + block("*Paper_Space", "")
+        var body = frame
+        body += entity("INSERT", [(2, "NODE"), (10, "10"), (20, "10"), (30, "0"), (41, "2"), (42, "2"), (50, "30"), (70, "4"), (71, "2"), (44, "8"), (45, "8")])
+        body += entity("INSERT", [(2, "LEAF"), (66, "1"), (10, "1"), (20, "1"), (30, "0")]) + entity("ATTRIB", [(10, "1"), (20, "1"), (40, "1"), (1, "Tag"), (70, "0")]) + rec("SEQEND", [(8, "0")])
+        body += entity("ARC", [(10, "0"), (20, "0"), (40, "5"), (50, "30"), (51, "120"), (210, "0.6"), (220, "0"), (230, "0.8")])
+        body += entity("LWPOLYLINE", [(90, "3"), (70, "1"), (10, "0"), (20, "0"), (42, "0.5"), (10, "4"), (20, "0"), (10, "4"), (20, "3")])
+        body += entity("POLYLINE", [(66, "1"), (70, "64"), (71, "3"), (72, "1")]) + entity("VERTEX", [(10, "0"), (20, "0"), (70, "192")])
+            + entity("VERTEX", [(10, "1"), (20, "0"), (70, "192")]) + entity("VERTEX", [(10, "1"), (20, "1"), (70, "192")])
+            + entity("VERTEX", [(10, "0"), (20, "0"), (70, "128"), (71, "1"), (72, "2"), (73, "3")]) + rec("SEQEND", [(8, "0")])
+        body += entity("POLYLINE", [(66, "1"), (70, "16"), (71, "2"), (72, "2")]) + (0..<4).map { entity("VERTEX", [(10, "\($0 % 2)"), (20, "\($0 / 2)"), (70, "64")]) }.joined() + rec("SEQEND", [(8, "0")])
+        body += entity("ELLIPSE", [(10, "0"), (20, "0"), (30, "0"), (11, "4"), (21, "0"), (31, "0"), (40, "0.5"), (41, "0"), (42, "6.283185307")])
+        body += entity("SPLINE", [(70, "8"), (71, "3"), (72, "8"), (73, "4"), (40, "0"), (40, "0"), (40, "0"), (40, "0"), (40, "1"), (40, "1"), (40, "1"), (40, "1"),
+                                  (10, "0"), (20, "0"), (10, "1"), (20, "2"), (10, "3"), (20, "2"), (10, "4"), (20, "0")])
+        body += entity("TEXT", [(10, "1"), (20, "1"), (30, "0"), (40, "2"), (1, "Room %%c20 \\U+00E9"), (72, "1"), (11, "3"), (21, "1"), (31, "0"), (73, "0")])
+        body += entity("MTEXT", [(10, "0"), (20, "9"), (30, "0"), (40, "1"), (41, "6"), (71, "5"), (1, "Line one\\PLine {\\fArial|b1;two} \\Sa^b;")])
+        body += entity("LEADER", [(10, "0"), (20, "0"), (30, "0"), (10, "5"), (20, "5"), (30, "0")])
+        body += entity("POINT", [(10, "1"), (20, "1"), (30, "0")])
+        body += entity("SOLID", [(10, "0"), (20, "0"), (11, "2"), (21, "0"), (12, "0"), (22, "2"), (13, "2"), (23, "2")])
+        body += entity("3DFACE", [(10, "0"), (20, "0"), (30, "0"), (11, "1"), (21, "0"), (31, "1"), (12, "1"), (22, "1"), (32, "1"), (13, "1"), (23, "1"), (33, "1")])
+        body += entity("HATCH", [(10, "0"), (20, "0"), (30, "0"), (2, "ANSI31"), (70, "0"), (71, "0"), (91, "2"),
+                                 (92, "2"), (72, "1"), (73, "1"), (93, "3"), (10, "10"), (20, "10"), (42, "0.3"), (10, "50"), (20, "10"), (42, "0"), (10, "50"), (20, "50"), (42, "0"), (97, "0"),
+                                 (92, "1"), (93, "4"), (72, "1"), (10, "20"), (20, "20"), (11, "40"), (21, "20"),
+                                 (72, "2"), (10, "40"), (20, "30"), (40, "10"), (50, "270"), (51, "90"), (73, "1"),
+                                 (72, "3"), (10, "30"), (20, "40"), (11, "10"), (21, "0"), (40, "0.5"), (50, "0"), (51, "180"), (73, "0"),
+                                 (72, "4"), (94, "3"), (73, "0"), (74, "0"), (95, "8"), (96, "4"), (40, "0"), (40, "0"), (40, "0"), (40, "0"), (40, "1"), (40, "1"), (40, "1"), (40, "1"),
+                                 (10, "20"), (20, "40"), (10, "15"), (20, "30"), (10, "25"), (20, "25"), (10, "20"), (20, "20"), (97, "1"), (330, "1F"),
+                                 (75, "0"), (76, "1"), (52, "0"), (41, "1"), (77, "0"), (78, "1"), (53, "45"), (43, "0"), (44, "0"), (45, "-2"), (46, "2"), (79, "2"), (49, "1"), (49, "-0.5"), (98, "0")])
+        body += entity("VIEWPORT", [(67, "1"), (10, "100"), (20, "50"), (30, "0"), (40, "100"), (41, "60"), (68, "1"), (69, "2"), (12, "25"), (22, "15"), (45, "30")])
+        let tables = table("LAYER", layerRecord("0") + layerRecord("HIDDEN", colour: -3))
+            + table("LTYPE", rec("LTYPE", [(2, "DASHED"), (70, "0"), (73, "2"), (40, "0.75"), (49, "0.5"), (49, "-0.25")]))
+            + table("STYLE", rec("STYLE", [(2, "ROMAN"), (3, "arial.ttf"), (41, "0.8"), (50, "15")]))
+            + table("BLOCK_RECORD", rec("BLOCK_RECORD", [(5, "51"), (2, "*Paper_Space")]))
+        let objects = rec("LAYOUT", [(5, "50"), (100, "AcDbLayout"), (1, "Sheet A"), (44, "200"), (45, "100"), (72, "1"), (330, "51")])
+        let rich = dxf(units: 4, tables: tables, blocks: blocks, entities: body, objects: objects)
+        var seeds = [FuzzSeed(name: "ascii", ext: "dxf", bytes: Array(rich.utf8), nesting: ["0\nINSERT\n2\nLEAF\n"]),
+                     FuzzSeed(name: "binary", ext: "dxf", bytes: [UInt8](binaryDXF(rich)))]
+        let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Corpus/generated/sample.dxf")
+        if let data = try? Data(contentsOf: corpus) { seeds.append(FuzzSeed(name: "corpus", ext: "dxf", bytes: [UInt8](data))) }
+        let reader = CADKitModuleTests.converter(.dxfReader), plotter = CADKitModuleTests.converter(.cadKit)
+        let dir = scratch.appendingPathComponent("cadkit-fuzz", isDirectory: true)
+        // All layouts, so the viewport's view of model space is plotted as well as the sheet.
+        let options = OptionValues(["allLayouts": true])
+        let ran = fuzzNeverCrashes("CADKit.damagedInputNeverCrashes", seeds: seeds, count: 30) { url, _ in
+            let context = StepContext(workFolder: dir, source: url, sourceFormat: "dxf", targetFormat: "svg", options: options)
+            let read = try await reader.run(Step(.dxfReader, .format("dxf"), .model(.cadDrawing)), input: .file(url), context: context)
+            _ = try await plotter.run(Step(.cadKit, .model(.cadDrawing), .model(.vectorDocument)), input: read.value, context: context)
+        }
+        check(ran == 30 * seeds.count && seeds.count == 3, "every damaged input was handled without a crash (\(ran))")
+    }))
 }
 
 /// Access to internals the checks need without widening CADKit's public surface.
