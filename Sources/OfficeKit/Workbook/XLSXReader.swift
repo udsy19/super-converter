@@ -74,9 +74,8 @@ enum XLSXReader {
                 continue
             }
             let parsed = WorksheetParser.parse(data, maxRows: maxRows, maxColumns: maxColumns, budget: cellBudget)
-            cellBudget -= parsed.cellCount
             truncated = truncated || parsed.truncated
-            var sheet = build(parsed, name: name, styles: styles, strings: strings, date1904: date1904)
+            var sheet = build(parsed, name: name, styles: styles, strings: strings, date1904: date1904, budget: &cellBudget, truncated: &truncated)
             sheet.isHidden = hidden
             sheet.printArea = printAreas[index].flatMap(printArea)
             sheets.append(sheet)
@@ -104,23 +103,32 @@ enum XLSXReader {
 
     // MARK: Building the model
 
-    private static func build(_ parsed: WorksheetParser.Result, name: String, styles: StyleTable, strings: [String], date1904: Bool) -> Sheet {
+    private static func build(_ parsed: WorksheetParser.Result, name: String, styles: StyleTable, strings: [String], date1904: Bool,
+                              budget: inout Int, truncated: inout Bool) -> Sheet {
         var sheet = Sheet(name: name)
-        if let lastRow = parsed.cells.keys.max() {
-            var rows = [[Cell]](repeating: [], count: lastRow + 1)
-            for (r, cells) in parsed.cells {
-                guard let lastColumn = cells.keys.max() else { continue }
-                var row = [Cell](repeating: Cell(), count: lastColumn + 1)
-                for (c, raw) in cells { row[c] = cell(raw, styles: styles, strings: strings, date1904: date1904) }
-                rows[r] = row
-            }
-            sheet.rows = rows
-        }
+        sheet.rows = rows(parsed.cells, budget: &budget, truncated: &truncated) { cell($0, styles: styles, strings: strings, date1904: date1904) }
         sheet.merges = parsed.merges
         for (column, info) in parsed.columns {
             if let width = info.width { sheet.columnWidths[column] = width }
         }
         return sheet
+    }
+
+    /// Sparse cells (row → column → cell) laid out as the model's rows, each padded to its last cell, for as long as the grid
+    /// stays within `budget` cells: a few cells far out to the right of many rows ("XFD1048576") must not become billions
+    /// of empty ones. Rows past the budget are left out and `truncated` is set.
+    static func rows<T>(_ cells: [Int: [Int: T]], budget: inout Int, truncated: inout Bool, cell: (T) -> Cell) -> [[Cell]] {
+        var rows: [[Cell]] = []
+        for r in cells.keys.sorted() {
+            guard let row = cells[r], let lastColumn = row.keys.max() else { continue }
+            guard lastColumn < budget else { truncated = true; break }
+            budget -= lastColumn + 1
+            var line = [Cell](repeating: Cell(), count: lastColumn + 1)
+            for (c, value) in row { line[c] = cell(value) }
+            if rows.count < r { rows += [[Cell]](repeating: [], count: r - rows.count) }
+            rows.append(line)
+        }
+        return rows
     }
 
     private static func cell(_ raw: WorksheetParser.RawCell, styles: StyleTable, strings: [String], date1904: Bool) -> Cell {
@@ -390,7 +398,7 @@ enum WorksheetParser {
     private final class Delegate: NSObject, XMLParserDelegate {
         var result = Result()
         let maxRows: Int, maxColumns: Int, budget: Int
-        private var row = -1, nextColumn = 0
+        private var row = -1, nextColumn = 0, columnWork = 0
         private var cell: RawCell?
         private var cellPosition: (row: Int, column: Int)?
         private var inValue = false, inInline = false, inInlineText = false, inFormula = false, phonetic = 0
@@ -413,7 +421,8 @@ enum WorksheetParser {
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
             switch local(name) {
             case "row":
-                row = attributes["r"].flatMap(Int.init).map { $0 - 1 } ?? row + 1
+                // Held to the sheet's rows (and one past, where cells are left out) so a damaged "r" can't overflow the count.
+                row = attributes["r"].flatMap(Int.init).map { min(max($0, 0), maxRows + 1) - 1 } ?? min(row + 1, maxRows)
                 nextColumn = 0
             case "c":
                 var position = attributes["r"].flatMap(WorksheetParser.reference) ?? (row, nextColumn)
@@ -434,7 +443,11 @@ enum WorksheetParser {
                 let info = ColumnInfo(width: attributes["width"].flatMap(Double.init).map { Swift.min(Swift.max($0, 0), 255) },
                                       hidden: attributes["hidden"] == "1" || attributes["hidden"] == "true")
                 let upper = Swift.min(max, maxColumns)
-                if min - 1 < upper { for c in (min - 1)..<upper { result.columns[c] = info } }
+                // Valid `col`s don't overlap, so a sheet's widths take at most a few passes over its columns; damaged ones
+                // that each span the sheet must not take hours.
+                guard min - 1 < upper, columnWork < 4 * maxColumns else { return }
+                columnWork += upper - (min - 1)
+                for c in (min - 1)..<upper { result.columns[c] = info }
             case "mergeCell":
                 guard let ref = attributes["ref"] else { return }
                 let corners = ref.split(separator: ":").map(String.init)
