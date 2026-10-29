@@ -28,7 +28,10 @@ enum PNMDecoder {
         func number() -> Int? {
             skipSpaceAndComments()
             var value = 0, digits = 0
-            while i < bytes.count, (48...57).contains(bytes[i]) { value = value * 10 + Int(bytes[i] - 48); i += 1; digits += 1 }
+            while i < bytes.count, (48...57).contains(bytes[i]) {
+                guard value <= Int(Int32.max) else { return nil }   // no Netpbm field needs more
+                value = value * 10 + Int(bytes[i] - 48); i += 1; digits += 1
+            }
             return digits > 0 ? value : nil
         }
 
@@ -62,9 +65,19 @@ enum PNMDecoder {
             channels = (kind == 3 || kind == 6) ? 3 : 1
             i += 1   // the single whitespace before raster data
         }
-        guard width > 0, height > 0, maxval > 0, maxval <= 65535, (1...4).contains(channels), width * height < 1 << 30 else { return nil }
+        guard width > 0, height > 0, maxval > 0, maxval <= 65535, (1...4).contains(channels),
+              case let (pixels, overflow) = width.multipliedReportingOverflow(by: height), !overflow, pixels < 1 << 30 else { return nil }
         let colourChannels = alpha ? channels - 1 : channels
         let count = width * height
+        // The samples the header claims must fit in what follows it (plain samples take at least a byte each).
+        let wide = maxval > 255
+        let rowBytes = (width + 7) / 8
+        let needed = switch kind {
+        case 1, 2, 3: count * channels
+        case 4: rowBytes * height
+        default: count * channels * (wide ? 2 : 1)
+        }
+        guard i <= bytes.count, needed <= bytes.count - i else { return nil }
         var values = [Float](repeating: 0, count: count * channels)
         let scale = 1 / Float(maxval)
         switch kind {
@@ -81,14 +94,10 @@ enum PNMDecoder {
                 }
             }
         case 4:
-            let rowBytes = (width + 7) / 8
-            guard i + rowBytes * height <= bytes.count else { return nil }
             for y in 0..<height {
                 for x in 0..<width { values[y * width + x] = (bytes[i + y * rowBytes + x / 8] >> (7 - UInt8(x % 8))) & 1 == 1 ? 0 : 1 }
             }
         default:
-            let wide = maxval > 255
-            guard i + count * channels * (wide ? 2 : 1) <= bytes.count else { return nil }
             for k in 0..<(count * channels) {
                 let v = wide ? Int(bytes[i + 2 * k]) << 8 | Int(bytes[i + 2 * k + 1]) : Int(bytes[i + k])
                 values[k] = bitmap && k % channels < colourChannels ? (v > 0 ? 1 : 0) : Float(min(v, maxval)) * scale
