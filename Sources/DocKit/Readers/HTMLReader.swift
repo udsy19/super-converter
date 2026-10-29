@@ -338,7 +338,7 @@ enum HTMLReader {
             case "font":
                 if let face = node.attr("face") { f.font = face.split(separator: ",").first.map { $0.trimmed } }
                 if let colour = node.attr("color"), let hex = Self.colour(colour) { f.colour = hex }
-            case "input", "label", "wbr": return
+            case "input", "label": return
             default: break
             }
             if let weight = css["font-weight"] { f.bold = weight == "bold" || weight == "bolder" || (Int(weight) ?? 0) >= 600 }

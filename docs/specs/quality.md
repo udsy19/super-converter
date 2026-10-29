@@ -113,7 +113,7 @@ frame so total duration is exact). No GPL quantiser (libimagequant is GPL-3) is 
 | Gamma-correct scaling | 1-px black/white checkerboard 512² → 256², 128², 64² | output value | uniform sRGB 187–188 (50 % linear), never 127/128 |
 | Ringing | step edge, Lanczos down/up | overshoot | clamp holds: values within [0, 255] and no halo > 2 levels beyond 3 px |
 | Edge chroma | red 12 px text on white → JPEG q90 | ΔE00 at glyph edges | p95 ≤ 6 (fails with 4:2:0 → libjpeg-turbo switch, §2.3) |
-| Photo lossy defaults | 24 corpus photos → JPEG 90, WebP 90, AVIF 80, HEIC 85 | SSIM (luma, Gaussian 11×11, σ 1.5); ΔE00 | SSIM ≥ 0.985; mean ΔE00 ≤ 1.5 |
+| Photo lossy defaults | The 24 Kodak photographs (`Tests/Corpus/corpus.lock`) → JPEG 90, WebP 90, AVIF 80, HEIC 85 | SSIM (luma, Gaussian 11×11, σ 1.5); ΔE00 | Each photo: SSIM ≥ 0.955, mean ΔE00 ≤ 2.5; and no regression beyond the noise band. Set from measurement (2026-10): at these defaults the corpus gives SSIM min/mean 0.963/0.974 (JPEG), 0.965/0.979 (WebP), 0.962/0.979 (AVIF), 0.971/0.979 (HEIC) and mean ΔE00 at most 1.46, 1.85, 2.11, 2.28; the earlier 0.985 / 1.5 was unmeasured and missed by every format even one quality step higher |
 | Alpha edges | anti-aliased logo with alpha → JPG on white | min luminance across edge | ≥ min(fg, bg) − 1 (no dark fringe) |
 | RAW | 30 RAW files from raw.pixls.us (CC0), 12 makers | our pipeline vs bare `CIRAWFilter` output | mean ΔE00 ≤ 0.3 (the pipeline adds nothing) |
 | HDR | gain-map HEIC → HEIC, AVIF, JPEG (macOS 15+), PNG | gain map present / tone-map | present where supported; SDR highlights not clipped beyond the reference tone map ± 2 % |

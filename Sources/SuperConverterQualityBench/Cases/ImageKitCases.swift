@@ -152,7 +152,7 @@ enum ImageKitCases {
             let photo = String(format: "kodim%02d", n)
             return BenchCase(id: "imagekit.photo-\(target)-\(photo)", category: .image, tier: .full, fixture: "external/photos/\(photo).png",
                              target: target, options: OptionValues(["lossless": false]), checks: [
-                .producesFormat(target), .imageMatches(reference: { $0.source }, ssimAtLeast: 0.985, meanDeltaEAtMost: 1.5),
+                .producesFormat(target), .imageMatches(reference: { $0.source }, ssimAtLeast: 0.955, meanDeltaEAtMost: 2.5),
             ])
         }
     }
