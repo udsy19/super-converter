@@ -16,11 +16,14 @@ enum ImageKitCases {
 
     static let lossless: [BenchCase] = {
         var cases: [BenchCase] = []
-        // AVIF-lossless is not here: neither ImageIO nor the bundled SVT-AV1 (4:2:0 only) can write lossless 4:4:4 AVIF.
         for target in ["tiff", "psd", "bmp", "webp"] as [FormatID] {
             cases.append(exact("lossless-rgb8-\(target)", "generated/colorchecker-24.png", target))
         }
         for target in ["tiff", "psd", "webp"] as [FormatID] { cases.append(exact("lossless-rgba8-\(target)", "generated/logo-alpha-128.png", target)) }
+        // AVIF-lossless: libavif + libaom, 8-bit 4:4:4 with the identity matrix (ImageKit's AVIFWriter).
+        let lossless = OptionValues(["lossless": true])
+        cases.append(exact("lossless-rgb8-avif", "generated/colorchecker-24.png", "avif", options: lossless))
+        cases.append(exact("lossless-rgba8-avif", "generated/logo-alpha-128.png", "avif", options: lossless))
         for target in ["tiff", "psd"] as [FormatID] {
             cases.append(exact("lossless-rgb16-\(target)", "generated/ramp-p3-16.png", target))
             cases.append(exact("lossless-gray16-\(target)", "generated/ramp-gray-16.png", target))
@@ -30,8 +33,8 @@ enum ImageKitCases {
     }()
 
     /// Source → `target` → the source's own format, both through the app: the samples come back bit-exact.
-    private static func exact(_ name: String, _ fixture: String, _ target: FormatID) -> BenchCase {
-        BenchCase(id: "imagekit.\(name)", category: .image, fixture: fixture, target: target, checks: [
+    private static func exact(_ name: String, _ fixture: String, _ target: FormatID, options: OptionValues = OptionValues()) -> BenchCase {
+        BenchCase(id: "imagekit.\(name)", category: .image, fixture: fixture, target: target, options: options, checks: [
             .producesFormat(target),
             // Read back by the app itself (PSD's own reader takes the exact layer; ImageIO's reads the matted composite).
             Check(name: "read back, the samples are bit-exact") { ctx in

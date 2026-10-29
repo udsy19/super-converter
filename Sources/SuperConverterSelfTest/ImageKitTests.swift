@@ -509,7 +509,8 @@ private func imageKitNoICCTargets() {
     }
 }
 
-/// quality §2.8 "Lossless round trips": PNG ↔ TIFF ↔ PSD ↔ BMP ↔ WebP-lossless, bit-exact, profile byte for byte.
+/// quality §2.8 "Lossless round trips": PNG ↔ TIFF ↔ PSD ↔ BMP ↔ WebP-lossless ↔ AVIF-lossless (8-bit 4:4:4), bit-exact,
+/// profile byte for byte (AVIF: pixels only; sRGB and P3 are written as nclx).
 @MainActor
 private func imageKitLosslessRoundTrips() {
     struct Fixture { var name: String; var comps: Int; var alpha: Bool; var bits: Int; var icc: Data; var chain: [FormatID] }
@@ -553,13 +554,31 @@ private func imageKitLosslessRoundTrips() {
         }
         ikPrint("lossless \(f.name): \(path)")
     }
-    // AVIF at quality 100 through ImageIO (the bundled SVT-AV1 is 4:2:0 only): measured, not required.
-    let source = ikURL("lossless-avif.png")
-    ikWrite(source, type: .png, width: 64, height: 32, components: 3, alpha: false, bits: 8, icc: ikSRGB) { x, y, c in (x * 31 + y * 17 + c * 80) % 256 }
-    if let url = ikConvert(source, to: "avif", options: ["lossless": true]).url, let a = ikDecode(source), let b = ikDecode(url) {
-        let worst = zip(ikSamples(a, bits: 8), ikSamples(b, bits: 8)).map { abs($0 - $1) }.max() ?? 0
-        ikPrint("AVIF \"lossless\" (ImageIO, quality 100): max sample difference \(worst)")
+    // AVIF-lossless (libavif + libaom, 8-bit 4:4:4, identity matrix): nclx (sRGB, P3) and ICC (custom Adobe) sources,
+    // with and without alpha, decoded by ImageIO and converted back to PNG, bit-exact.
+    let avifFixtures: [(name: String, alpha: Bool, icc: Data)] = [("rgb8-srgb", false, ikSRGB), ("rgb8-p3", false, ikP3),
+                                                                 ("rgba8-adobe", true, ikCustomAdobe)]
+    for f in avifFixtures {
+        let source = ikURL("lossless-avif-\(f.name).png")
+        ikWrite(source, type: .png, width: 61, height: 37, components: 3, alpha: f.alpha, bits: 8, icc: f.icc) { x, y, c in
+            if f.alpha && c == 3 { return (x * 7 + y * 3) % 5 == 0 ? 0 : (x * 37 + y * 11) % 256 }
+            return (x * 4099 + y * 7919 + c * 30011) % 256
+        }
+        guard let start = ikDecode(source) else { check(false, "AVIF \(f.name) fixture"); continue }
+        let expected = ikSamples(start, bits: 8)
+        let result = ikConvert(source, to: "avif", options: ["lossless": true, "background": "transparent"])
+        guard let avif = result.url, let decoded = ikDecode(avif) else { check(false, "AVIF \(f.name): \(String(describing: result.error))"); continue }
+        check(decoded.alpha == f.alpha && ikSamples(decoded, bits: 8) == expected, "AVIF-lossless \(f.name): pixels bit-exact")
+        let back = ikConvert(avif, to: "png", options: ["background": "transparent"])
+        guard let png = back.url, let again = ikDecode(png) else { check(false, "AVIF \(f.name) → PNG: \(String(describing: back.error))"); continue }
+        check(ikSamples(again, bits: 8) == expected, "AVIF-lossless \(f.name) → PNG: pixels bit-exact")
+        ikPrint("lossless \(f.name): png → avif → png (\((try? Data(contentsOf: avif).count) ?? 0) bytes)")
     }
+    // Lossless AV1 here is 8-bit: a 16-bit source is refused instead of losing its low bits.
+    let deep = ikURL("lossless-avif-rgb16.png")
+    ikWrite(deep, type: .png, width: 16, height: 16, components: 3, alpha: false, bits: 16, icc: ikProPhoto) { x, y, c in (x * 4099 + y * 7919 + c * 30011) % 65536 }
+    let refused = ikConvert(deep, to: "avif", options: ["lossless": true])
+    check(refused.url == nil && String(describing: refused.error).contains("8 bits"), "16-bit → AVIF-lossless is refused: \(String(describing: refused.error))")
 }
 
 /// quality §2.8 "Gamma-correct scaling": a 1-px black/white checkerboard averages to 50 % linear light (sRGB 187–188).
