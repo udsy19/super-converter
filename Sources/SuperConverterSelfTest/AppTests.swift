@@ -1,7 +1,24 @@
 import AppKit
+import ArchiveKit
+import CADKit
+import ConvertKit
+import DocKit
+import EbookKit
+import FontKit
+import HelperKit
+import ImageKit
+import LayoutKit
+import MathKit
+import MediaKit
 import MenuBarKit
+import OfficeKit
+import RenderKit
 import SuperConverterCore
+import TypesetKit
 import UniformTypeIdentifiers
+import VectorKit
+import VectorizeKit
+import XPSKit
 
 // The app target's checks (WP-R): the launch sequence's order (read from the app's source, which the self-test can't
 // import), Resources/Info.plist against what Core's catalog and MenuBarKit's Quick Actions say it must hold (document
@@ -14,6 +31,7 @@ func registerAppTests() {
               "bundle identifier and URL scheme")
     }))
     SelfTest.cases.append(("App.launchSequence", { appLaunchSequence() }))
+    SelfTest.cases.append(("App.everyRouteHasAConverter", { appCoverage() }))
     SelfTest.cases.append(("App.infoPlist", { appInfoPlistMatches() }))
     SelfTest.cases.append(("App.infoPlistCoversCatalog", { appInfoPlistCoversCatalog() }))
     SelfTest.cases.append(("App.typedLinks", { appTypedLinks() }))
@@ -23,6 +41,25 @@ private let appRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent(
 private let infoPlistURL = appRoot.appendingPathComponent("Resources/Info.plist")
 
 // MARK: - Launch sequence (ARCHITECTURE §9)
+
+/// ARCHITECTURE §4: with every module installed as the app installs them, every engine the matrix names has a converter,
+/// every converter is used by some route, and every step is handled.
+@MainActor private func appCoverage() {
+    let saved = (Services.planner, Services.queue, Services.sniffer, Services.output, Services.thumbnails, Services.converters)
+    defer { (Services.planner, Services.queue, Services.sniffer, Services.output, Services.thumbnails, Services.converters) = saved }
+    Services.converters = ConverterList()
+    HelperKitModule.install()
+    ImageKitModule.install(); RenderKitModule.install(); VectorKitModule.install(); XPSKitModule.install()
+    VectorizeKitModule.install(); CADKitModule.install(); DocKitModule.install(); MathKitModule.install()
+    TypesetKitModule.install(); LayoutKitModule.install(); OfficeKitModule.install()
+    EbookKitModule.install(extractor: ArchiveKitModule.extractor()); ArchiveKitModule.install(); MediaKitModule.install()
+    FontKitModule.install()
+    ConvertKitModule.install()
+    let report = ConvertKitModule.coverage
+    check(report.missingEngines.isEmpty, "engines without a converter: \(report.missingEngines.map(\.rawValue))")
+    check(report.unusedConverters.isEmpty, "converters no route uses: \(report.unusedConverters)")
+    check(report.unhandledSteps.isEmpty, "steps no converter handles: \(report.unhandledSteps.count), e.g. \(report.unhandledSteps.prefix(5))")
+}
 
 /// Steps 1–4 in their order: bootstrap; HelperKit, every engine, ConvertKit, WindowKit, MenuBarKit, SettingsKit; the
 /// updater, the menus and the Services provider; registration, the files passed in, the updater's start.
