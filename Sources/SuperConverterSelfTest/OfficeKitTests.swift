@@ -399,6 +399,12 @@ func registerOfficeKitTests() {
         check(officeError(.xlsxReader, .format("xlsx"), .workbook, .file(notZip), source: notZip) == .damaged("xlsx"), "text is damaged")
         let encrypted = officeFile(Data([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) + Data(count: 600), "locked.xlsx")
         check(officeError(.xlsxReader, .format("xlsx"), .workbook, .file(encrypted), source: encrypted) == .passwordRequired("xlsx"), "an OLE2 container is a password-protected workbook")
+        // A bomb whose header lies (1 KB declared, 1 GB inside) is damaged, and reading it never holds the gigabyte.
+        let bomb = officeFile(lyingZip(["_rels/.rels", "xl/workbook.xml"], payload: deflatedZeros(1 << 30), declaredSize: 1_000), "bomb.xlsx")
+        var error: ConversionError?
+        let growth = peakFootprintGrowth { error = officeError(.xlsxReader, .format("xlsx"), .workbook, .file(bomb), source: bomb) }
+        check(error == .damaged("xlsx"), "a part that inflates past its declared size is damaged (\(String(describing: error)))")
+        check(growth < 256 << 20, "and inflating it stops at the declared size (peak rose \(growth >> 20) MB)")
     }))
 
     // MARK: ODS

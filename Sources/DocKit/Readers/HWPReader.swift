@@ -21,7 +21,7 @@ enum HWPReader {
             index += 1
             var body = stream
             if compressed {
-                guard let inflated = try? (stream as NSData).decompressed(using: .zlib) as Data else { throw ConversionError.damaged("hwp") }
+                guard let inflated = Inflate.raw(stream, limit: ZipArchive.maxEntrySize) else { throw ConversionError.damaged("hwp") }
                 body = inflated
             }
             let records = Record.parse(body)

@@ -1,4 +1,5 @@
 import AppKit
+import Compression
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -197,6 +198,66 @@ private func zip(_ files: [(String, String)]) -> Data {
     var zip = ZipWriter()
     for (path, text) in files { zip.add(path, text) }
     return zip.finish()
+}
+
+/// A raw DEFLATE stream of `count` zero bytes, made a megabyte at a time so making it never holds them all.
+func deflatedZeros(_ count: Int) -> Data {
+    let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
+    defer { stream.deallocate() }
+    guard compression_stream_init(stream, COMPRESSION_STREAM_ENCODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return Data() }
+    defer { compression_stream_destroy(stream) }
+    let zeros = [UInt8](repeating: 0, count: 1 << 20)
+    var out = [UInt8](repeating: 0, count: 1 << 16)
+    var result = Data(), left = count
+    zeros.withUnsafeBufferPointer { source in
+        repeat {
+            let piece = min(left, source.count)
+            left -= piece
+            stream.pointee.src_ptr = source.baseAddress!
+            stream.pointee.src_size = piece
+            let flags = left == 0 ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
+            var status = COMPRESSION_STATUS_OK
+            repeat {
+                status = out.withUnsafeMutableBufferPointer { buffer in
+                    stream.pointee.dst_ptr = buffer.baseAddress!
+                    stream.pointee.dst_size = buffer.count
+                    let status = compression_stream_process(stream, flags)
+                    result.append(buffer.baseAddress!, count: buffer.count - stream.pointee.dst_size)
+                    return status
+                }
+            } while status == COMPRESSION_STATUS_OK && (stream.pointee.src_size > 0 || flags != 0)
+        } while left > 0
+    }
+    return result
+}
+
+/// A ZIP whose every entry holds `payload` (raw DEFLATE) and claims to be `declaredSize` bytes: a bomb whose header lies.
+func lyingZip(_ names: [String], payload: Data, declaredSize: Int) -> Data {
+    func le16(_ v: Int) -> [UInt8] { [UInt8(v & 255), UInt8((v >> 8) & 255)] }
+    func le32(_ v: Int) -> [UInt8] { le16(v & 0xFFFF) + le16((v >> 16) & 0xFFFF) }
+    var body = [UInt8](), directory = [UInt8]()
+    for name in names {
+        let bytes = Array(name.utf8), offset = body.count
+        body += le32(0x0403_4B50) + le16(20) + le16(0) + le16(8) + le16(0) + le16(0) + le32(0) + le32(payload.count) + le32(declaredSize)
+            + le16(bytes.count) + le16(0) + bytes + [UInt8](payload)
+        directory += le32(0x0201_4B50) + le16(20) + le16(20) + le16(0) + le16(8) + le16(0) + le16(0) + le32(0) + le32(payload.count) + le32(declaredSize)
+            + le16(bytes.count) + le16(0) + le16(0) + le16(0) + le16(0) + le32(0) + le32(offset) + bytes
+    }
+    return Data(body + directory + le32(0x0605_4B50) + le16(0) + le16(0) + le16(names.count) + le16(names.count) + le32(directory.count) + le32(body.count) + le16(0))
+}
+
+/// How far the process's peak memory footprint rose while `work` ran (0 when it stayed below an earlier peak).
+func peakFootprintGrowth(_ work: () -> Void) -> Int64 {
+    func peak() -> Int64 {
+        var info = rusage_info_v4()
+        let status = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0) }
+        }
+        return status == 0 ? Int64(info.ri_lifetime_max_phys_footprint) : 0
+    }
+    let before = peak()
+    work()
+    return peak() - before
 }
 
 // MARK: - Registry
@@ -1367,6 +1428,17 @@ private func dockitSafety() {
         check((try? archive.data("word/document.xml")) == nil, "an entry that expands past the ratio limit is refused")
         check((try? DOCXReader.read(hostile.finish())) == nil, "a DOCX with such an entry does not read")
     } else { check(false, "the hostile archive is a ZIP") }
+    // A bomb whose header lies (1 KB declared, 1 GB inside) stops at the declared size instead of filling memory; so do
+    // gzip and HWP streams, which declare nothing, at the entry limit.
+    let gigabyte = deflatedZeros(1 << 30)
+    if let liar = try? ZipArchive(data: lyingZip(["word/document.xml"], payload: gigabyte, declaredSize: 1_000)) {
+        var refused = false
+        let growth = peakFootprintGrowth { refused = (try? liar.data("word/document.xml")) == nil }
+        check(refused, "an entry that inflates past its declared size is refused")
+        check(growth < 256 << 20, "and inflating it never holds the gigabyte (peak rose \(growth >> 20) MB)")
+    } else { check(false, "the lying archive is a ZIP") }
+    check(Inflate.raw(deflatedZeros(10), limit: 10) == Data(count: 10) && Inflate.raw(deflatedZeros(10), limit: 9) == nil, "inflating stops at its limit")
+    check(Inflate.raw(Data("not deflate".utf8), limit: 100) == nil, "a damaged stream inflates to nothing")
     // Hostile inputs fail or read; nothing crashes.
     for bytes in [Data(), Data([0x50, 0x4B, 3, 4]), Data(repeating: 0xFF, count: 1000), Data("<w:document>".utf8), Data("PK\u{5}\u{6}".utf8) + Data(count: 18)] {
         _ = try? DOCXReader.read(bytes); _ = try? ODTReader.read(bytes)
