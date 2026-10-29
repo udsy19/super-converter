@@ -24,6 +24,7 @@ func registerTypesetKitTests() {
     SelfTest.cases.append(("TypesetKit.workbook", { typesetWorkbook() }))
     SelfTest.cases.append(("TypesetKit.publication", { typesetPublication() }))
     SelfTest.cases.append(("TypesetKit.converter", { typesetConverter() }))
+    SelfTest.cases.append(("TypesetKit.routesCovered", { typesetRoutesCovered() }))
 }
 
 private let typesetRenders: URL = {
@@ -360,6 +361,27 @@ private func typesetConverter() {
     } else {
         check(false, "the converter runs: \(String(describing: outcome))")
     }
+}
+
+/// Every TypesetKit step in the format matrix (DocModel, Workbook and Publication → PDF, from DocKit's, OfficeKit's
+/// and EbookKit's readers) is handled by the converter TypesetKit registers.
+@MainActor private func typesetRoutesCovered() {
+    installFakes()
+    TypesetKitModule.install()
+    var steps = 0
+    var inputs: Set<StepEndpoint> = []
+    for route in FormatMatrix.routes {
+        for chain in [route.builtin, route.helper].compactMap({ $0 }) + route.alternates.map(\.steps) {
+            for step in chain where step.engine == .typesetKit {
+                steps += 1
+                inputs.insert(step.from)
+                let handled = Services.converters.converter(for: .typesetKit)?.handles(step) == true
+                check(handled, "TypesetKit handles \(step) in \(route.from) → \(route.to)")
+            }
+        }
+    }
+    check(inputs == [.model(.docModel), .model(.workbook), .model(.publication)], "TypesetKit's inputs: \(inputs)")
+    check(steps >= 100, "matrix steps checked: \(steps)")
 }
 
 // MARK: - Sample documents
