@@ -23,6 +23,27 @@ struct MediaProbe: Sendable, Equatable {
         var masteringDisplay: String?
         var maxCLL: Int?
         var maxFALL: Int?
+
+        var isEmpty: Bool { masteringDisplay == nil && maxCLL == nil }
+
+        /// The mastering display's ten numbers in their order: green, blue, red and white point x/y (0.00002 units), then the
+        /// maximum and minimum luminance (0.0001 cd/m²).
+        var masteringValues: [Int]? {
+            let numbers = masteringDisplay?.split(whereSeparator: { !"0123456789".contains($0) }).compactMap { Int($0) } ?? []
+            return numbers.count == 10 ? numbers : nil
+        }
+
+        /// Fills in what is still missing from an ffprobe `side_data_list` (a stream's or a frame's).
+        mutating func read(_ sideData: [[String: Any]]) {
+            for side in sideData {
+                switch side["side_data_type"] as? String {
+                case "Mastering display metadata": masteringDisplay = masteringDisplay ?? MediaProbe.masteringDisplay(side)
+                case "Content light level metadata" where maxCLL == nil:
+                    maxCLL = MediaProbe.int(side["max_content"]); maxFALL = MediaProbe.int(side["max_average"])
+                default: break
+                }
+            }
+        }
     }
 
     struct Stream: Sendable, Equatable {
@@ -121,15 +142,10 @@ struct MediaProbe: Sendable, Equatable {
         let disposition = s["disposition"] as? [String: Any] ?? [:]
         let average = rate(s["avg_frame_rate"]), real = rate(s["r_frame_rate"])
         var rotation = tags["rotate"].flatMap(Double.init).map { -$0 }
+        let sideData = s["side_data_list"] as? [[String: Any]] ?? []
+        for side in sideData where side["side_data_type"] as? String == "Display Matrix" { rotation = double(side["rotation"]) ?? rotation }
         var hdr = HDRMetadata()
-        for side in s["side_data_list"] as? [[String: Any]] ?? [] {
-            switch side["side_data_type"] as? String {
-            case "Display Matrix": rotation = double(side["rotation"]) ?? rotation
-            case "Mastering display metadata": hdr.masteringDisplay = masteringDisplay(side)
-            case "Content light level metadata": hdr.maxCLL = int(side["max_content"]); hdr.maxFALL = int(side["max_average"])
-            default: break
-            }
-        }
+        hdr.read(sideData)
         return Stream(index: index, kind: kind, codec: s["codec_name"] as? String ?? "none", profile: s["profile"] as? String,
                       width: int(s["width"]), height: int(s["height"]), pixelFormat: s["pix_fmt"] as? String,
                       bitsPerSample: int(s["bits_per_raw_sample"]) ?? int(s["bits_per_sample"]).flatMap { $0 > 0 ? $0 : nil },
@@ -147,7 +163,7 @@ struct MediaProbe: Sendable, Equatable {
 
     /// ffprobe prints the ST 2086 values as rationals ("13250/50000"); x265 and SVT-AV1 take them in 0.00002 (chromaticity)
     /// and 0.0001 cd/m² (luminance) units.
-    private static func masteringDisplay(_ side: [String: Any]) -> String? {
+    static func masteringDisplay(_ side: [String: Any]) -> String? {
         func units(_ key: String, _ scale: Double) -> Int? {
             guard let text = side[key] as? String else { return nil }
             let parts = text.split(separator: "/").compactMap { Double($0) }
@@ -203,7 +219,14 @@ struct MediaProbe: Sendable, Equatable {
 extension MediaTools {
     func probe(_ url: URL, workFolder: URL) async throws -> MediaProbe {
         let data = try await probeJSON(url, workFolder: workFolder)
-        guard let probe = MediaProbe(json: data), !probe.streams.isEmpty else { throw ConversionError.damaged(FormatID(url.pathExtension.lowercased())) }
+        guard var probe = MediaProbe(json: data), !probe.streams.isEmpty else { throw ConversionError.damaged(FormatID(url.pathExtension.lowercased())) }
+        // HDR metadata often sits on the frames rather than the stream (AV1 metadata OBUs, HEVC SEI): the first frame's.
+        if let video = probe.mainVideo, video.colour.isHDR, video.hdr.isEmpty,
+           let i = probe.streams.firstIndex(where: { $0.index == video.index }),
+           let frames = try? await probeJSON(url, workFolder: workFolder, extra: ["-show_frames", "-read_intervals", "%+#1", "-select_streams", String(video.index)]),
+           let root = try? JSONSerialization.jsonObject(with: frames) as? [String: Any] {
+            for frame in root["frames"] as? [[String: Any]] ?? [] { probe.streams[i].hdr.read(frame["side_data_list"] as? [[String: Any]] ?? []) }
+        }
         return probe
     }
 

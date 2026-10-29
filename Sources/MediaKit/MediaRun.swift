@@ -30,6 +30,7 @@ struct MediaRun {
         }
         let output = try Self.outputURL(context, target)
         try await tools.encode(job.arguments, format: job.muxer, to: output, duration: job.duration, context: context)
+        if let sei = job.hdrSEI { try await HDRSEI.write(sei, into: output, job: job, tools: tools, context: context) }
         try await verify(output, target: target, expectVideo: MediaContainer.of(target)?.isVideo ?? true, plan: job.plan)
         var warnings = job.warnings
         if job.plan.streams.allSatisfy({ $0.outputCodec == nil }) && !animation { warnings.append(Self.reWrapped) }

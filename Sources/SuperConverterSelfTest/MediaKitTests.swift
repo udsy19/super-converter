@@ -132,6 +132,15 @@ func registerMediaKitTests() {
         guard let mkv = probe(media.appendingPathComponent("hdr-pq.mkv")), let v = mkv.mainVideo else { check(false, "the HDR clip probes"); return }
         check(v.colour.isHDR && v.colour.transfer == "smpte2084" && v.colour.primaries == "bt2020", "PQ tags are read (\(v.colour))")
         check(v.bitDepth == 10, "10-bit is seen")
+        // The fixture's ST 2086 / CTA-861.3 values sit on its frames (AV1 metadata OBUs), not on the stream.
+        check(v.hdr == MediaProbe.HDRMetadata(masteringDisplay: "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,50)", maxCLL: 1000, maxFALL: 400),
+              "the first frame's mastering display and light level are read (\(v.hdr))")
+        // The HEVC SEI: payloads 137 (24 bytes) and 144 (4 bytes), 0x03 wherever two zeros precede 0–3.
+        let sei = HDRSEI.nal(MediaProbe.HDRMetadata(masteringDisplay: "G(0,1)B(2,3)R(4,5)WP(6,7)L(8,0)", maxCLL: 1000, maxFALL: 0))
+        check(sei.map([UInt8].init) == [0x4E, 0x01, 137, 24, 0, 0, 3, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 0, 3, 0, 8, 0, 0, 3, 0, 0,
+                                         144, 4, 0x03, 0xE8, 0, 0, 0x80],
+              "the SEI is the H.265 D.2.28 / D.2.35 messages with emulation prevention (\(sei.map { [UInt8]($0) } ?? []))")
+        check(HDRSEI.nal(MediaProbe.HDRMetadata()) == nil, "no SEI without metadata")
         guard let ts = probe(media.appendingPathComponent("interlaced-576i.ts")) else { check(false, "the interlaced clip probes"); return }
         let interlaced = try? complete(120) { try await tools.isInterlaced(media.appendingPathComponent("interlaced-576i.ts"), probe: ts, sourceFormat: "ts", workFolder: work("idet")) }?.get()
         check(interlaced == true, "idet finds the interlaced fields")
@@ -210,7 +219,16 @@ func registerMediaKitTests() {
         if case .success(let o) = convert(Step(.ffmpeg, "mkv", "mov"), hdr, options: OptionValues(["videoCodec": "hevc"])), let out = outputFile(o),
            let v = probe(out)?.mainVideo {
             check(v.codec == "hevc" && v.colour.transfer == "smpte2084" && v.bitDepth == 10, "PQ stays PQ on HEVC Main10 (\(v.codec) \(v.colour) \(v.bitDepth))")
-            check(o.lossNotes.allSatisfy { $0.kind != .hdrToSDR }, "no HDR note when HDR is kept")
+            check(o.lossNotes.isEmpty, "no loss note when HDR is kept (\(o.lossNotes.map(\.detail)))")
+            // The mastering display and light level are in the HEVC bitstream itself, not only in the MOV's mdcv/clli boxes.
+            let folder = work("hdr10"), stream = folder.appendingPathComponent("video.hevc")
+            let copied: Void? = try? complete(120) {
+                try await tools.run(["-i", out.path, "-map", "0:v:0", "-c", "copy", "-bsf:v", "hevc_mp4toannexb", "-f", "hevc", "-y", stream.path], workFolder: folder)
+            }?.get()
+            let source = probe(hdr)?.mainVideo?.hdr, bitstream = copied != nil ? probe(stream)?.mainVideo?.hdr : nil
+            check(source?.isEmpty == false && bitstream == source, "the HEVC SEI carries the source's ST 2086 and MaxCLL/MaxFALL (\(bitstream.map { "\($0)" } ?? "none"))")
+            let readable = try? complete(120) { try await AVProbe.load(out, sourceFormat: "mov") }?.get()
+            check(readable?.readable == true && readable?.decodable == true, "AVFoundation reads the MOV with the SEI added")
         } else { check(false, "HDR MKV → MOV HEVC converts") }
         // … and tone-mapped to BT.709 on H.264, with the loss note.
         if case .success(let o) = convert(Step(.ffmpeg, "mkv", "mp4"), hdr), let out = outputFile(o), let v = probe(out)?.mainVideo {

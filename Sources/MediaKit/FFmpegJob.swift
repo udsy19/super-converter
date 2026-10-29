@@ -10,6 +10,10 @@ struct FFmpegJob: Sendable {
     var plan: MediaPlan
     var lossNotes: [LossNote] = []
     var warnings: [String] = []
+    /// The muxer options that end `arguments` (timecode, fast start, the container's own), for a later re-wrap.
+    var muxing: [String] = []
+    /// HEVC HDR10: the prefix SEI to write into the encoded video (`HDRSEI`).
+    var hdrSEI: Data?
 }
 
 /// What the planner found out about the source besides `ffprobe`'s word (each costs a decoding pass).
@@ -76,6 +80,7 @@ enum FFmpegPlanner {
                 let encode = try VideoEncoding.plan(video: video, probe: probe, codec: codec, target: target, settings: s, facts: facts,
                                                     sourceFormat: sourceFormat)
                 job.lossNotes += encode.lossNotes
+                job.hdrSEI = encode.hdrSEI
                 var chain = encode.filters
                 var label = "[0:\(video.index)]"
                 // Hard subtitles burn in after scaling (the text keeps its size relative to the new picture), before the final
@@ -160,16 +165,16 @@ enum FFmpegPlanner {
             args += ["-map_chapters", "-1"]
             if !probe.chapters.isEmpty && s.keepArtwork { job.lossNotes.append(LossNote(.chaptersDropped, detail: "\(target.format.pill) can’t hold chapters")) }
         }
-        if let timecode = probe.tags["timecode"], ["mov", "mxf"].contains(target.format.rawValue) {
-            args += ["-timecode", timecode]
-        }
         if target.isVideo && video != nil && !videoCopied {
             if !target.constantFrameRate && s.fps == nil { args += ["-fps_mode", "vfr"] }
         }
-        if target.webReady && s.webReady { args += ["-movflags", "+faststart"] }
-        args += target.muxerArguments
-        if target.format == "m4b" { args += ["-brand", "M4B "] }
-        job.arguments = args
+        if let timecode = probe.tags["timecode"], ["mov", "mxf"].contains(target.format.rawValue) {
+            job.muxing += ["-timecode", timecode]
+        }
+        if target.webReady && s.webReady { job.muxing += ["-movflags", "+faststart"] }
+        job.muxing += target.muxerArguments
+        if target.format == "m4b" { job.muxing += ["-brand", "M4B "] }
+        job.arguments = args + job.muxing
         if !target.isVideo, probe.audio.isEmpty { throw ConversionError.impossiblePair(reason: "This file has no sound to convert.") }
         if target.isVideo, video == nil, probe.audio.isEmpty { throw ConversionError.damaged(sourceFormat) }
         return job
