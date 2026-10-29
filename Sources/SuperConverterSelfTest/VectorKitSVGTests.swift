@@ -134,6 +134,23 @@ func registerVectorKitSVGTests() {
         check(bmp.near(50, 50, 0, 255, 0), "marker at path end")
         check(bmp.at(5, 80).r > 200, "mask hides left side")
         check(bmp.at(48, 80).r < 60 && bmp.at(48, 80).b > 150, "mask shows right side")
+
+        // Linked pictures come only from the drawing's own folder: not from a sibling folder whose name starts the same.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("svg-links-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pictures = root.appendingPathComponent("pics", isDirectory: true), sibling = root.appendingPathComponent("pics-private", isDirectory: true)
+        for dir in [pictures, sibling] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? Data(base64Encoded: png)?.write(to: dir.appendingPathComponent("red.png"))
+        }
+        let linked = svtSVG("""
+        <image x="0" y="0" width="40" height="40" href="red.png"/>
+        <image x="50" y="0" width="40" height="40" href="../pics-private/red.png"/>
+        """)
+        if let read = try? SVGReader.read(linked, baseURL: pictures.appendingPathComponent("drawing.svg")), let drawn = svtRender(read.document) {
+            check(drawn.near(20, 20, 255, 0, 0), "a picture next to the drawing is read")
+            check(!drawn.near(70, 20, 255, 0, 0), "a picture in a sibling folder is not")
+        } else { check(false, "linked pictures parse") }
     }))
 
     SelfTest.cases.append(("VectorKit.svg.robustness", {

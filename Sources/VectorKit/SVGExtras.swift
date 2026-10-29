@@ -20,7 +20,7 @@ extension SVGInterpreter {
         let dir = base.hasDirectoryPath ? base : base.deletingLastPathComponent()
         let decoded = text.removingPercentEncoding ?? text
         let url = dir.appendingPathComponent(decoded).standardizedFileURL.resolvingSymlinksInPath()
-        guard url.path.hasPrefix(dir.standardizedFileURL.resolvingSymlinksInPath().path),
+        guard url.path.hasPrefix(dir.standardizedFileURL.resolvingSymlinksInPath().path + "/"),
               let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size < 200 << 20,
               let data = try? Data(contentsOf: url) else { return nil }
         return (data, url.pathExtension.lowercased().hasPrefix("svg"))
