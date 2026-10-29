@@ -1,8 +1,8 @@
 // Adapted from vtracer cmdapp/src/converter.rs and cmdapp/src/svg.rs (MIT, 0.6.15, commit
 // fd9cdb08e622f237eb05be553a020ddc9e4c47a1). Copyright (c) 2024 TSANG, Hao Fung. See THIRD_PARTY_NOTICES.md.
 // What changed: the key colour for transparency is chosen deterministically (vtracer tries random colours after its six
-// special ones); pixels under half opacity count as transparent, and as background in black-and-white mode (vtracer
-// thresholds red alone); `auto` picks the preset from the picture (formats §5); the `colours` option caps the palette by
+// special ones); pixels under half opacity count as transparent, and as background in black-and-white mode, which
+// thresholds luminance (vtracer thresholds red alone, so red or tinted ink on white vanished); `auto` picks the preset from the picture (formats §5); the `colours` option caps the palette by
 // a weighted median cut of the layer colours; consecutive layers of one colour share a `<path>`; coordinates are absolute.
 import Foundation
 import SuperConverterCore
@@ -23,7 +23,11 @@ public enum Vectorizer {
         var layers: [(colour: (r: Int, g: Int, b: Int), area: Int, paths: [OutlinePath])] = []
         if config.binary {
             var bits = BinaryImage(width: w, height: h)
-            for p in 0..<(w * h) where raster.rgba[p * 4 + 3] >= 128 && raster.rgba[p * 4] < 128 { bits.bits[p] = true }
+            for p in 0..<(w * h) where raster.rgba[p * 4 + 3] >= 128 {
+                // Rec. 709 luma scaled by 256: dark ink of any hue is foreground.
+                let luma = 54 * Int(raster.rgba[p * 4]) + 183 * Int(raster.rgba[p * 4 + 1]) + 19 * Int(raster.rgba[p * 4 + 2])
+                if luma < 128 * 256 { bits.bits[p] = true }
+            }
             if isCancelled() { throw ConversionError.cancelled }
             progress(0.1)
             let pieces = bits.clusters(diagonal: false)
