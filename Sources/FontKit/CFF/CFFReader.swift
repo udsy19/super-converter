@@ -86,6 +86,11 @@ enum CFFReader {
 
     static func read(_ d: [UInt8], isV2: Bool) throws -> CFFGlyphs {
         let headerSize = try d.be8(2)
+        /// A DICT operand used as an offset or a size: a whole number inside the table (damaged fonts carry anything).
+        func position(_ value: Double) throws -> Int {
+            guard value.isFinite, value >= 0, value <= Double(d.count) else { throw FontError.damaged("CFF offset") }
+            return Int(value)
+        }
         var top: [Int: [Double]]
         var stringIndex = Index(items: [], end: 0)
         var globalSubrIndex: Index
@@ -102,29 +107,29 @@ enum CFFReader {
             globalSubrIndex = try readIndex(d, at: stringIndex.end, v2: false)
         }
         guard let csOffset = top[17]?.first else { throw FontError.damaged("CFF without charstrings") }
-        let charStrings = try readIndex(d, at: Int(csOffset), v2: isV2)
+        let charStrings = try readIndex(d, at: try position(csOffset), v2: isV2)
         let glyphCount = charStrings.items.count
 
         func privateSubrs(_ dict: [Int: [Double]]) throws -> [Range<Int>] {
             guard let p = dict[18], p.count == 2 else { return [] }
-            let size = Int(p[0]), offset = Int(p[1])
+            let size = try position(p[0]), offset = try position(p[1])
             let priv = try parseDict(d, offset..<(offset + size))
             guard let subrs = priv[19]?.first else { return [] }
-            return try readIndex(d, at: offset + Int(subrs), v2: isV2).items
+            return try readIndex(d, at: offset + (try position(subrs)), v2: isV2).items
         }
         var fonts: [[Range<Int>]] = []
         var fdSelect: [Int]?
         if let fdArray = top[1236]?.first {
-            let index = try readIndex(d, at: Int(fdArray), v2: isV2)
+            let index = try readIndex(d, at: try position(fdArray), v2: isV2)
             for item in index.items { fonts.append(try privateSubrs(try parseDict(d, item))) }
-            if let sel = top[1237]?.first { fdSelect = try readFDSelect(d, at: Int(sel), glyphs: glyphCount) }
+            if let sel = top[1237]?.first { fdSelect = try readFDSelect(d, at: try position(sel), glyphs: glyphCount) }
         } else {
             fonts = [try privateSubrs(top)]
         }
         guard !fonts.isEmpty else { throw FontError.damaged("CFF without font DICTs") }
 
         var regionCounts: [Int] = []
-        if isV2, let vstore = top[24]?.first { regionCounts = (try? readRegionCounts(d, at: Int(vstore))) ?? [] }
+        if isV2, let vstore = top[24]?.first { regionCounts = (try? readRegionCounts(d, at: try position(vstore))) ?? [] }
 
         var contours: [[Contour]] = []
         contours.reserveCapacity(glyphCount)
@@ -139,7 +144,7 @@ enum CFFReader {
         var names = [String?](repeating: nil, count: glyphCount)
         if !isV2 {
             let isCID = top[1230] != nil
-            let sids = try readCharset(d, offset: Int(top[15]?.first ?? 0), glyphs: glyphCount)
+            let sids = try readCharset(d, offset: try position(top[15]?.first ?? 0), glyphs: glyphCount)
             for gid in 1..<max(glyphCount, 1) where gid < sids.count {
                 let sid = sids[gid]
                 if isCID { names[gid] = "cid\(sid)" }
