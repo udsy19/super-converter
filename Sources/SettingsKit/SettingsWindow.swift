@@ -9,6 +9,8 @@ import SwiftUI
 final class SettingsContext {
     var helpers: () -> HelperManaging? = { Services.helpers }
     var updates: () -> UpdateChecking? = { Services.updates }
+    /// MenuBarKit, which owns the Quick Actions and their switches.
+    var menuBar: () -> MenuBarPresenting? = { Services.menuBar }
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
     var chooseFolder: () -> URL? = { SettingsContext.runPanel(folders: true, files: false) }
     /// A helper's own location: an app or a tool.

@@ -381,22 +381,14 @@ private func coreDefaultsRoundTrip() {
     roundTrip(.playSound, true, native: true)
     roundTrip(.checkForUpdates, false, native: true)
     roundTrip(.viewMode, .list, native: true)
-    roundTrip(.quickActionConvertToJPG, false, native: true)
-    roundTrip(.quickActionConvertToPNG, false, native: true)
-    roundTrip(.quickActionConvertToPDF, false, native: true)
-    roundTrip(.quickActionConvertToMP4, true, native: true)
-    roundTrip(.quickActionConvertToMP3, true, native: true)
     roundTrip(.target(for: "heic"), "png")
     roundTrip(.savedOptions(for: "jpg"), OptionValues(["quality": 75, "progressive": false, "colourProfile": "srgb"]))
     roundTrip(.helperPath(.libreoffice), URL(fileURLWithPath: "/Applications/LibreOffice.app"), native: true)
-    check(checked.count == 17, "every key is exercised (\(checked.count) of 17)")
+    check(checked.count == 12, "every key is exercised (\(checked.count) of 12)")
 
     check(Defaults.Keys.checkForUpdates.defaultValue && Defaults.Keys.showInMenuBar.defaultValue && Defaults.Keys.rememberFormatChoices.defaultValue,
           "updates, the menu-bar item and remembered choices start on")
     check(!Defaults.Keys.playSound.defaultValue && !Defaults.Keys.convertOnMenuBarDrop.defaultValue, "the sound and menu-bar auto-convert start off")
-    check(Defaults.Keys.quickActionConvertToJPG.defaultValue && Defaults.Keys.quickActionConvertToPNG.defaultValue
-          && Defaults.Keys.quickActionConvertToPDF.defaultValue && !Defaults.Keys.quickActionConvertToMP4.defaultValue,
-          "the first three Quick Actions start on (ux §5.10)")
     check(Defaults.Keys.outputPlace.defaultValue == .nextToOriginal && Defaults.Keys.collisionPolicy.defaultValue == .addNumber, "results next to the originals, numbered")
     check(Defaults.Keys.target(for: "heic").name == "target.heic" && Defaults.Keys.savedOptions(for: "jpg").name == "options.jpg", "dynamic key names")
 }

@@ -16,6 +16,7 @@ func registerSettingsKitTests() {
         ("SettingsKit.formatsSavedOptions", settingsSavedOptions),
         ("SettingsKit.helpers", settingsHelpers),
         ("SettingsKit.helperPills", settingsHelperPills),
+        ("SettingsKit.quickActions", settingsQuickActions),
         ("SettingsKit.about", settingsAbout),
         ("SettingsKit.notices", settingsNotices),
         ("SettingsKit.rendersEveryPane", settingsRenders),
@@ -41,17 +42,33 @@ private func settingsPump(_ seconds: TimeInterval) {
 }
 
 @MainActor
-private func testContext(helpers: HelperManaging? = nil, updates: UpdateChecking? = nil, opened: ((URL) -> Void)? = nil,
-                         notices: URL? = nil) -> SettingsContext {
+private func testContext(helpers: HelperManaging? = nil, updates: UpdateChecking? = nil, menuBar: MenuBarPresenting? = nil,
+                         opened: ((URL) -> Void)? = nil, notices: URL? = nil) -> SettingsContext {
     let context = SettingsContext()
     context.helpers = { helpers }
     context.updates = { updates }
+    let menuBar = menuBar ?? sampleMenuBar()
+    context.menuBar = { menuBar }
     context.open = { opened?($0) }
     context.chooseFolder = { nil }
     context.chooseLocation = { nil }
     context.noticesURL = notices
     context.version = "1.2.3"
     return context
+}
+
+/// MenuBarKit as the Quick Actions pane sees it: the five one-step actions, the first three on.
+@MainActor
+private func sampleMenuBar() -> FakeMenuBar {
+    let fake = FakeMenuBar()
+    fake.quickActions = [
+        QuickActionSwitch(target: "jpg", title: "Convert to JPG", takes: "Images", isOn: true),
+        QuickActionSwitch(target: "png", title: "Convert to PNG", takes: "Images", isOn: true),
+        QuickActionSwitch(target: "pdf", title: "Convert to PDF", takes: "Documents, images, slides, sheets and e-books", isOn: true),
+        QuickActionSwitch(target: "mp4", title: "Convert to MP4", takes: "Videos", isOn: false),
+        QuickActionSwitch(target: "mp3", title: "Convert to MP3", takes: "Audio and videos", isOn: false),
+    ]
+    return fake
 }
 
 private let sampleNotices = """
@@ -98,11 +115,6 @@ private func settingsDefaults() {
         Defaults[.playSound] = true
         Defaults[.notifyWhenDone] = false
         check(Defaults[.playSound] && !Defaults[.notifyWhenDone], "switches round-trip")
-        for action in QuickActionsPane.actions {
-            Defaults[action.key] = !action.key.defaultValue
-            check(Defaults[action.key] == !action.key.defaultValue, "the \(action.target.pill) quick action round-trips")
-        }
-        check(QuickActionsPane.actions.map(\.key.defaultValue) == [true, true, true, false, false], "the first three actions are on at first launch")
         let helperURL = URL(fileURLWithPath: "/Applications/LibreOffice.app")
         Defaults[.helperPath(.libreoffice)] = helperURL
         check(Defaults[.helperPath(.libreoffice)] == helperURL, "a helper location round-trips")
@@ -204,6 +216,46 @@ private func settingsHelperPills() {
     }
     check(HelperUnlocks.items(for: .calibre).contains { $0.text == "MOBI" }, "calibre unlocks MOBI")
     check(HelperUnlocks.items(for: .ghostscript).contains { $0.text == "EPS" }, "Ghostscript unlocks EPS")
+}
+
+/// ux §5.10–§5.11: the pane shows what macOS has, not what it last set, and its switches go to MenuBarKit.
+@MainActor
+private func settingsQuickActions() {
+    let fake = sampleMenuBar()
+    let model = QuickActionsModel(menuBar: { fake })
+    check(model.switches.isEmpty, "nothing shown before macOS is asked")
+    _ = complete(10) { await model.refresh() }
+    check(model.switches == fake.quickActions && !model.hasUnlisted, "the pane shows every action as macOS has it")
+
+    _ = complete(10) { await model.set("mp4", on: true) }
+    check(fake.switched.map(\.0) == ["mp4"] && fake.switched.map(\.1) == [true], "the MP4 switch goes to MenuBarKit")
+    check(model.switches.first { $0.target == "mp4" }?.isOn == true && model.problem == nil, "and shows on")
+
+    // Switched off in System Settings › Extensions, then back to the app: the pane follows macOS.
+    fake.quickActions[1].isOn = false
+    check(model.switches[1].isOn == true, "until the pane looks again it shows what it read")
+    _ = complete(10) { await model.refresh() }
+    check(model.switches[1].isOn == false, "PNG switched off in System Settings shows off")
+
+    fake.switchesTake = false
+    _ = complete(10) { await model.set("mp3", on: true) }
+    check(model.switches.first { $0.target == "mp3" }?.isOn == false, "a switch macOS refused goes back")
+    check(model.problem == "macOS didn’t switch “Convert to MP3” on. Try it in System Settings › Extensions.", "and says so in one line: \(model.problem ?? "")")
+
+    fake.quickActions[4].isOn = nil
+    _ = complete(10) { await model.refresh() }
+    check(model.hasUnlisted, "an extension macOS doesn’t list is noted")
+    check(QuickActionsPane.unlisted.contains("Applications folder") && QuickActionsPane.footnote.contains("System Settings › Extensions"), "the notes say where")
+
+    // The pane asks macOS when it appears (the refresh runs from the view, not from the test).
+    let shown = QuickActionsModel(menuBar: { fake })
+    let context = testContext(menuBar: fake)
+    let host = NSHostingView(rootView: QuickActionsPane(context: context, model: shown).frame(width: 820, height: 600))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    for _ in 0..<40 where shown.switches.isEmpty { settingsPump(0.05) }
+    check(shown.switches == fake.quickActions, "the pane reads the switches on appear")
 }
 
 @MainActor
