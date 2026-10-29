@@ -705,6 +705,16 @@ func registerHelperKitTests() {
             check(Services.tools.location(of: tool)?.path == "/usr/bin/" + tool.rawValue, "Services.tools finds \(tool.rawValue) in /usr/bin")
         }
         check(BundledTools.name(of: .pluginkit) == "pluginkit", "a failed pluginkit run says “pluginkit”")
+        // A read of an id nobody has: it changes nothing, and pkd answers it only outside the sandbox profile.
+        let work = folder("pluginkit")
+        let listing = complete(15) {
+            try await Services.tools.run(ToolInvocation(tool: .pluginkit, arguments: ["-m", "-i", SuperConverterPaths.bundleID + ".selftest.none"], workFolder: work))
+        }
+        if case .success(let result)? = listing {
+            check(result.exitCode == 0 && result.standardOutput.isEmpty, "pluginkit runs through Services.tools and lists nothing for an unknown id: \(result.standardError)")
+        } else {
+            check(false, "pluginkit runs through Services.tools")
+        }
         let registered = Set(Services.converters.converters.map(\.id))
         let expected = Set(EngineID.allCases.filter { $0.info.module == .helperKit })
         check(registered == expected, "a converter for every engine HelperKit owns, and no other (\(registered.symmetricDifference(expected).map(\.rawValue)))")
