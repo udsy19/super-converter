@@ -490,6 +490,250 @@ func archives() throws {
     guard p.terminationStatus == 0 else { throw NSError(domain: "make-archive-fixtures", code: Int(p.terminationStatus)) }
 }
 
+// MARK: ImageKit (quality §2.8)
+
+/// A CGImage over packed samples: `components` colour channels (+ alpha, un-premultiplied), 8 or 16 bits, in `space`.
+func samples(_ width: Int, _ height: Int, space: CGColorSpace, alpha: Bool = false, bits: Int = 8, _ value: (Int, Int, Int) -> Double) -> CGImage {
+    let components = space.numberOfComponents + (alpha ? 1 : 0)
+    var bytes: [UInt8] = []
+    for y in 0..<height { for x in 0..<width { for c in 0..<components {
+        let v = min(max(value(x, y, c), 0), 1)
+        if bits == 16 { let s = Int((v * 65535).rounded()); bytes += [UInt8(s & 255), UInt8(s >> 8)] } else { bytes.append(UInt8((v * 255).rounded())) }
+    } } }
+    let info = (alpha ? CGImageAlphaInfo.last : CGImageAlphaInfo.none).rawValue | (bits == 16 ? CGImageByteOrderInfo.order16Little.rawValue : 0)
+    return CGImage(width: width, height: height, bitsPerComponent: bits, bitsPerPixel: bits * components, bytesPerRow: width * components * bits / 8,
+                   space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+                   shouldInterpolate: false, intent: .defaultIntent)!
+}
+
+func encode(_ name: String, _ type: String, _ images: [CGImage], properties: [CFString: Any] = [:], frame: [CFString: Any] = [:]) throws {
+    let data = NSMutableData()
+    let d = CGImageDestinationCreateWithData(data, type as CFString, images.count, nil)!
+    CGImageDestinationSetProperties(d, properties as CFDictionary)
+    for image in images { CGImageDestinationAddImage(d, image, frame as CFDictionary) }
+    guard CGImageDestinationFinalize(d) else { throw NSError(domain: name, code: 1) }
+    try write(name, data as Data)
+}
+
+func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)] }
+func le32(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24 & 0xFF)] }
+func be16(_ v: Int) -> [UInt8] { [UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
+func be32(_ v: Int) -> [UInt8] { [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
+func be64(_ v: Int) -> [UInt8] { be32(v >> 32) + be32(v & 0xFFFF_FFFF) }
+
+/// One TIFF IFD laid out at `base`: (tag, type, count, payload); a nil payload reserves a 4-byte slot patched later.
+func ifd(_ entries: [(Int, Int, Int, [UInt8]?)], base: Int) -> (bytes: [UInt8], slots: [Int: Int]) {
+    let sorted = entries.sorted { $0.0 < $1.0 }
+    let extraStart = base + 2 + 12 * sorted.count + 4
+    var table = le16(sorted.count), extra: [UInt8] = [], slots: [Int: Int] = [:]
+    for (tag, type, count, payload) in sorted {
+        table += le16(tag) + le16(type) + le32(count)
+        guard let payload else { slots[tag] = base + table.count; table += [0, 0, 0, 0]; continue }
+        if payload.count <= 4 { table += payload + [UInt8](repeating: 0, count: 4 - payload.count) } else {
+            table += le32(extraStart + extra.count)
+            extra += payload + (payload.count % 2 == 1 ? [0] : [])
+        }
+    }
+    return (table + le32(0) + extra, slots)
+}
+
+/// A synthetic Linear DNG (DNG 1.4: a thumbnail in IFD0, 16-bit linear RGB in a SubIFD, identity colour matrix) of a
+/// smooth colour scene — the layout CIRAWFilter develops.
+func dng(width: Int, height: Int) -> Data {
+    var raw: [UInt8] = []
+    for y in 0..<height { for x in 0..<width {
+        let fx = Double(x) / Double(width), fy = Double(y) / Double(height)
+        for v in [0.15 + 0.6 * fx, 0.2 + 0.5 * fy, 0.6 - 0.4 * fx * fy] { raw += le16(Int(v * 60000)) }
+    } }
+    let thumb = [UInt8](repeating: 128, count: 16 * 12 * 3)
+    func rational(_ pairs: [(Int, Int)]) -> [UInt8] { pairs.flatMap { le32($0.0) + le32($0.1) } }
+    let ifd0: [(Int, Int, Int, [UInt8]?)] = [
+        (254, 4, 1, le32(1)), (256, 4, 1, le32(16)), (257, 4, 1, le32(12)), (258, 3, 3, le16(8) + le16(8) + le16(8)),
+        (259, 3, 1, le16(1)), (262, 3, 1, le16(2)), (271, 2, 5, Array("Test\0".utf8)), (272, 2, 10, Array("Synthetic\0".utf8)),
+        (273, 4, 1, nil), (274, 3, 1, le16(1)), (277, 3, 1, le16(3)), (278, 4, 1, le32(12)), (279, 4, 1, le32(thumb.count)),
+        (284, 3, 1, le16(1)), (330, 4, 1, nil), (50706, 1, 4, [1, 4, 0, 0]), (50707, 1, 4, [1, 1, 0, 0]),
+        (50708, 2, 15, Array("Test Synthetic\0".utf8)), (50721, 10, 9, rational([10000, 0, 0, 0, 10000, 0, 0, 0, 10000].map { ($0, 10000) })),
+        (50728, 5, 3, rational([(1, 1), (1, 1), (1, 1)])), (50778, 3, 1, le16(21)),
+    ]
+    let sub: [(Int, Int, Int, [UInt8]?)] = [
+        (254, 4, 1, le32(0)), (256, 4, 1, le32(width)), (257, 4, 1, le32(height)), (258, 3, 3, le16(16) + le16(16) + le16(16)),
+        (259, 3, 1, le16(1)), (262, 3, 1, le16(34892)), (273, 4, 1, nil), (277, 3, 1, le16(3)), (278, 4, 1, le32(height)),
+        (279, 4, 1, le32(raw.count)), (284, 3, 1, le16(1)), (50714, 4, 1, le32(0)), (50717, 4, 1, le32(65535)),
+        (50719, 4, 2, le32(0) + le32(0)), (50720, 4, 2, le32(width) + le32(height)),
+    ]
+    let first = ifd(ifd0, base: 8)
+    let subBase = (8 + first.bytes.count + 1) & ~1
+    let second = ifd(sub, base: subBase)
+    var file: [UInt8] = [0x49, 0x49, 0x2A, 0x00] + le32(8) + first.bytes
+    file += [UInt8](repeating: 0, count: subBase - file.count) + second.bytes
+    let thumbOffset = file.count
+    file += thumb
+    let rawOffset = file.count
+    file += raw
+    file.replaceSubrange(first.slots[273]!..<(first.slots[273]! + 4), with: le32(thumbOffset))
+    file.replaceSubrange(first.slots[330]!..<(first.slots[330]! + 4), with: le32(subBase))
+    file.replaceSubrange(second.slots[273]!..<(second.slots[273]! + 4), with: le32(rawOffset))
+    return Data(file)
+}
+
+/// A PSB (version 2), 8-bit RGB + merged transparency, PackBits rows with 4-byte counts, the sRGB profile in resource 1039.
+func psb(width: Int, height: Int, sample: (Int, Int, Int) -> Int) -> Data {
+    let icc = [UInt8](sRGB.copyICCData()! as Data)
+    var out: [UInt8] = Array("8BPS".utf8) + be16(2) + [UInt8](repeating: 0, count: 6) + be16(4) + be32(height) + be32(width) + be16(8) + be16(3)
+    out += be32(0)
+    var resource: [UInt8] = Array("8BIM".utf8) + be16(1039) + [0, 0] + be32(icc.count) + icc
+    if icc.count % 2 == 1 { resource.append(0) }
+    out += be32(resource.count) + resource
+    let layerInfo = be16(0xFFFF) + [0, 0]
+    let section = be64(layerInfo.count) + layerInfo + be32(0)
+    out += be64(section.count) + section
+    var counts: [UInt8] = [], packed: [UInt8] = []
+    for c in 0..<4 { for y in 0..<height {
+        let row = (0..<width).map { UInt8(sample($0, y, c)) }
+        var encoded: [UInt8] = [], i = 0
+        while i < row.count { let n = min(128, row.count - i); encoded.append(UInt8(n - 1)); encoded += row[i..<(i + n)]; i += n }
+        counts += be32(encoded.count); packed += encoded
+    } }
+    out += be16(1) + counts + packed
+    return Data(out)
+}
+
+/// A GIMP XCF (version 0, 8-bit RGBA layers, RLE tiles): `layers` top first as (x, y, w, h, opacity 0…255, mode, RGBA).
+func xcf(width: Int, height: Int, layers: [(Int, Int, Int, Int, Int, Int, [UInt8])]) -> Data {
+    var out: [UInt8] = Array("gimp xcf file\0".utf8) + be32(width) + be32(height) + be32(0)
+    out += be32(17) + be32(1) + [1] + be32(0) + be32(0)   // PROP_COMPRESSION: RLE, then PROP_END
+    let pointers = out.count
+    out += [UInt8](repeating: 0, count: 4 * (layers.count + 1)) + be32(0)
+    func patch(_ at: Int, _ v: Int) { out.replaceSubrange(at..<(at + 4), with: be32(v)) }
+    func rle(_ plane: [UInt8]) -> [UInt8] {
+        var o: [UInt8] = [], i = 0
+        while i < plane.count {
+            var run = 1
+            while i + run < plane.count, run < 127, plane[i + run] == plane[i] { run += 1 }
+            if run >= 3 { o += [UInt8(run - 1), plane[i]]; i += run; continue }
+            let n = min(127, plane.count - i)
+            o.append(UInt8(256 - n)); o += plane[i..<(i + n)]; i += n
+        }
+        return o
+    }
+    for (k, (x, y, w, h, opacity, mode, pixels)) in layers.enumerated() {
+        patch(pointers + 4 * k, out.count)
+        let name = Array("Layer \(k)\0".utf8)
+        out += be32(w) + be32(h) + be32(1) + be32(name.count) + name
+        out += be32(6) + be32(4) + be32(opacity) + be32(8) + be32(4) + be32(1)
+        out += be32(15) + be32(8) + be32(x) + be32(y) + be32(7) + be32(4) + be32(mode) + be32(0) + be32(0)
+        let hierarchy = out.count
+        out += be32(0) + be32(0)
+        patch(hierarchy, out.count)
+        out += be32(w) + be32(h) + be32(4)
+        let level = out.count
+        out += be32(0) + be32(0)
+        patch(level, out.count)
+        out += be32(w) + be32(h)
+        let across = (w + 63) / 64, down = (h + 63) / 64
+        let tiles = out.count
+        out += [UInt8](repeating: 0, count: 4 * across * down) + be32(0)
+        for t in 0..<(across * down) {
+            patch(tiles + 4 * t, out.count)
+            let tx = (t % across) * 64, ty = (t / across) * 64
+            var tile: [UInt8] = []
+            for yy in ty..<min(ty + 64, h) { for xx in tx..<min(tx + 64, w) { tile += pixels[((yy * w + xx) * 4)..<((yy * w + xx) * 4 + 4)] } }
+            for c in 0..<4 { out += rle(Swift.stride(from: c, to: tile.count, by: 4).map { tile[$0] }) }
+        }
+    }
+    return Data(out)
+}
+
+/// The CMYK patches of `cmyk-chart.tiff`, 8 × 4 of 16 px, row by row (the bench recomputes the reference from these).
+let cmykPatches: [[Double]] = (0..<32).map { (i: Int) -> [Double] in
+    let c = Double(i % 4) / 3, m = Double(i / 4 % 4) / 3, y = Double((i * 5) % 7) / 6
+    let k: Double = i < 16 ? 0 : Double(i % 3) / 4
+    return [c, m, y, k]
+}
+
+func imageKit() throws {
+    let p3 = CGColorSpace(name: CGColorSpace.displayP3)!
+    // A synthetic photo in Display P3: smooth sky, a skin-tone blob, fine texture (lossy defaults, profile kept). A TIFF,
+    // not a PNG: PNG counts as a graphics source, which WebP and AVIF write losslessly (formats §5).
+    try encode("photo-p3-320.tiff", "public.tiff", [samples(320, 240, space: p3) { x, y, c in
+        let fx = Double(x) / 320, fy = Double(y) / 240
+        let blob = exp(-(pow(fx - 0.6, 2) + pow(fy - 0.55, 2)) * 18)
+        let base = [0.35 + 0.5 * fy, 0.55 + 0.3 * (1 - fy), 0.85 - 0.6 * fy][c], skin = [0.9, 0.7, 0.55][c]
+        return base * (1 - blob) + skin * blob + 0.02 * sin(Double(x) * 0.5) * cos(Double(y) * 0.4) + 0.1 * fx
+    }], frame: [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5]])
+    // The ColorChecker patches tagged Display P3 (≤ 256 colours, for no-ICC targets).
+    let patches: [(Int, Int, Int)] = [
+        (115, 82, 68), (194, 150, 130), (98, 122, 157), (87, 108, 67), (133, 128, 177), (103, 189, 170),
+        (214, 126, 44), (80, 91, 166), (193, 90, 99), (94, 60, 108), (157, 188, 64), (224, 163, 46),
+        (56, 61, 150), (70, 148, 73), (175, 54, 60), (231, 199, 31), (187, 86, 149), (8, 133, 161),
+        (243, 243, 242), (200, 200, 200), (160, 160, 160), (122, 122, 121), (85, 85, 85), (52, 52, 52)]
+    try encode("colorchecker-p3.png", "public.png", [samples(240, 160, space: p3) { x, y, c in
+        let p = patches[(y / 40) * 6 + x / 40]
+        return Double([p.0, p.1, p.2][c]) / 255
+    }])
+    // 16-bit RGB (Display P3) and 16-bit gray ramps for the lossless round trips.
+    try encode("ramp-p3-16.png", "public.png", [samples(64, 48, space: p3, bits: 16) { x, y, c in
+        Double(x * 48 + y + c * 977) .truncatingRemainder(dividingBy: 3072) / 3071
+    }])
+    try encode("ramp-gray-16.png", "public.png", [samples(64, 48, space: CGColorSpace(name: CGColorSpace.genericGrayGamma2_2)!, bits: 16) { x, y, _ in
+        Double(x * 48 + y) / 3071
+    }])
+    // CMYK patches in Generic CMYK (kept by CMYK targets, converted for RGB ones).
+    try encode("cmyk-chart.tiff", "public.tiff", [samples(128, 64, space: CGColorSpace(name: CGColorSpace.genericCMYK)!) { x, y, c in
+        cmykPatches[(y / 16) * 8 + x / 16][c]
+    }], frame: [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5]])
+    // Red 12 px text on white (edge chroma) and a hard step edge (ringing).
+    try png("red-text-240.png", bitmap(240, 40) { c in
+        c.setFillColor(rgb(255, 255, 255)); c.fill(CGRect(x: 0, y: 0, width: 240, height: 40))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let line = NSAttributedString(string: "Red text on white 0123456789", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font,
+                                                                                             NSAttributedString.Key(kCTForegroundColorAttributeName as String): rgb(255, 0, 0)])
+        c.textPosition = CGPoint(x: 4, y: 14)
+        CTLineDraw(CTLineCreateWithAttributedString(line), c)
+    })
+    try png("step-edge-200.png", bitmap(200, 40) { c in
+        c.setFillColor(rgb(0, 0, 0)); c.fill(CGRect(x: 0, y: 0, width: 100, height: 40))
+        c.setFillColor(rgb(255, 255, 255)); c.fill(CGRect(x: 100, y: 0, width: 100, height: 40))
+    })
+    // An EXIF-rich JPEG stored sideways (orientation 6): a red block in the stored top-left corner.
+    try encode("exif-orient6.jpg", "public.jpeg", [bitmap(96, 64) { c in
+        c.setFillColor(rgb(40, 90, 200)); c.fill(CGRect(x: 0, y: 0, width: 96, height: 64))
+        c.setFillColor(rgb(220, 20, 20)); c.fill(CGRect(x: 0, y: 40, width: 32, height: 24))
+    }], frame: [kCGImagePropertyOrientation: 6, kCGImageDestinationLossyCompressionQuality: 0.95,
+                kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2024:05:06 07:08:09", kCGImagePropertyExifLensModel: "Test 35mm f/2",
+                                                 kCGImagePropertyExifFNumber: 2.0, kCGImagePropertyExifExposureTime: 0.004],
+                kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "Super Converter", kCGImagePropertyTIFFModel: "Fixture 1"],
+                kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 48.8566, kCGImagePropertyGPSLatitudeRef: "N",
+                                                kCGImagePropertyGPSLongitude: 2.3522, kCGImagePropertyGPSLongitudeRef: "E"]])
+    // An animated GIF: three frames, three delays.
+    let colours = [(200, 40, 40), (40, 160, 60), (40, 60, 200)]
+    try encode("animated-3.gif", "com.compuserve.gif", colours.map { col in bitmap(32, 32) { c in
+        c.setFillColor(rgb(255, 255, 255)); c.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        c.setFillColor(rgb(col.0, col.1, col.2)); c.fill(CGRect(x: 8, y: 8, width: 16, height: 16))
+    } }, properties: [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]],
+       frame: [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.2]])
+    // Camera RAW, PSB and XCF.
+    try write("synthetic.dng", dng(width: 256, height: 192))
+    try write("sample.psb", psb(width: 64, height: 48) { x, y, c in c == 3 ? 255 : [x * 4, y * 5, 128][c] })
+    let bottom = [UInt8](repeating: 0, count: 64 * 48 * 4).enumerated().map { $0.offset % 4 == 3 ? UInt8(255) : UInt8(200) }
+    let top = [UInt8](repeating: 0, count: 32 * 24 * 4).enumerated().map { $0.offset % 4 == 0 || $0.offset % 4 == 3 ? UInt8(255) : UInt8(0) }
+    try write("sample.xcf", xcf(width: 64, height: 48, layers: [(16, 12, 32, 24, 255, 3, top), (0, 0, 64, 48, 255, 0, bottom)]))
+    // A gain-map HEIC (HDR highlights up to 4× SDR white): ImageIO writes ISO 21496-1 gain maps on macOS 15+.
+    if #available(macOS 15, *) {
+        let w = 96, h = 32
+        var px = [Float](repeating: 1, count: w * h * 4)
+        for y in 0..<h { for x in 0..<w {
+            let v = Float(x) / Float(w - 1) * 4, i = (y * w + x) * 4
+            px[i] = v; px[i + 1] = v * 0.85; px[i + 2] = v * 0.6 + (y < h / 2 ? 0.05 : 0)
+        } }
+        let image = CGImage(width: w, height: h, bitsPerComponent: 32, bitsPerPixel: 128, bytesPerRow: w * 16,
+                            space: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)!,
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue | CGBitmapInfo.floatComponents.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+                            provider: CGDataProvider(data: px.withUnsafeBytes { Data($0) } as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        try encode("hdr-gainmap.heic", "public.heic", [image], frame: [kCGImageDestinationEncodeRequest: kCGImageDestinationEncodeToISOGainmap])
+    }
+}
+
 try images()
 try audio()
 try documents()
@@ -499,4 +743,5 @@ try typesetting()
 try cad()
 try pdf()
 try archives()
+try imageKit()
 print("Fixtures written to \(out.path)")
