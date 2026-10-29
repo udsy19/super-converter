@@ -39,6 +39,8 @@ struct ImageWriter {
         case .jpeg, .png, .tiff, .heic:
             try ImageIOWriter(kind: kind, settings: settings, context: context).write(asset, to: url)
         case .avif:
+            // Neither ImageIO (it refuses quality 1.0) nor the bundled SVT-AV1 (4:2:0 only) writes lossless 4:4:4 AVIF.
+            if settings.lossless == true { throw ConversionError.failed("Lossless AVIF can’t be made on this Mac. Turn off Lossless, or choose PNG or WebP.") }
             if ImageIOSupport.writesAVIF { try ImageIOWriter(kind: kind, settings: settings, context: context).write(asset, to: url) }
             else { try writeAVIF(asset, to: url) }
         case .webp: try writeWebP(asset, to: url)
