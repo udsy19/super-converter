@@ -10,7 +10,8 @@ import SuperConverterCore
 ///     sconv --from heic --to jpg --list-options
 ///
 /// Converted file paths go to standard output, one per line; everything else (notes, problems) to standard error.
-/// Exit status: 0 all converted, 1 something didn’t convert, 64 wrong usage, 130 stopped.
+/// Exit status: 0 all converted, 1 something didn’t convert, 2 something stopped on a question (a decompression bomb asks
+/// first, quality §8; the message names the `--option` that answers yes), 64 wrong usage, 130 stopped.
 public enum SconvCommand {
     public static let usage = """
         usage: sconv <files…> --to <format> [--option key=value]… [--out DIR] [--look original|written|latex]
@@ -165,8 +166,13 @@ public enum SconvCommand {
                 for warning in result.warnings { err("\(file.lastPathComponent): \(warning)") }
             case .failed(let id, let error):
                 guard let file = jobs.removeValue(forKey: id) else { continue }
-                err("\(file.lastPathComponent): \(Strings.problem(error).message)")
-                status = 1
+                if case .needsConfirmation(let question, _, let option) = error {
+                    err("\(file.lastPathComponent): \(question) To go ahead, run again with --option \(option)=yes.")
+                    if status == 0 { status = 2 }
+                } else {
+                    err("\(file.lastPathComponent): \(Strings.problem(error).message)")
+                    status = 1
+                }
             case .cancelled(let id):
                 guard jobs.removeValue(forKey: id) != nil else { continue }
                 status = 130
