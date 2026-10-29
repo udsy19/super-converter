@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TypesetKitModule.install()
         LayoutKitModule.install()
         OfficeKitModule.install()
-        EbookKitModule.install()
+        EbookKitModule.install(extractor: ArchiveKitModule.extractor())
         ArchiveKitModule.install()
         MediaKitModule.install()
         FontKitModule.install()

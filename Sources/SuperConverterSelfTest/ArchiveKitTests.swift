@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SuperConverterCore
 import HelperKit
@@ -237,6 +238,20 @@ func registerArchiveKitTests() {
     registerArchiveKitRZipTests()
     registerArchiveKitACETests()
     registerArchiveKitARCTests()
+
+    // EbookKit's extractor (RAR comics, CHM) is ArchiveKit's read: the corpus RAR comes out as its manifest says.
+    akCase("ebookExtractor") { dir in
+        Services.tools = akTools
+        let archives = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Corpus/generated/archives")
+        let extract = ArchiveKitModule.extractor()
+        try akAwait { try await extract(archives.appendingPathComponent("stored.rar"), dir) }
+        let text = try Data(contentsOf: dir.appendingPathComponent("hello.txt"))
+        check(text.count == 1120 && SHA256.hash(data: text).map { String(format: "%02x", $0) }.joined()
+              == "c89c7437c834b084cf8272bdf597571be7282ede70313cfa575569278d41519b", "stored.rar extracted for EbookKit")
+        let missing = try? akAwait { try await extract(archives.appendingPathComponent("absent.chm"), dir) }
+        check(missing == nil, "an unreadable CHM fails")
+    }
 
     SelfTest.cases.append(("ArchiveKit.installs", {
         installFakes()

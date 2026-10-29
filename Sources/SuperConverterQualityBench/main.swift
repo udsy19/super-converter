@@ -79,7 +79,7 @@ Task { @MainActor in
     HelperKitModule.install()
     ImageKitModule.install(); VectorKitModule.install(); XPSKitModule.install(); VectorizeKitModule.install()
     CADKitModule.install(); DocKitModule.install(); TypesetKitModule.install(); MathKitModule.install()
-    LayoutKitModule.install(); RenderKitModule.install(); OfficeKitModule.install(); EbookKitModule.install()
+    LayoutKitModule.install(); RenderKitModule.install(); OfficeKitModule.install(); EbookKitModule.install(extractor: ArchiveKitModule.extractor())
     ArchiveKitModule.install(); MediaKitModule.install(); FontKitModule.install()
     ConvertKitModule.install(collisionPolicy: { .addNumber })
 

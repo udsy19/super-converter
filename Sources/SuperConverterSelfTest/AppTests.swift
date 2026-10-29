@@ -31,9 +31,11 @@ private func appLaunchSequence() {
         print("  (sources not on disk; launch sequence not read)"); return
     }
     let installs = source.split(separator: "\n").compactMap { line -> String? in
+        // `<Name>Module.install()`, or with arguments (`EbookKitModule.install(extractor: …)`).
         let text = line.trimmingCharacters(in: .whitespaces)
-        guard text.hasSuffix("Module.install()") else { return nil }
-        return String(text.dropLast("Module.install()".count))
+        guard let call = text.range(of: "Module.install("), text.hasSuffix(")"),
+              !text[..<call.lowerBound].contains(where: { !$0.isLetter }) else { return nil }
+        return String(text[..<call.lowerBound])
     }
     let engines = ModuleID.allCases.filter { $0.role == .engine && $0 != .helperKit }.map(\.rawValue)
     check(installs.first == ModuleID.helperKit.rawValue, "HelperKit installs first (\(installs.first ?? "none"))")
