@@ -208,27 +208,9 @@ private func checkBaselineGrid(_ name: String, _ log: TypesetLog, leading: Doubl
 
 /// All fonts embedded; the text extracts as written (ligatures and hyphens undone); bookmarks and tags present.
 private func checkPDF(_ name: String, _ url: URL, _ doc: DocModel) {
-    guard let pdf = PDFDocument(url: url), let cg = CGPDFDocument(url as CFURL) else { check(false, "\(name) PDF opens"); return }
-    var unembedded: [String] = []
-    for i in 1...max(1, cg.numberOfPages) {
-        guard let dict = cg.page(at: i)?.dictionary else { continue }
-        var resources: CGPDFDictionaryRef?, fonts: CGPDFDictionaryRef?
-        guard CGPDFDictionaryGetDictionary(dict, "Resources", &resources), let resources,
-              CGPDFDictionaryGetDictionary(resources, "Font", &fonts), let fonts else { continue }
-        CGPDFDictionaryApplyBlock(fonts, { key, object, _ in
-            var font: CGPDFDictionaryRef?
-            guard CGPDFObjectGetValue(object, .dictionary, &font), let font else { return true }
-            var descriptor: CGPDFDictionaryRef?, stream: CGPDFStreamRef?, array: CGPDFArrayRef?
-            var embedded = CGPDFDictionaryGetArray(font, "DescendantFonts", &array)
-            if CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor {
-                embedded = CGPDFDictionaryGetStream(descriptor, "FontFile", &stream) || CGPDFDictionaryGetStream(descriptor, "FontFile2", &stream)
-                    || CGPDFDictionaryGetStream(descriptor, "FontFile3", &stream)
-            }
-            if !embedded { unembedded.append(String(cString: key)) }
-            return true
-        }, nil)
-    }
-    check(unembedded.isEmpty, "\(name): all fonts embedded (\(unembedded))")
+    guard let pdf = PDFDocument(url: url) else { check(false, "\(name) PDF opens"); return }
+    let problems = TypographicLint.check(pdf: url)
+    check(problems.isEmpty, "\(name): fonts embedded and tagged (\(problems))")
     let extracted = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n")
         .precomposedStringWithCompatibilityMapping.replacingOccurrences(of: "-\n", with: "")
     let haystack = extracted.split(whereSeparator: \.isWhitespace).joined(separator: " ")
@@ -243,7 +225,6 @@ private func checkPDF(_ name: String, _ url: URL, _ doc: DocModel) {
     if doc.blocks.contains(where: { if case .heading = $0 { return true }; return false }) {
         check((pdf.outlineRoot?.numberOfChildren ?? 0) > 0, "\(name): bookmarks from headings")
     }
-    check((try? Data(contentsOf: url))?.range(of: Data("StructTreeRoot".utf8)) != nil, "\(name): tagged PDF")
 }
 
 private func plain(_ t: DocText) -> String {

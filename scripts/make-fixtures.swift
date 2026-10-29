@@ -285,6 +285,135 @@ func ebooks() throws {
     try zip("sample.cbz", files: pages)
 }
 
+// MARK: Typesetting (TypesetKit: LaTeX parity and the typographic lint, quality §3.7)
+
+/// Markdown for TypesetKit's bench: prose in eight languages (hyphenation and line breaking), then one fixture per
+/// structure LaTeX has rules for. Text written for the bench.
+func typesetting() throws {
+    let prose: [(String, String, [String])] = [
+        ("en", "Line breaking", [
+            "A paragraph is broken into lines by considering every feasible break at once and choosing the sequence whose total demerits are smallest. The method looks ahead to the end of the paragraph, so an awkward break near the bottom can change the very first line, which is why justified text set this way has an unusually even colour across the page.",
+            "## Hyphenation\n\nHyphenation helps the optimiser when a long word would otherwise leave a loose line. Typographers generally prefer no more than two consecutive hyphenated lines, never a hyphen on the last full line of a page, and never a word broken after a single letter; the parameters reproduce those conventions numerically rather than by inspection.",
+            "## Spacing\n\nInterword spaces stretch and shrink within limits taken from the font. After a full stop, question mark or exclamation mark the space is a little wider, except after abbreviations such as e.g. or after a capital initial, where an ordinary space keeps the reading rhythm intact.",
+        ]),
+        ("de", "Silbentrennung", [
+            "Ein Absatz wird in Zeilen zerlegt, indem alle möglichen Umbrüche gleichzeitig betrachtet werden und jene Folge gewählt wird, deren Gesamtkosten am geringsten sind. Gerade im Deutschen mit seinen langen Zusammensetzungen wie Donaudampfschifffahrtsgesellschaft oder Haftpflichtversicherungsbedingungen ist eine gute Silbentrennung unverzichtbar.",
+            "Die Wortzwischenräume dehnen und stauchen sich innerhalb fester Grenzen. Werden diese überschritten, entsteht eine unschöne Zeile, die der Algorithmus nach Möglichkeit vermeidet, indem er frühere Umbrüche verschiebt.",
+        ]),
+        ("fr", "La composition", [
+            "Un paragraphe est découpé en lignes en examinant simultanément toutes les coupures possibles, puis en retenant la suite dont le coût total est le plus faible. Les mots longs, comme anticonstitutionnellement ou institutionnalisation, profitent particulièrement d’une bonne césure.",
+            "Les espaces entre les mots s’étirent et se compriment dans des limites fixées par la fonte. La typographie française demande en outre des espaces fines avant certains signes de ponctuation ; ici, le texte reste simple et la composition suit les règles de LaTeX.",
+        ]),
+        ("es", "La composición", [
+            "Un párrafo se divide en líneas considerando a la vez todos los cortes posibles y eligiendo la secuencia cuyo coste total es menor. Palabras largas como electroencefalografista o desafortunadamente se benefician de una buena división silábica.",
+            "Los espacios entre palabras se estiran y se encogen dentro de los límites que fija la fuente, de modo que el gris de la página resulte uniforme y agradable a la vista.",
+        ]),
+        ("it", "La composizione", [
+            "Un paragrafo viene diviso in righe considerando contemporaneamente tutte le interruzioni possibili e scegliendo la sequenza il cui costo complessivo è minimo. Parole lunghe come precipitevolissimevolmente traggono vantaggio da una buona sillabazione.",
+            "Gli spazi tra le parole si allungano e si accorciano entro limiti stabiliti dal carattere, così che il grigio della pagina rimanga uniforme.",
+        ]),
+        ("nl", "Het zetten", [
+            "Een alinea wordt in regels verdeeld door alle mogelijke afbrekingen tegelijk te bekijken en de reeks te kiezen met de laagste totale kosten. Lange samenstellingen zoals arbeidsongeschiktheidsverzekering of kinderdagverblijfmedewerker hebben baat bij een goede woordafbreking.",
+            "De spaties tussen woorden rekken en krimpen binnen grenzen die het lettertype bepaalt, zodat de bladzijde een gelijkmatige grijswaarde krijgt.",
+        ]),
+        ("pt", "A composição", [
+            "Um parágrafo é dividido em linhas considerando ao mesmo tempo todas as quebras possíveis e escolhendo a sequência cujo custo total é menor. Palavras longas como inconstitucionalissimamente ou otorrinolaringologista beneficiam de uma boa translineação.",
+            "Os espaços entre as palavras esticam e encolhem dentro de limites definidos pela fonte, para que a mancha de texto fique uniforme.",
+        ]),
+        ("pl", "Skład tekstu", [
+            "Akapit dzieli się na wiersze, rozważając jednocześnie wszystkie możliwe podziały i wybierając ten ciąg, którego łączny koszt jest najmniejszy. Długie wyrazy, takie jak konstantynopolitańczykowianeczka czy niezaprzeczalnie, korzystają z dobrego dzielenia.",
+            "Odstępy między wyrazami rozciągają się i kurczą w granicach wyznaczonych przez krój pisma, dzięki czemu szarość kolumny jest równomierna.",
+        ]),
+    ]
+    for (language, title, paragraphs) in prose {
+        try write("typeset-prose-\(language).md", "---\nlang: \(language)\n---\n\n# \(title)\n\n" + paragraphs.joined(separator: "\n\n") + "\n")
+    }
+    try write("typeset-lists.md", """
+    # Lists
+
+    Lists are indented by 25 pt and their items are separated by a little stretchable space:
+
+    - The first item is short.
+    - The second item is long enough to wrap onto a second line, so its continuation lines up with the text of the item and not with the bullet.
+      - A nested item takes an en dash as its label.
+      - Another nested item.
+    - The last item.
+
+    Numbered lists count in arabic numerals, then letters:
+
+    1. Measure the paragraph.
+    2. Break it into lines.
+       1. Try every feasible break.
+       2. Keep the cheapest.
+    3. Build the pages.
+
+    """)
+    try write("typeset-footnotes.md", """
+    # Footnotes
+
+    Footnotes are set in footnote size at the foot of the page that refers to them, below a short rule.[^rule] A page may carry several notes, and they take their room from the text above.[^room]
+
+    The text then continues as usual, with a paragraph long enough to fill a few lines and to show that the footnotes do not disturb the baseline grid of the body.
+
+    [^rule]: The rule is 0.4 pt thick and two fifths of the text width long.
+    [^room]: TeX's page builder subtracts the height of every inserted note from the goal for the page.
+
+    """)
+    try write("typeset-tables.md", """
+    # Tables
+
+    Tables use three horizontal rules and no vertical ones, with numbers aligned on their decimal points.
+
+    | Font | Design size | Space | Stretch |
+    |:-----|------------:|------:|--------:|
+    | LM Roman 10 | 10 | 3.33 | 1.67 |
+    | LM Roman 12 | 12 | 3.26 | 1.63 |
+    | LM Roman 17 | 17.28 | 3.18 | 1.59 |
+    | LM Mono 10 | 10 | 5.25 | 0 |
+
+    A paragraph after the table closes the fixture.
+
+    """)
+    try write("typeset-math.md", """
+    # Mathematics
+
+    Inline formulas such as $a^2 + b^2 = c^2$ and $e^{i\\pi} + 1 = 0$ sit on the baseline of the text. Display formulas are centred:
+
+    $$\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}$$
+
+    and sums take their limits above and below:
+
+    $$\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}.$$
+
+    """)
+    try write("typeset-code.md", """
+    # Code
+
+    Code is set in LM Mono, unjustified, with the list spacing above and below:
+
+    ```
+    func breakLines(_ paragraph: Paragraph) -> [Line] {
+        var active = [Breakpoint.start]
+        for item in paragraph.items { consider(item, &active) }
+        return cheapest(active)
+    }
+    ```
+
+    The text continues after the code.
+
+    """)
+    try write("typeset-quotes.md", """
+    # Quotations and links
+
+    A quotation is indented on both sides:
+
+    > Typography exists to honour content. Every rule here serves the reader, who should never have to notice it.
+
+    Straight "quotes" become curly ones, two hyphens make an en dash for ranges such as 10--20, three make an em dash---like this---and three dots make an ellipsis... A [link to the specification](https://example.com/spec) is clickable without a visible box.
+
+    """)
+}
+
 // MARK: CAD
 
 func cad() throws {
@@ -354,6 +483,7 @@ try audio()
 try documents()
 try spreadsheet()
 try ebooks()
+try typesetting()
 try cad()
 try pdf()
 print("Fixtures written to \(out.path)")

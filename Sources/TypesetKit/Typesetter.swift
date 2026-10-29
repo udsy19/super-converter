@@ -317,8 +317,9 @@ public final class Typesetter {
         try PDFRenderer(style: style, fonts: e.fonts, documentFont: nil).render(pages, metadata: meta, outline: o.bookmarks ? outline(pages, style) : [], to: url) { n in
             progress(0.6 + 0.4 * Double(n) / Double(max(pages.count, 1)))
         }
+        let log = log(pages)
         return TypesetResult(pageCount: pages.count, lossNotes: Self.unique(notes + fontNotes(e.fonts) + mathNotes(e.math)),
-                             warnings: [], log: log(pages))
+                             warnings: Array(TypographicLint.check(log).prefix(5)), log: log)
     }
 
     static func offset(_ item: VItem, footnotes: Int, tables: Int) -> VItem {
@@ -369,7 +370,9 @@ public final class Typesetter {
                                                              outline: options.bookmarks ? outline(pages, style) : [], to: url) { n in
             progress(0.6 + 0.4 * Double(n) / Double(max(pages.count, 1)))
         }
-        return TypesetResult(pageCount: pages.count, lossNotes: Self.unique(composer.finish() + fontNotes(e.fonts)), warnings: [], log: log(pages))
+        let log = log(pages)
+        return TypesetResult(pageCount: pages.count, lossNotes: Self.unique(composer.finish() + fontNotes(e.fonts)),
+                             warnings: Array(TypographicLint.check(log).prefix(5)), log: log)
     }
 
     // MARK: Finishing
