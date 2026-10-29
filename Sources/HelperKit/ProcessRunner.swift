@@ -22,6 +22,9 @@ struct ProcessSpec {
     var timeLimit: TimeInterval?
     /// True only for an install step that must download (Tectonic's warm-up); every conversion runs without.
     var network = false
+    /// True for helpers that are apps (LibreOffice, calibre): AppKit checks in with LaunchServices and stops without it.
+    /// Command-line tools get no LaunchServices, so nothing they run can open a URL or an app outside the sandbox.
+    var launchServices = false
     var sandbox = true
     var niceness = 10
     /// Written to standard input and closed; nil means no input at all.
@@ -50,7 +53,8 @@ enum ProcessRunner {
         let sandboxed = spec.sandbox && Sandbox.isEnforced
         var args = ["-n", String(spec.niceness)]
         if sandboxed {
-            let profile = Sandbox.profile(writable: [spec.workFolder, home] + spec.writable, network: spec.network, extra: spec.extraWriteFilters)
+            let profile = Sandbox.profile(writable: [spec.workFolder, home] + spec.writable, network: spec.network,
+                                          launchServices: spec.launchServices, extra: spec.extraWriteFilters)
             args += ["/usr/bin/sandbox-exec", "-p", profile]
         }
         args += [spec.executable.path] + spec.arguments
@@ -175,18 +179,29 @@ enum ProcessRunner {
 /// `sandbox-exec` profiles (ARCHITECTURE §7). The tool is deprecated; `isEnforced` checks, once per launch, that it still
 /// denies a write outside the allowed folders — if it ever does not, the environment and arguments are the only guard.
 enum Sandbox {
-    static func profile(writable: [URL], network: Bool, extra: [String] = []) -> String {
+    static func profile(writable: [URL], network: Bool, launchServices: Bool = false, extra: [String] = []) -> String {
         func quoted(_ url: URL) -> String {
             "\"" + realPath(url).replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
         }
         var lines = ["(version 1)", "(allow default)"]
         // IP traffic only: LibreOffice's launcher talks to its worker over a Unix-domain socket and fails without it.
-        if !network { lines += ["(deny network-outbound (remote ip))", "(deny network-inbound (local ip))", "(deny network-bind (local ip))"] }
+        // Names are looked up through mDNSResponder's socket, so without network that goes too: a DNS query carries data out
+        // as well as a connection does.
+        if !network {
+            lines += ["(deny network-outbound (remote ip))", "(deny network-inbound (local ip))", "(deny network-bind (local ip))",
+                      "(deny network-outbound (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))"]
+        }
+        // LaunchServices opens URLs and apps on a helper's behalf, outside its sandbox (a browser carries whatever the URL
+        // holds), and finds the apps Apple Events go to.
+        if !launchServices { lines.append("(deny mach-lookup" + launchServicesNames.map { " (global-name \"\($0)\")" }.joined() + ")") }
         lines.append("(deny file-write*)")
         lines.append("(allow file-write* (literal \"/dev/null\") (literal \"/dev/dtracehelper\") (regex #\"^/dev/(tty|fd/)\")"
                      + writable.map { " (subpath \(quoted($0)))" }.joined() + extra.map { " " + $0 }.joined() + ")")
         return lines.joined(separator: "\n")
     }
+
+    static let launchServicesNames = ["com.apple.coreservices.launchservicesd", "com.apple.coreservices.quarantine-resolver",
+                                      "com.apple.lsd.mapdb", "com.apple.lsd.open", "com.apple.lsd.modifydb"]
 
     /// The kernel's own spelling of a path (`/private/var/…`): a profile matches resolved paths, and Foundation's
     /// `resolvingSymlinksInPath` turns `/private/var` back into `/var`.

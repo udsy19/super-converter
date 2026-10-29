@@ -197,6 +197,29 @@ func registerHelperKitTests() {
             close(fd)
         } else { check(false, "couldn’t open a local socket") }
 
+        // Names: no DNS without network (a query carries data out too). Connecting to mDNSResponder's socket asks nothing.
+        let resolver = script("resolver.sh", in: dir, "/usr/bin/nc -U /var/run/mDNSResponder < /dev/null >/dev/null 2>&1; echo rc=$?")
+        @MainActor func reachedResolver(network: Bool) -> String {
+            let result = complete(30) { try await ProcessRunner.run(ProcessSpec(executable: resolver, arguments: [], workFolder: dir.appendingPathComponent("w4"), network: network)) }
+            return ((try? result?.get().standardOutput) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        check(reachedResolver(network: false) == "rc=1", "a conversion can’t look names up")
+        check(reachedResolver(network: true) == "rc=0", "an install step that must download can")
+
+        // LaunchServices: a command-line helper can't have a URL or an app opened outside its sandbox; an app helper (AppKit
+        // needs it) can. The lookup asks LaunchServices where Finder is and opens nothing.
+        let lookup = script("lookup.sh", in: dir, #"/usr/bin/osascript -l JavaScript -e 'ObjC.import("AppKit"); var u = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier("com.apple.finder"); u.isNil() ? "none" : "found"'"#)
+        @MainActor func lookedUp(launchServices: Bool, sandbox: Bool = true) -> String {
+            let result = complete(30) {
+                try await ProcessRunner.run(ProcessSpec(executable: lookup, arguments: [], workFolder: dir.appendingPathComponent("w5"), launchServices: launchServices, sandbox: sandbox))
+            }
+            return ((try? result?.get().standardOutput) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if lookedUp(launchServices: true, sandbox: false) == "found" {
+            check(lookedUp(launchServices: false) == "none", "a command-line helper can’t reach LaunchServices")
+            check(lookedUp(launchServices: true) == "found", "an app helper can")
+        } else { check(false, "LaunchServices finds Finder outside the sandbox") }
+
         // Time limit and cancellation stop exactly the process we started (and what it started), never others by name.
         let bystander = Process()
         bystander.executableURL = URL(fileURLWithPath: "/bin/sleep")

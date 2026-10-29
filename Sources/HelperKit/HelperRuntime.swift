@@ -54,7 +54,7 @@ final class HelperRuntime: @unchecked Sendable {
         let limit = timeLimit ?? HelperCatalog.info(helper).timeLimit
         let spec = ProcessSpec(executable: executable, arguments: arguments, workFolder: workFolder, writable: writable,
                                environment: environment, searchPath: searchPath, extraWriteFilters: extraWriteFilters, timeLimit: limit,
-                               network: network, sandbox: sandbox)
+                               network: network, launchServices: HelperCatalog.info(helper).isApp, sandbox: sandbox)
         do { return try await ProcessRunner.run(spec) }
         catch RunFailure.timedOut { throw ConversionError.helperTimedOut(helper, seconds: Int(limit ?? 0)) }
         catch RunFailure.cancelled { throw ConversionError.cancelled }
