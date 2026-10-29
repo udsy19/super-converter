@@ -97,7 +97,7 @@ final class TableComposer {
 
     static func text(_ block: DocBlock) -> String {
         switch block {
-        case .paragraph(let t, _), .heading(_, let t): return Composer.plainText(t)
+        case .paragraph(let t, _), .heading(_, let t): return t.plainText
         case .code(_, let s): return s
         case .math(let tex, _): return tex
         default: return ""

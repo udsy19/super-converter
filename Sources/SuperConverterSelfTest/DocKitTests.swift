@@ -1088,8 +1088,9 @@ private func dockitTextOutputs() {
     for cls in ["article", "report", "book"] {
         let out = LaTeXWriter.render(model, documentClass: cls)
         let tex = out.tex
-        check(tex.contains("\\documentclass[11pt]{\(cls)}") && tex.contains("\\usepackage{lmodern}") && tex.contains("\\usepackage{microtype}") && tex.contains("\\usepackage{booktabs}") && tex.contains("\\usepackage{hyperref}"), "LaTeX \(cls): preamble")
-        check(tex.contains(cls == "article" ? "\\section{Introduction}" : "\\chapter{Introduction}"), "LaTeX \(cls): heading levels")
+        check(tex.contains("\\documentclass{\(cls)}") && tex.contains("\\usepackage{lmodern}") && tex.contains("\\usepackage{microtype}") && tex.contains("\\usepackage{booktabs}") && tex.contains("\\usepackage{hyperref}"), "LaTeX \(cls): preamble")
+        check(tex.contains(cls == "article" ? "\\section*{Introduction}" : "\\chapter*{Introduction}") && tex.contains(cls == "article" ? "\\subsection*{Lists}" : "\\section*{Lists}"),
+              "LaTeX \(cls): heading levels")
         check(tex.contains("\\textbf{bold}") && tex.contains("\\emph{italic}") && tex.contains("\\sout{struck}") && tex.contains("\\texttt{code()}") && tex.contains("\\href{https://example.com/a?b=1\\&c=2}{link}"), "LaTeX \(cls): inline commands")
         check(tex.contains("\\footnote{The note.}") && tex.contains("$x^2+y^2=z^2$") && tex.contains("\\[\n\\frac{a}{b}\n\\]"), "LaTeX \(cls): footnote and maths")
         check(tex.contains("\\toprule") && tex.contains("\\midrule") && tex.contains("\\bottomrule") && tex.contains("\\caption{Fruit}") && tex.contains("\\begin{tabular}{lr}"), "LaTeX \(cls): booktabs table")
@@ -1099,10 +1100,15 @@ private func dockitTextOutputs() {
         let begins = tex.components(separatedBy: "\\begin{").count - 1, ends = tex.components(separatedBy: "\\end{").count - 1
         check(begins == ends, "LaTeX \(cls): \\begin and \\end balance (\(begins)/\(ends))")
     }
+    // Headings as TypesetKit reads them (quality §3.7 parity): "# Title" over "##" sections is \maketitle, the "##" are
+    // \section, numbered from three on.
+    let heads = { (n: Int) in LaTeXWriter.render(DocModel(blocks: [.heading(level: 1, [.text("Title")])] + (1...n).flatMap { [.heading(level: 2, [.text("S\($0)")]), para("Text.")] })).tex }
+    check(heads(2).contains("\\title{Title}") && heads(2).contains("\\maketitle") && heads(2).contains("\\section*{S1}") && !heads(2).contains("\\section{Title}"), "LaTeX: opening title, unnumbered sections")
+    check(heads(3).contains("\\section{S3}"), "LaTeX: three sections are numbered")
     check(LaTeXWriter.escape("50% of $5 & #1_x ~ ^ \\ {}") == "50\\% of \\$5 \\& \\#1\\_x \\textasciitilde{} \\textasciicircum{} \\textbackslash{} \\{\\}", "LaTeX escaping")
     // Through the converters, with the options.
     if let url = writeFile(model, engine: .latexWriter, to: "tex", folder: folder, options: OptionValues(["latexClass": "book"])) {
-        check((try? String(contentsOf: url, encoding: .utf8))?.contains("\\documentclass[11pt]{book}") == true, "LaTeX class option")
+        check((try? String(contentsOf: url, encoding: .utf8))?.contains("\\documentclass{book}") == true, "LaTeX class option")
         check(FileManager.default.fileExists(atPath: folder.appendingPathComponent("doc files/image1.png").path), "LaTeX pictures go to a folder")
     }
     if let url = writeFile(model, engine: .textWriter, to: "txt", folder: folder, options: OptionValues(["lineEndings": "crlf", "encoding": "UTF-16"])) {

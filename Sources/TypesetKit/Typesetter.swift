@@ -114,6 +114,7 @@ public final class Typesetter {
         let fonts = FontResolver(library: library, latex: latex, sans: sans, normalSize: style.normal.size)
         let math = MathBridge()
         let setter = ParagraphSetter(fonts: fonts, hyphenator: hyphenate ? Hyphenator(language: language) : nil,
+                                     conventions: latex ? LanguageConventions(language: language) : .none,
                                      mathBox: { tex, s in math.box(tex, display: false, size: s.size).box })
         return Engines(fonts: fonts, math: math, setter: setter)
     }
@@ -122,29 +123,16 @@ public final class Typesetter {
 
     public func typeset(_ doc: DocModel, options: TypesetOptions, to url: URL, progress: (Double) -> Void = { _ in }) throws -> TypesetResult {
         let style = styleSheet(options, cls: .article, pageSize: options.look == .asWritten ? doc.metadata.pageSize : nil)
-        var blocks = doc.blocks
-        var meta = doc.metadata
         // A document that opens with its only top-level heading has a title (Markdown's "# Title"): \maketitle.
-        let levels = Self.headingLevels(blocks)
-        if let first = blocks.first(where: { if case .footnote = $0 { return false }; return true }),
-           case .heading(let level, let text) = first, levels.filter({ $0 == level }).count == 1, levels.count > 1,
-           meta.title == nil || meta.title == Composer.plainText(text) {
-            meta.title = Composer.plainText(text)
-            blocks.removeFirst(blocks.firstIndex { if case .heading = $0 { return true }; return false }! + 1)
-        }
-        let sectionLevel = Self.headingLevels(blocks).min() ?? 1
+        let doc2 = doc.liftingOpeningTitle()
+        let blocks = doc2.blocks, meta = doc2.metadata, sectionLevel = doc2.sectionLevel
         let numbered: Bool
         switch options.numberedSections {
         case .on: numbered = true
         case .off: numbered = false
-        case .auto:
-            // "As written" keeps the document's own headings; the LaTeX look numbers three or more sections.
-            numbered = options.look != .asWritten && Self.headingLevels(blocks).filter { $0 == sectionLevel }.count >= 3
-                && !Self.alreadyNumbered(blocks)
+        // "As written" keeps the document's own headings; the LaTeX look numbers three or more sections.
+        case .auto: numbered = options.look != .asWritten && doc2.numbersSectionsByDefault
         }
-        var doc2 = doc
-        doc2.blocks = blocks
-        doc2.metadata = meta
         let language = options.language == "auto" ? (meta.language ?? Hyphenator.detectLanguage(Self.sampleText(blocks))) : options.language
         let latex = options.look != .asWritten
         func run(_ headingPages: [String: String]) -> (Composer, [Page]) {
@@ -203,7 +191,7 @@ public final class Typesetter {
                 for j in (index + 1)..<counters.count { counters[j] = 0 }
                 number = counters[0...index].map(String.init).joined(separator: ".")
             }
-            marks.append(HeadingMark(level: index, title: Composer.plainText(text), number: number, anchor: "sec\(count)", inContents: true))
+            marks.append(HeadingMark(level: index, title: text.plainText, number: number, anchor: "sec\(count)", inContents: true))
         }
         return marks
     }
@@ -214,23 +202,9 @@ public final class Typesetter {
         return map
     }
 
-    static func headingLevels(_ blocks: [DocBlock]) -> [Int] {
-        blocks.compactMap { if case .heading(let l, _) = $0 { return l }; return nil }
-    }
-
-    /// True when the source numbers its own headings ("1. Introduction", "II. Methods").
-    static func alreadyNumbered(_ blocks: [DocBlock]) -> Bool {
-        let pattern = try! NSRegularExpression(pattern: "^\\s*([0-9]+(\\.[0-9]+)*\\.?|[IVXLC]+\\.|[A-Z]\\.)\\s")
-        return blocks.contains { b in
-            guard case .heading(_, let t) = b else { return false }
-            let s = Composer.plainText(t)
-            return pattern.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
-        }
-    }
-
     static func sampleText(_ blocks: [DocBlock]) -> String {
         var s = ""
-        for b in blocks where s.count < 2000 { if case .paragraph(let t, _) = b { s += Composer.plainText(t) + " " } }
+        for b in blocks where s.count < 2000 { if case .paragraph(let t, _) = b { s += t.plainText + " " } }
         return s
     }
 
@@ -295,10 +269,10 @@ public final class Typesetter {
                 d.resources.merge(resources) { own, _ in own }
                 var title = item.title
                 if let first = d.blocks.first, case .heading(_, let t) = first {
-                    title = Composer.plainText(t)
+                    title = t.plainText
                     d.blocks.removeFirst()
                 }
-                let c = composer(d, sectionLevel: Self.headingLevels(d.blocks).min() ?? 1)
+                let c = composer(d, sectionLevel: d.sectionLevel)
                 c.chapterHeading(title, numbered: false, c.rootContext)
                 c.compose(d.blocks, c.rootContext)
                 // Footnotes and table headers are numbered per chapter; keep them apart.

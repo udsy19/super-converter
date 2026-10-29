@@ -24,8 +24,10 @@ enum LaTeXWriter {
         return output.lossNotes
     }
 
+    /// Headings as the LaTeX look reads them (quality §3.1): an opening "# Title" becomes `\maketitle`, the shallowest
+    /// level `\section` (`\chapter` in a report or book), numbered only when "Numbered sections: auto" would number them.
     static func render(_ model: DocModel, documentClass: String = "article", filesFolder: String = "files") -> Output {
-        var r = Renderer(model: model, documentClass: documentClass, filesFolder: filesFolder)
+        var r = Renderer(model: model.liftingOpeningTitle(), documentClass: documentClass, filesFolder: filesFolder)
         return r.run()
     }
 
@@ -57,19 +59,36 @@ enum LaTeXWriter {
         var fileNames: [String: String] = [:]
         var usesColour = false
         var usesStrike = false
+        let sectionLevel: Int
+        let star: String
 
         static let babel: [String: String] = ["en": "english", "de": "ngerman", "fr": "french", "es": "spanish", "it": "italian", "nl": "dutch", "pt": "portuguese", "sv": "swedish", "da": "danish", "fi": "finnish", "pl": "polish", "cs": "czech"]
 
         init(model: DocModel, documentClass: String, filesFolder: String) {
             self.model = model; self.documentClass = ["article", "report", "book"].contains(documentClass) ? documentClass : "article"; self.filesFolder = filesFolder
+            sectionLevel = model.sectionLevel
+            star = model.numbersSectionsByDefault ? "" : "*"
             for case .footnote(let id, let blocks) in model.blocks { footnoteBodies[id] = blocks }
         }
 
         mutating func run() -> Output {
+            // Display math belongs to the paragraphs around it, as TypesetKit sets it: no blank line on either side (one
+            // before `\[` leaves an empty line above the formula, one after starts a new, indented paragraph).
             var body: [String] = []
-            for block in model.blocks { if let s = self.block(block) { body.append(s) } }
+            var previous: DocBlock?
+            for block in model.blocks {
+                guard let s = self.block(block) else { continue }
+                switch (previous, block) {
+                case (.paragraph?, .math), (.math?, .paragraph): body[body.count - 1] += "\n" + s
+                default: body.append(s)
+                }
+                previous = block
+            }
             let m = model.metadata
-            var preamble = ["\\documentclass[11pt]{\(documentClass)}", "\\usepackage[T1]{fontenc}", "\\usepackage[utf8]{inputenc}", "\\usepackage{lmodern}", "\\usepackage{microtype}",
+            // pdfLaTeX gets Latin Modern through T1 and lmodern; XeTeX and LuaTeX (Tectonic is XeTeX) the same design as
+            // OpenType through fontspec's default, which also has every character an 8-bit T1 font lacks (ł, ’, Greek).
+            var preamble = ["\\documentclass{\(documentClass)}", "\\usepackage{iftex}",
+                            "\\ifPDFTeX\n\\usepackage[T1]{fontenc}\n\\usepackage[utf8]{inputenc}\n\\usepackage{lmodern}\n\\else\n\\usepackage{fontspec}\n\\fi", "\\usepackage{microtype}",
                             "\\usepackage{amsmath,amssymb}", "\\usepackage{booktabs}", "\\usepackage{graphicx}"]
             if let lang = m.language?.split(separator: "-").first.map(String.init), let name = Self.babel[lang.lowercased()] { preamble.append("\\usepackage[\(name)]{babel}") }
             if usesStrike { preamble.append("\\usepackage[normalem]{ulem}") }
@@ -93,7 +112,7 @@ enum LaTeXWriter {
             case .heading(let level, let text):
                 let names = documentClass == "article" ? ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"]
                                                        : ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"]
-                return "\\\(names[min(max(level, 1), 6) - 1]){\(inline(text))}"
+                return "\\\(names[min(max(level - sectionLevel, 0), 5)])\(star){\(inline(text))}"
             case .paragraph(let text, let style):
                 let s = inline(text)
                 if s.isEmpty { return nil }

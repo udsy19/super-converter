@@ -34,11 +34,12 @@ struct SetLine {
 final class ParagraphSetter {
     let fonts: FontResolver
     let hyphenator: Hyphenator?
+    let conventions: LanguageConventions
     let mathBox: (String, RunStyle) -> HBox
     var paragraphCounter = 0
 
-    init(fonts: FontResolver, hyphenator: Hyphenator?, mathBox: @escaping (String, RunStyle) -> HBox) {
-        self.fonts = fonts; self.hyphenator = hyphenator; self.mathBox = mathBox
+    init(fonts: FontResolver, hyphenator: Hyphenator?, conventions: LanguageConventions, mathBox: @escaping (String, RunStyle) -> HBox) {
+        self.fonts = fonts; self.hyphenator = hyphenator; self.conventions = conventions; self.mathBox = mathBox
     }
 
     // MARK: Building
@@ -173,6 +174,7 @@ final class ParagraphSetter {
                 sf = SpaceFactor.after(lastWordText)
                 let bare = lastWordText.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "(\u{201C}\u{2018}\u{201D}\u{2019}\"')"))
                 if sf >= 2000, SpaceFactor.abbreviations.contains(bare) { sf = 1000 }
+                if conventions.frenchSpacing { sf = min(sf, 1000) }
             }
             if nonBreaking { b.items.append(.penalty(10000)) }
             b.items.append(.glue(spaceGlue(style, spaceFactor: sf)))
@@ -203,6 +205,18 @@ final class ParagraphSetter {
                         if pendingSpace == nil { pendingSpace = style }
                     } else if c == "\u{200B}" {
                         flushWord(); flushSpace(); b.items.append(.penalty(0))
+                    } else if conventions.frenchPunctuation, !style.verbatim, !style.isURL, ";!?:".contains(c),
+                              let p = previousChar, !";!?:".contains(p), !p.isNumber {
+                        // babel-french: \unskip\penalty\@M then a thin space (\FBthinspace), or a word space before a colon.
+                        flushWord(); pendingSpace = nil
+                        let space = spaceGlue(style, spaceFactor: 1000)
+                        b.items.append(.penalty(10000))
+                        b.items.append(.glue(c == ":" ? space : Glue(width: space.width / 2)))
+                        lastWasWord = false
+                        current.append(NSAttributedString(string: String(c), attributes: attrs))
+                        currentText.append(c)
+                        currentVerbatim = false
+                        if currentLink == nil { currentLink = link }
                     } else {
                         if pendingSpace != nil { flushSpace() }
                         current.append(NSAttributedString(string: String(c), attributes: attrs))
