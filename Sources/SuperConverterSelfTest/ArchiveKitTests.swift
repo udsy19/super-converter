@@ -1,5 +1,6 @@
 import Foundation
 import SuperConverterCore
+import HelperKit
 @testable import ArchiveKit
 
 // ArchiveKit's checks (WP-A): archives are generated here (libarchive writes ZIP/7Z/TAR; hand-built bytes for the rest),
@@ -20,8 +21,18 @@ private func akCase(_ name: String, _ body: @escaping @MainActor (URL) throws ->
         defer { try? FileManager.default.removeItem(at: dir) }
         do { try body(dir) } catch { check(false, "\(name) threw \(error)") }
     }))
-    registerArchiveKitACETests()
-    registerArchiveKitARCTests()
+}
+
+/// 7zz and hdiutil run through HelperKit's runner, as in the app.
+private let akTools: any ToolRunning = BundledTools()
+
+/// Waits for async engine work from a (main-actor) case.
+@MainActor private func akAwait<T>(_ work: @escaping @MainActor () async throws -> T) throws -> T {
+    switch complete(300, work) {
+    case .success(let value)?: return value
+    case .failure(let error)?: throw error
+    case nil: throw ArchiveError.failed("timed out")
+    }
 }
 
 private func akText(_ s: String) -> Data { Data(s.utf8) }
@@ -37,18 +48,19 @@ private func akTree(_ dir: URL, _ files: [(String, Data?)], links: [(String, Str
     return extractor.finish()
 }
 
-private func akRead(_ url: URL, _ format: String, into root: URL, engine: EngineID = .libarchive, password: String? = nil,
+@MainActor private func akRead(_ url: URL, _ format: String, into root: URL, engine: EngineID = .libarchive, password: String? = nil,
                     encoding: NameEncoding = .auto, unpack: Bool = true, limits: ExtractionLimits = ExtractionLimits()) throws -> (ArchiveTree, [LossNote]) {
     let request = ArchiveReadRequest(source: url, format: FormatID(format), root: root, password: password, nameEncoding: encoding,
-                                     unpackPayload: unpack, limits: limits)
-    let tree = try Archives.read(request, engine: engine)
+                                     unpackPayload: unpack, limits: limits, tools: akTools)
+    let tree = try akAwait { try await Archives.read(request, engine: engine) }
     return (tree, request.diagnostics.lossNotes)
 }
 
-private func akWrite(_ tree: ArchiveTree, _ format: String, to url: URL, dir: URL, password: String? = nil, compatible: Bool = false,
+@MainActor private func akWrite(_ tree: ArchiveTree, _ format: String, to url: URL, dir: URL, password: String? = nil, compatible: Bool = false,
                      compression: ArchiveWriteRequest.Compression = .normal, keepMacExtras: Bool = false, split: Int64? = nil) throws -> URL {
-    try Archives.write(ArchiveWriteRequest(tree: tree, format: FormatID(format), destination: url, compression: compression, password: password,
-                                           compatibleZip: compatible, keepMacExtras: keepMacExtras, splitBytes: split, workFolder: dir))
+    let request = ArchiveWriteRequest(tree: tree, format: FormatID(format), destination: url, compression: compression, password: password,
+                                      compatibleZip: compatible, keepMacExtras: keepMacExtras, splitBytes: split, workFolder: dir, tools: akTools)
+    return try akAwait { try await Archives.write(request) }
 }
 
 private func akContents(_ tree: ArchiveTree) -> [String: Data] {
@@ -216,16 +228,19 @@ private func akGzip(_ data: Data, in dir: URL) -> Data? {
     return try? Data(contentsOf: file.appendingPathExtension("gz"))
 }
 
-private var akSevenZipPresent: Bool { SevenZip.isAvailable }
+private var akSevenZipPresent: Bool { SevenZip.isAvailable(akTools) }
 
 // MARK: - Cases
 
 func registerArchiveKitTests() {
     registerArchiveKitLZOTests()
     registerArchiveKitRZipTests()
+    registerArchiveKitACETests()
+    registerArchiveKitARCTests()
 
     SelfTest.cases.append(("ArchiveKit.installs", {
         installFakes()
+        Services.tools = akTools
         ArchiveKitModule.install()
         let ids = Set(Services.converters.converters.map(\.id))
         check(ids == Set(ArchiveConverter.engines), "install registers every ArchiveKit engine: \(ids)")
@@ -302,9 +317,9 @@ func registerArchiveKitTests() {
         let tree = try akTree(dir, [("a.txt", akText("a"))])
         let url = try akWrite(tree, "zip", to: dir.appendingPathComponent("a.zip"), dir: dir)
         let request = ArchiveReadRequest(source: url, format: "zip", root: dir.appendingPathComponent("out"), isCancelled: { true })
-        akExpectError(.cancelled, { _ = try Archives.read(request, engine: .libarchive) }, "cancelled read")
+        akExpectError(.cancelled, { _ = try akAwait { try await Archives.read(request, engine: .libarchive) } }, "cancelled read")
         let write = ArchiveWriteRequest(tree: tree, format: "7z", destination: dir.appendingPathComponent("c.7z"), workFolder: dir, isCancelled: { true })
-        akExpectError(.cancelled, { try Archives.write(write) }, "cancelled write")
+        akExpectError(.cancelled, { _ = try akAwait { try await Archives.write(write) } }, "cancelled write")
         check(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("c.7z").path), "no partial output")
         check(((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).allSatisfy { !$0.hasSuffix(".partial") }, "no partial file left")
     }
@@ -775,7 +790,7 @@ func registerArchiveKitTests() {
         try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("Applications").path, withDestinationPath: "/Applications")
         try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("rel").path, withDestinationPath: "hello.txt")
         let dmg = dir.appendingPathComponent("t.dmg")
-        if DiskImageReader.isAvailable, akRun("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", folder.path, "-format", "UDZO", "-volname", "T", dmg.path]) {
+        if DiskImageReader.isAvailable(akTools), akRun("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", folder.path, "-format", "UDZO", "-volname", "T", dmg.path]) {
             let (tree, notes) = try akRead(dmg, "dmg", into: dir.appendingPathComponent("r1"), engine: .hdiutil)
             check(akContents(tree) == ["hello.txt": akText("hello dmg"), "sub/n.txt": akText("nested")], "DMG contents: \(akContents(tree).keys)")
             check(akPaths(tree, .symlink) == ["rel"], "DMG: the link to /Applications is dropped, the relative one kept: \(akPaths(tree, .symlink))")
@@ -800,6 +815,7 @@ func registerArchiveKitTests() {
 
     akCase("converter.zipTo7z") { dir in
         installFakes()
+        Services.tools = akTools
         ArchiveKitModule.install()
         let tree = try akTree(dir, [("a.txt", akText("aaa")), ("._a.txt", akText("x")), ("d/b.txt", akText("bbb"))])
         let zip = try akWrite(tree, "zip", to: dir.appendingPathComponent("My Files.zip"), dir: dir, keepMacExtras: true)
@@ -823,6 +839,7 @@ func registerArchiveKitTests() {
 
     akCase("converter.errors") { dir in
         installFakes()
+        Services.tools = akTools
         ArchiveKitModule.install()
         let tree = try akTree(dir, [("a.txt", akText("a"))])
         let encrypted = try akWrite(tree, "zip", to: dir.appendingPathComponent("e.zip"), dir: dir, password: "pw", compatible: true)
@@ -850,11 +867,12 @@ func registerArchiveKitTests() {
 
     akCase("availability") { _ in
         installFakes()
+        Services.tools = akTools
         ArchiveKitModule.install()
         for converter in Services.converters.converters {
             let a = converter.availability()
             switch converter.id {
-            case .sevenZip: check(a == (SevenZip.isAvailable ? .available : .unavailable("7-Zip isn’t part of this build.")), "7zz availability")
+            case .sevenZip: check(a == (SevenZip.isAvailable(akTools) ? .available : .unavailable("7-Zip isn’t part of this build.")), "7zz availability")
             default: check(a == .available || converter.id == .hdiutil, "\(converter.id) available")
             }
         }

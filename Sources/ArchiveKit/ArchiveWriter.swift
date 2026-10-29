@@ -5,7 +5,7 @@ import SuperConverterCore
 /// Writes an `ArchiveTree` as ZIP, 7Z, TAR, TAR.GZ or TAR.BZ2 (formats §6.8). libarchive does the writing; a password for
 /// the new archive goes through 7zz (ZIP AES-256, 7Z AES-256) or libarchive's ZipCrypto when "compatible ZIP" is on.
 enum ArchiveWriter {
-    static func write(_ request: ArchiveWriteRequest) throws {
+    static func write(_ request: ArchiveWriteRequest) async throws {
         _ = LibArchive.prepared
         let tree = filtered(request.tree, keepMacExtras: request.keepMacExtras)
         var request = request
@@ -27,7 +27,9 @@ enum ArchiveWriter {
             try stage(tree, into: staged)
             var sevenZipRequest = request
             sevenZipRequest.destination = partial
-            try SevenZip.write(sevenZipRequest, staged: staged, scratch: request.workFolder.appendingPathComponent(".7zz-\(UUID().uuidString)"))
+            let scratch = request.workFolder.appendingPathComponent(".7zz-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: scratch) }
+            try await SevenZip.write(sevenZipRequest, staged: staged, scratch: scratch)
         } else {
             try writeWithLibarchive(request, to: partial, password: password)
         }

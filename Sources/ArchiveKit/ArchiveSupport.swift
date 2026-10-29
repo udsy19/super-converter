@@ -356,3 +356,29 @@ final class SafeExtractor {
         }
     }
 }
+
+/// Runs a bundled tool (`7zz`, `hdiutil`) for a reader or writer through HelperKit's runner (`Services.tools`, ARCHITECTURE
+/// §7). The job's cancellation is a flag; it stops the tool by cancelling the task the runner works in.
+enum ToolCall {
+    /// `scratch` is the tool's working folder and a place it may write; `writable` are the others.
+    static func run(_ tools: (any ToolRunning)?, _ tool: BundledTool, _ arguments: [String], scratch: URL, writable: [URL] = [],
+                    input: Data? = nil, timeLimit: TimeInterval? = nil, outputLimit: Int = 256_000,
+                    isCancelled: @escaping @Sendable () -> Bool) async throws -> HelperRunResult {
+        guard let tools, tools.location(of: tool) != nil else { throw ArchiveError.toolMissing(tool == .sevenZip ? "7-Zip" : tool.rawValue) }
+        if isCancelled() { throw ArchiveError.cancelled }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let invocation = ToolInvocation(tool: tool, arguments: arguments, workFolder: scratch, writable: writable, standardInput: input,
+                                        timeLimit: timeLimit, outputLimit: outputLimit)
+        let task = Task { try await tools.run(invocation) }
+        let watcher = Task {
+            while !Task.isCancelled {
+                if isCancelled() { task.cancel(); return }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        defer { watcher.cancel() }
+        do { return try await task.value }
+        catch ConversionError.cancelled { throw ArchiveError.cancelled }
+        catch ConversionError.failed(let why) { throw ArchiveError.failed(why) }
+    }
+}

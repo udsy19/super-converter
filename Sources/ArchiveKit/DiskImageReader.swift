@@ -2,41 +2,44 @@ import Foundation
 import SuperConverterCore
 
 /// Apple disk images (DMG) through `hdiutil attach -readonly -nobrowse` (formats §3.1): mounted privately, copied out through
-/// the same safety rules as any archive, and detached. The Finder never sees the volume.
+/// the same safety rules as any archive, and detached. The Finder never sees the volume. hdiutil runs through HelperKit's
+/// runner (`Services.tools`) with the mount folder as its only writable place besides its scratch folder.
 enum DiskImageReader {
-    private static let hdiutil = URL(fileURLWithPath: "/usr/bin/hdiutil")
+    static func isAvailable(_ tools: (any ToolRunning)?) -> Bool { tools?.location(of: .hdiutil) != nil }
 
-    static var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: hdiutil.path) }
-
-    static func read(_ request: ArchiveReadRequest) throws -> ArchiveTree {
-        guard isAvailable else { throw ArchiveError.toolMissing("hdiutil") }
+    static func read(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
         let scratch = request.root.deletingLastPathComponent().appendingPathComponent(".dmg-\(UUID().uuidString)")
         let mounts = scratch.appendingPathComponent("mounts")
         try FileManager.default.createDirectory(at: mounts, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         // The password (if any) goes on standard input; without `-stdinpass` hdiutil would ask on a terminal.
-        let attach = try ToolRunner.run(hdiutil, arguments: ["attach", "-readonly", "-nobrowse", "-noverify", "-noautoopen", "-noautofsck",
-                                                             "-mountrandom", mounts.path, "-stdinpass", "-plist", request.source.path],
-                                        standardInput: Data((request.password ?? "").utf8), timeLimit: 300, scratch: scratch.appendingPathComponent("tmp"),
-                                        isCancelled: request.isCancelled)
-        guard attach.status == 0 else {
-            let text = attach.standardError + attach.text
-            if text.contains("Authentication error") || text.contains("passphrase") { throw ArchiveError.passwordRequired }
-            throw ArchiveError.unsupported("This disk image couldn’t be opened.")
-        }
-        let volumes = mountPoints(in: attach.standardOutput)
-        defer { for volume in volumes { detach(volume, scratch: scratch) } }
-        guard !volumes.isEmpty else { throw ArchiveError.unsupported("This disk image has no volume to read.") }
+        let attach = try await ToolCall.run(request.tools, .hdiutil, ["attach", "-readonly", "-nobrowse", "-noverify", "-noautoopen", "-noautofsck",
+                                                                      "-mountrandom", mounts.path, "-stdinpass", "-plist", request.source.path],
+                                            scratch: scratch.appendingPathComponent("tmp"), writable: [mounts],
+                                            input: Data((request.password ?? "").utf8), timeLimit: 300, isCancelled: request.isCancelled)
+        let volumes = mountPoints(in: Data(attach.standardOutput.utf8))
+        do {
+            guard attach.exitCode == 0 else {
+                let text = attach.standardError + attach.standardOutput
+                if text.contains("Authentication error") || text.contains("passphrase") { throw ArchiveError.passwordRequired }
+                throw ArchiveError.unsupported("This disk image couldn’t be opened.")
+            }
+            guard !volumes.isEmpty else { throw ArchiveError.unsupported("This disk image has no volume to read.") }
 
-        let extractor = try request.extractor()
-        for (n, volume) in volumes.enumerated() {
-            let prefix = volumes.count > 1 ? volume.lastPathComponent + "/" : ""
-            request.report(StepProgress(fraction: Double(n) / Double(volumes.count), unit: nil))
-            try copy(volume, prefix: prefix, into: extractor, request: request)
+            let extractor = try request.extractor()
+            for (n, volume) in volumes.enumerated() {
+                let prefix = volumes.count > 1 ? volume.lastPathComponent + "/" : ""
+                request.report(StepProgress(fraction: Double(n) / Double(volumes.count), unit: nil))
+                try copy(volume, prefix: prefix, into: extractor, request: request)
+            }
+            await detach(volumes, tools: request.tools, scratch: scratch, mounts: mounts)
+            request.report(StepProgress(fraction: 1, unit: nil))
+            return extractor.finish(wasEncrypted: request.password != nil)
+        } catch {
+            await detach(volumes, tools: request.tools, scratch: scratch, mounts: mounts)
+            throw error
         }
-        request.report(StepProgress(fraction: 1, unit: nil))
-        return extractor.finish(wasEncrypted: request.password != nil)
     }
 
     private static func mountPoints(in plist: Data) -> [URL] {
@@ -45,12 +48,19 @@ enum DiskImageReader {
         return entities.compactMap { ($0["mount-point"] as? String).map { URL(fileURLWithPath: $0) } }
     }
 
-    private static func detach(_ volume: URL, scratch: URL) {
-        for force in [false, true] {
-            let result = try? ToolRunner.run(hdiutil, arguments: ["detach", volume.path] + (force ? ["-force"] : []), timeLimit: 60,
-                                             scratch: scratch.appendingPathComponent("tmp"))
-            if result?.status == 0 { return }
-        }
+    /// Detaches every mounted volume, forcing when a polite detach fails. It runs in a task of its own, so a cancelled job
+    /// still leaves nothing mounted.
+    private static func detach(_ volumes: [URL], tools: (any ToolRunning)?, scratch: URL, mounts: URL) async {
+        await Task.detached {
+            for volume in volumes {
+                for force in [false, true] {
+                    let result = try? await ToolCall.run(tools, .hdiutil, ["detach", volume.path] + (force ? ["-force"] : []),
+                                                         scratch: scratch.appendingPathComponent("tmp"), writable: [mounts], timeLimit: 60,
+                                                         isCancelled: { false })
+                    if result?.exitCode == 0 { break }
+                }
+            }
+        }.value
     }
 
     private static func copy(_ volume: URL, prefix: String, into extractor: SafeExtractor, request: ArchiveReadRequest) throws {

@@ -57,6 +57,8 @@ public struct ArchiveReadRequest: Sendable {
     /// DEB `data.tar.*` and RPM cpio payloads are unpacked instead of the package container (formats §5).
     public var unpackPayload: Bool
     public var limits: ExtractionLimits
+    /// HelperKit's runner for 7zz and hdiutil (`Services.tools`); nil when this build has none.
+    public var tools: (any ToolRunning)?
     /// How deep inside other archives this read is (compound formats unwrap one level at a time).
     public var depth: Int
     public var report: @Sendable (StepProgress) -> Void
@@ -65,10 +67,10 @@ public struct ArchiveReadRequest: Sendable {
     public let diagnostics = ReadDiagnostics()
 
     public init(source: URL, format: FormatID, root: URL, password: String? = nil, nameEncoding: NameEncoding = .auto,
-                unpackPayload: Bool = true, limits: ExtractionLimits = ExtractionLimits(), depth: Int = 0,
+                unpackPayload: Bool = true, limits: ExtractionLimits = ExtractionLimits(), tools: (any ToolRunning)? = nil, depth: Int = 0,
                 report: @escaping @Sendable (StepProgress) -> Void = { _ in }, isCancelled: @escaping @Sendable () -> Bool = { false }) {
         self.source = source; self.format = format; self.root = root; self.password = password
-        self.nameEncoding = nameEncoding; self.unpackPayload = unpackPayload; self.limits = limits; self.depth = depth
+        self.nameEncoding = nameEncoding; self.unpackPayload = unpackPayload; self.limits = limits; self.tools = tools; self.depth = depth
         self.report = report; self.isCancelled = isCancelled
     }
 
@@ -119,14 +121,16 @@ public struct ArchiveWriteRequest: Sendable {
     public var splitBytes: Int64?
     /// A scratch folder inside the job's work folder.
     public var workFolder: URL
+    /// HelperKit's runner for 7zz (`Services.tools`), which writes the password-protected archives.
+    public var tools: (any ToolRunning)?
     public var isCancelled: @Sendable () -> Bool
     public var report: @Sendable (StepProgress) -> Void
 
     public init(tree: ArchiveTree, format: FormatID, destination: URL, compression: Compression = .normal, password: String? = nil,
                 compatibleZip: Bool = false, keepMacExtras: Bool = false, splitBytes: Int64? = nil, workFolder: URL,
-                report: @escaping @Sendable (StepProgress) -> Void = { _ in }, isCancelled: @escaping @Sendable () -> Bool = { false }) {
+                tools: (any ToolRunning)? = nil, report: @escaping @Sendable (StepProgress) -> Void = { _ in }, isCancelled: @escaping @Sendable () -> Bool = { false }) {
         self.tree = tree; self.format = format; self.destination = destination; self.compression = compression; self.password = password
         self.compatibleZip = compatibleZip; self.keepMacExtras = keepMacExtras; self.splitBytes = splitBytes
-        self.workFolder = workFolder; self.report = report; self.isCancelled = isCancelled
+        self.workFolder = workFolder; self.tools = tools; self.report = report; self.isCancelled = isCancelled
     }
 }

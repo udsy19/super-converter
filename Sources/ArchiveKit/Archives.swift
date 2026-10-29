@@ -5,24 +5,24 @@ import SuperConverterCore
 /// reader) and writes a tree as ZIP, 7Z, TAR, TAR.GZ or TAR.BZ2.
 public enum Archives {
     /// Extracts `request.source` into `request.root` with the reader the matrix names for `engine`.
-    public static func read(_ request: ArchiveReadRequest, engine: EngineID) throws -> ArchiveTree {
+    public static func read(_ request: ArchiveReadRequest, engine: EngineID) async throws -> ArchiveTree {
         switch engine {
-        case .libarchive: return try readPackageOrArchive(request)
-        case .sevenZip: return try SevenZip.read(request)
+        case .libarchive: return try await readPackageOrArchive(request)
+        case .sevenZip: return try await SevenZip.read(request)
         case .hdiutil:
-            do { return try DiskImageReader.read(request) } catch ArchiveError.unsupported where SevenZip.isAvailable {
+            do { return try await DiskImageReader.read(request) } catch ArchiveError.unsupported where SevenZip.isAvailable(request.tools) {
                 try? FileManager.default.removeItem(at: request.root)
-                return try SevenZip.read(request)
+                return try await SevenZip.read(request)
             }
         case .unalz: return try UnALZReader.read(request)
         case .aceKit: return try ACEKit.read(request)
         case .arcKit: return try ARCKit.read(request)
         case .lzoKit:
-            return try readCompressedStream(request) { sink in
+            return try await readCompressedStream(request) { sink in
                 try LZOKit.decompress(source: request.source, isCancelled: request.isCancelled, sink: sink)
             }
         case .rzipKit:
-            return try readCompressedStream(request) { sink in
+            return try await readCompressedStream(request) { sink in
                 try RZipKit.decompress(source: request.source, isCancelled: request.isCancelled, sink: sink)
                 return nil
             }
@@ -32,8 +32,8 @@ public enum Archives {
 
     /// Writes the tree to `request.destination`; with `splitBytes` set, a folder of numbered parts instead (its URL is returned).
     @discardableResult
-    public static func write(_ request: ArchiveWriteRequest) throws -> URL {
-        try ArchiveWriter.write(request)
+    public static func write(_ request: ArchiveWriteRequest) async throws -> URL {
+        try await ArchiveWriter.write(request)
         guard let size = request.splitBytes, size > 0 else { return request.destination }
         return try split(request.destination, partBytes: size, isCancelled: request.isCancelled)
     }
@@ -41,7 +41,7 @@ public enum Archives {
     // MARK: libarchive family
 
     /// libarchive first, then 7zz for what libarchive cannot do (encryption it has no crypto library for, UDF, Quantum CAB).
-    static func readWithFallback(_ request: ArchiveReadRequest) throws -> ArchiveTree {
+    static func readWithFallback(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
         do {
             return try LibArchiveReader.read(request)
         } catch let error as ArchiveError {
@@ -51,9 +51,9 @@ public enum Archives {
             case .needsSevenZip where request.password == nil:
                 throw ArchiveError.passwordRequired
             case .passwordRequired, .needsSevenZip, .unsupported, .damaged:
-                guard SevenZip.isAvailable else { throw error == .needsSevenZip ? ArchiveError.unsupported("This archive’s encryption isn’t supported here.") : error }
+                guard SevenZip.isAvailable(request.tools) else { throw error == .needsSevenZip ? ArchiveError.unsupported("This archive’s encryption isn’t supported here.") : error }
                 try? FileManager.default.removeItem(at: request.root)
-                do { return try SevenZip.read(request) } catch ArchiveError.passwordRequired {
+                do { return try await SevenZip.read(request) } catch ArchiveError.passwordRequired {
                     throw ArchiveError.passwordRequired
                 } catch let second as ArchiveError {
                     switch second {
@@ -68,48 +68,48 @@ public enum Archives {
     }
 
     /// DEB and RPM payloads, tar-in-7z and plain archives.
-    private static func readPackageOrArchive(_ request: ArchiveReadRequest) throws -> ArchiveTree {
+    private static func readPackageOrArchive(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
         switch request.format.rawValue {
-        case "deb" where request.unpackPayload: return try readDebPayload(request)
-        case "tar.7z": return try readWrapped(request, container: "7z")
-        default: return try readWithFallback(request)
+        case "deb" where request.unpackPayload: return try await readDebPayload(request)
+        case "tar.7z": return try await readWrapped(request, container: "7z")
+        default: return try await readWithFallback(request)
         }
     }
 
     /// A Debian package is an `ar` archive: `debian-binary`, `control.tar.*`, `data.tar.*`. The payload is `data.tar.*`.
-    private static func readDebPayload(_ request: ArchiveReadRequest) throws -> ArchiveTree {
+    private static func readDebPayload(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
         var members = request
         members.unpackPayload = false
-        let (tree, cleanup) = try readAside(members)
+        let (tree, cleanup) = try await readAside(members)
         defer { cleanup() }
         guard let data = tree.entries.first(where: { $0.kind == .file && $0.path.hasPrefix("data.tar") }), let file = data.extracted else {
-            return try readWithFallback(members)
+            return try await readWithFallback(members)
         }
         var payload = try request.nested(source: file, format: "tar", root: request.root)
         payload.unpackPayload = false
-        return try readWithFallback(payload)
+        return try await readWithFallback(payload)
     }
 
     /// `tar.7z`: a 7z holding one tar. When the 7z holds anything else it is read as the 7z it is.
-    private static func readWrapped(_ request: ArchiveReadRequest, container: FormatID) throws -> ArchiveTree {
-        let (tree, cleanup) = try readAside(try request.nested(source: request.source, format: container, root: request.root))
+    private static func readWrapped(_ request: ArchiveReadRequest, container: FormatID) async throws -> ArchiveTree {
+        let (tree, cleanup) = try await readAside(try request.nested(source: request.source, format: container, root: request.root))
         defer { cleanup() }
         let files = tree.entries.filter { $0.kind == .file }
         guard files.count == 1, let file = files[0].extracted, looksLikeTar(file) else {
             var plain = request
             plain.format = container
-            return try readWithFallback(plain)
+            return try await readWithFallback(plain)
         }
-        return try readWithFallback(try request.nested(source: file, format: "tar", root: request.root))
+        return try await readWithFallback(try request.nested(source: file, format: "tar", root: request.root))
     }
 
     /// Reads into a throw-away folder next to the real root; the caller deletes it with the returned closure.
-    private static func readAside(_ request: ArchiveReadRequest) throws -> (ArchiveTree, () -> Void) {
+    private static func readAside(_ request: ArchiveReadRequest) async throws -> (ArchiveTree, () -> Void) {
         let aside = request.root.deletingLastPathComponent().appendingPathComponent(".aside-\(UUID().uuidString)")
         var copy = request
         copy.root = aside
         let cleanup = { try? FileManager.default.removeItem(at: aside); return }
-        do { return (try readWithFallback(copy), cleanup) } catch { cleanup(); throw error }
+        do { return (try await readWithFallback(copy), cleanup) } catch { cleanup(); throw error }
     }
 
     // MARK: Single compressed files (lzop, rzip)
@@ -117,7 +117,7 @@ public enum Archives {
     /// A stream decompressor (LZO, rzip) holds one file. A tar inside is unpacked as the archive it is (TAR.LZO, TZO, a
     /// tarred rzip); anything else becomes the one file, named from the container header or the source name.
     private static func readCompressedStream(_ request: ArchiveReadRequest,
-                                             decompress: ((UnsafeRawBufferPointer) throws -> Void) throws -> String?) throws -> ArchiveTree {
+                                             decompress: ((UnsafeRawBufferPointer) throws -> Void) throws -> String?) async throws -> ArchiveTree {
         let aside = request.root.deletingLastPathComponent().appendingPathComponent(".stream-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: aside) }
         let holder = try SafeExtractor(root: aside, limits: request.limits, archiveSize: request.sourceSize, isCancelled: request.isCancelled)
@@ -130,7 +130,7 @@ public enum Archives {
         let payload = aside.appendingPathComponent("payload")
 
         if looksLikeTar(payload) {
-            return try readWithFallback(try request.nested(source: payload, format: "tar", root: request.root))
+            return try await readWithFallback(try request.nested(source: payload, format: "tar", root: request.root))
         }
         let name = storedName.map { URL(fileURLWithPath: $0).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 } ?? request.innerName
         let extractor = try request.extractor()

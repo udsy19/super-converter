@@ -7,12 +7,15 @@ import SuperConverterCore
 final class ArchiveConverter: Converter {
     let id: EngineID
     let handles: [StepPattern]
+    /// HelperKit's runner for 7zz and hdiutil (`Services.tools`); nil leaves those two unavailable.
+    let tools: (any ToolRunning)?
 
     /// The archive engines this module registers (`EngineID.info.module == .archiveKit`).
     static let engines: [EngineID] = EngineID.allCases.filter { $0.info.module == .archiveKit }
 
-    init(_ id: EngineID) {
+    init(_ id: EngineID, tools: (any ToolRunning)?) {
         self.id = id
+        self.tools = tools
         var reads = Set<FormatID>(), writes = Set<FormatID>()
         for route in FormatMatrix.routes {
             for step in (route.builtin ?? []) + (route.helper ?? []) + route.alternates.flatMap(\.steps) where step.engine == id {
@@ -28,8 +31,8 @@ final class ArchiveConverter: Converter {
 
     func availability() -> EngineAvailability {
         switch id {
-        case .sevenZip: SevenZip.isAvailable ? .available : .unavailable("7-Zip isn’t part of this build.")
-        case .hdiutil: DiskImageReader.isAvailable ? .available : .unavailable("Disk images can’t be opened on this Mac.")
+        case .sevenZip: SevenZip.isAvailable(tools) ? .available : .unavailable("7-Zip isn’t part of this build.")
+        case .hdiutil: DiskImageReader.isAvailable(tools) ? .available : .unavailable("Disk images can’t be opened on this Mac.")
         default: .available
         }
     }
@@ -57,10 +60,9 @@ final class ArchiveConverter: Converter {
             source: url, format: format, root: context.workFolder.appendingPathComponent("unpacked-\(UUID().uuidString)", isDirectory: true),
             password: options["password"]?.string.flatMap { $0.isEmpty ? nil : $0 },
             nameEncoding: NameEncoding(option: options["nameEncoding"]?.string),
-            unpackPayload: options["unpackPayload"]?.bool ?? true,
+            unpackPayload: options["unpackPayload"]?.bool ?? true, tools: tools,
             report: context.report, isCancelled: context.isCancelled)
-        let engine = id
-        let tree = try await Task.detached(priority: .userInitiated) { try Archives.read(request, engine: engine) }.value
+        let tree = try await Archives.read(request, engine: id)
         return StepOutput(.archive(tree), lossNotes: request.diagnostics.lossNotes)
     }
 
@@ -74,7 +76,7 @@ final class ArchiveConverter: Converter {
             destination: context.workFolder.appendingPathComponent(outputName(for: context.source, format: format)),
             compression: ArchiveWriteRequest.Compression(rawValue: options["compression"]?.string ?? "") ?? .normal,
             password: password, compatibleZip: options["compatibleZip"]?.bool ?? false, keepMacExtras: keepMacExtras,
-            splitBytes: splitMegabytes.map { $0 << 20 }, workFolder: context.workFolder,
+            splitBytes: splitMegabytes.map { $0 << 20 }, workFolder: context.workFolder, tools: tools,
             report: context.report, isCancelled: context.isCancelled)
 
         var notes: [LossNote] = []
@@ -83,7 +85,7 @@ final class ArchiveConverter: Converter {
         if extras > 0 {
             notes.append(LossNote(.otherLoss, detail: Formatting.count(extras, "Mac system file (._ files, .DS_Store) was left out", "Mac system files (._ files, .DS_Store) were left out")))
         }
-        let output = try await Task.detached(priority: .userInitiated) { try Archives.write(request) }.value
+        let output = try await Archives.write(request)
         return StepOutput(.file(output), lossNotes: notes)
     }
 
