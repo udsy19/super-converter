@@ -538,29 +538,18 @@ func registerFontKitTests() {
 
     SelfTest.cases.append(("FontKit.damagedInputNeverCrashes", {
         let dir = fkDir()
-        var rng = SystemRandomNumberGenerator()
-        var seeds: [(FormatID, [UInt8])] = []
+        var seeds: [FuzzSeed] = []
         for format: FormatID in ["ttf", "otf", "woff", "woff2", "eot", "svg"] {
             let model = format == "otf" ? fkSample(cubic: true) : fkSample(cubic: false)
-            if let url = fkWrite(model, format, stem: "fuzz", dir: dir), let data = try? Data(contentsOf: url) { seeds.append((format, [UInt8](data))) }
-        }
-        var attempts = 0
-        for (format, bytes) in seeds {
-            for _ in 0..<120 {
-                var copy = bytes
-                switch Int.random(in: 0..<3, using: &rng) {
-                case 0: copy = Array(copy.prefix(Int.random(in: 0..<copy.count, using: &rng)))
-                case 1: for _ in 0..<8 { copy[Int.random(in: 0..<copy.count, using: &rng)] = UInt8.random(in: 0...255, using: &rng) }
-                default: for _ in 0..<2 { copy[Int.random(in: 0..<copy.count, using: &rng)] ^= 0xFF }
-                }
-                let url = dir.appendingPathComponent("fuzz-in.\(format.rawValue)")
-                try? Data(copy).write(to: url)
-                let context = StepContext(workFolder: dir, source: url, sourceFormat: format, targetFormat: "ttf")
-                let id = fkReaderID(format)
-                _ = complete(30) { try? await fkConverter(id).run(Step(id, StepEndpoint.format(format), .fontModel), input: .file(url), context: context) }
-                attempts += 1
+            if let url = fkWrite(model, format, stem: "fuzz", dir: dir), let data = try? Data(contentsOf: url) {
+                seeds.append(FuzzSeed(name: format.rawValue, ext: format.rawValue, bytes: [UInt8](data), nesting: format == "svg" ? ["<g>"] : []))
             }
         }
-        check(attempts == 720, "every damaged input was handled without a crash (\(attempts))")
+        let ran = fuzzNeverCrashes("FontKit.damagedInputNeverCrashes", seeds: seeds, count: 120) { url, seed in
+            let format = FormatID(seed.ext), id = fkReaderID(format)
+            let context = StepContext(workFolder: dir, source: url, sourceFormat: format, targetFormat: "ttf")
+            _ = try await fkConverter(id).run(Step(id, StepEndpoint.format(format), .fontModel), input: .file(url), context: context)
+        }
+        check(ran == 720, "every damaged input was handled without a crash (\(ran))")
     }))
 }
