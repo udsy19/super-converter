@@ -31,9 +31,14 @@ enum PDFAnalyzer {
                 let words = options.recognition == .always ? [] : TextExtractor.words(on: page)
                 inputs.append(PageInput(index: index, size: page.bounds(for: .cropBox).size, rotation: page.rotation, words: words))
             }
-            let attributes = pdf.documentAttributes
-            let author = (attributes?[PDFDocumentAttribute.authorAttribute] as? String).map { [$0] } ?? []
-            return (inputs, attributes?[PDFDocumentAttribute.titleAttribute] as? String, author)
+            // Read from the Info dictionary itself: PDFKit's `documentAttributes` raises (and so ends the app) when a damaged
+            // file has a key that isn't valid text.
+            func info(_ key: String) -> String? {
+                var string: CGPDFStringRef?
+                guard let info = pdf.documentRef?.info, CGPDFDictionaryGetString(info, key, &string), let string else { return nil }
+                return CGPDFStringCopyTextString(string) as String?
+            }
+            return (inputs, info("Title"), info("Author").map { [$0] } ?? [])
         }
         let pages = try await Task.detached(priority: .userInitiated) {
             try analyze(inputs, url: url, password: password, options: options, context: context)
