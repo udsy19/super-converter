@@ -27,6 +27,16 @@ final class MenuBarController: NSObject, MenuBarPresenting, NSWindowDelegate {
         Defaults.publisher(.showInMenuBar).dropFirst().sink { [weak self] in self?.setVisible($0) }.store(in: &observers)
     }
 
+    func quickActionSwitches() async -> [QuickActionSwitch] {
+        await QuickActionSwitches.current?.rows() ?? []
+    }
+
+    func setQuickAction(_ target: FormatID, on: Bool) async -> QuickActionSwitch? {
+        guard let switches = QuickActionSwitches.current, let action = QuickAction.allCases.first(where: { $0.target == target }) else { return nil }
+        try? await switches.elect(action, on: on)
+        return await switches.row(action)
+    }
+
     func setVisible(_ visible: Bool) {
         if visible, statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)

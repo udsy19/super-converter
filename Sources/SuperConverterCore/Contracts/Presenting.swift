@@ -16,6 +16,26 @@ public protocol MenuBarPresenting: AnyObject {
     func install()
     func setVisible(_ visible: Bool)
     func showPanel(with urls: [URL])
+    /// The one-step Finder Quick Actions (ux §5.10) as macOS has them switched now, in menu order. The switch is the
+    /// person's, per user, and System Settings › Extensions can change it too, so this asks macOS every time.
+    func quickActionSwitches() async -> [QuickActionSwitch]
+    /// Switches the Quick Action that converts to `target` on or off, then answers what macOS has afterwards.
+    func setQuickAction(_ target: FormatID, on: Bool) async -> QuickActionSwitch?
+}
+
+/// One row of Settings › Quick Actions (ux §5.11): a one-step action, the files it shows for, and its switch.
+public struct QuickActionSwitch: Hashable, Sendable {
+    public var target: FormatID
+    /// "Convert to JPG".
+    public var title: String
+    /// Which files it shows for: "Images".
+    public var takes: String
+    /// On or off as macOS has it; nil when macOS doesn't list the extension (a build that isn't in an app bundle).
+    public var isOn: Bool?
+
+    public init(target: FormatID, title: String, takes: String, isOn: Bool?) {
+        self.target = target; self.title = title; self.takes = takes; self.isOn = isOn
+    }
 }
 
 /// The Settings window (SettingsKit, ux §5.11).
