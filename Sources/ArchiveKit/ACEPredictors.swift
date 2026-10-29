@@ -291,6 +291,8 @@ final class ACEPic {
         width = try bs.readGolombRice(12)
         planes = try bs.readGolombRice(2)
         guard width <= ACEPic.maxWidth, planes <= ACEPic.maxPlanes else { throw ArchiveError.damaged("A PIC block is larger than any picture.") }
+        // Without planes a row reads no pixels, so one bit would stand for a whole row of zeros.
+        guard planes > 0 else { throw ArchiveError.damaged("A PIC block has no colour planes.") }
         model0 = [ErrContext](repeating: ErrContext(), count: ACEPic.contexts)
         modelN = model0
         previous = []
