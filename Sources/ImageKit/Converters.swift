@@ -122,7 +122,7 @@ struct ImageCodecsConverter: Converter {
     }
 }
 
-/// `AVIFEncoder`: ImageIO when this Mac writes AVIF, else libavif + SVT-AV1 (formats §3.2).
+/// `AVIFEncoder`: ImageIO when this Mac writes AVIF, else libavif + SVT-AV1; lossless always libavif + libaom (formats §3.2).
 struct AVIFEncoderConverter: Converter {
     var id: EngineID { .avifEncoder }
     var handles: [StepPattern] { [StepPattern(from: .model(.imageAsset), to: .formats(["avif"]))] }

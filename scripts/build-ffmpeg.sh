@@ -10,9 +10,10 @@
 # Recipe (docs/ARCHITECTURE.md WP0c, docs/specs/formats.md §2-3):
 #   - LGPL-3.0-or-later as a whole: --enable-version3 --disable-gpl --disable-nonfree, nothing else that is GPL
 #   - video: VideoToolbox (H.264/HEVC/ProRes encode+decode), libvpx (VP8/VP9), SVT-AV1 (AV1 encode), dav1d (AV1
-#     decode), libtheora; audio: AudioToolbox (AAC/ALAC/...), libopus, libvorbis, LAME, opencore-amr (decode),
-#     vo-amrwbenc (AMR-WB encode); images/subtitles/filters: libwebp, libass (+ HarfBuzz, FreeType, FriBidi, CoreText
-#     fonts), soxr, zimg; system zlib, bzip2, iconv. No x264/x265/xvid/fdk-aac/libxavs/frei0r/rubberband/openssl.
+#     decode), libtheora; audio: AudioToolbox (AAC/ALAC/...), libopus, libvorbis, LAME; AMR only through FFmpeg's
+#     native amrnb/amrwb decoders (no AMR encoder is built, formats §2.7); images/subtitles/filters: libwebp, libass
+#     (+ HarfBuzz, FreeType, FriBidi, CoreText fonts), soxr, zimg; system zlib, bzip2, iconv. No x264/x265/xvid/
+#     fdk-aac/libxavs/frei0r/rubberband/openssl.
 #   - static; the only dynamic dependencies are macOS system libraries and frameworks (checked with otool -L)
 #   - no network protocols, no ffplay, no capture devices (only the lavfi source, for generated test input and silence)
 # Needs: Command Line Tools (clang, make, lipo), cmake >= 3.16, pkg-config, autoconf/automake/libtool (Homebrew;
@@ -22,7 +23,7 @@ source "$(dirname "$0")/tools-common.sh"
 
 [[ "${1:-}" == fetch ]] && exec "$ROOT/scripts/tools.sh" fetch
 
-FFMPEG_LIBS=(libvpx svtav1 dav1d opus libogg libvorbis libtheora lame opencore voamrwbenc libwebp soxr zimg
+FFMPEG_LIBS=(libvpx svtav1 dav1d opus libogg libvorbis libtheora lame libwebp soxr zimg
              freetype fribidi harfbuzz libass)
 
 build_arch() { # arch
@@ -64,7 +65,7 @@ build_arch() { # arch
     local make_args=()   # extra `make` arguments for the next autotools_build only
     autotools_build() { # srcdir [extra configure args...]; builds in tree
         local src="$1"; shift
-        # Old config.sub/config.guess (LAME, opencore-amr) do not know arm64 macOS.
+        # Old config.sub/config.guess (LAME) do not know arm64 macOS.
         local lib f; lib="$(automake --print-libdir)"
         for f in config.sub config.guess; do [[ -f "$src/$f" ]] && cp "$lib/$f" "$src/$f"; done
         (cd "$src" && ./configure --prefix="$P" --host="$host_triple" --disable-shared --enable-static \
@@ -130,10 +131,6 @@ EOM
 
     log "[$arch] LAME"; unpack lame
     autotools_build "$SRC_DIR" --disable-frontend --disable-gtktest --disable-decoder
-    log "[$arch] opencore-amr"; unpack opencore
-    autotools_build "$SRC_DIR"
-    log "[$arch] vo-amrwbenc"; unpack voamrwbenc
-    autotools_build "$SRC_DIR"
 
     log "[$arch] libwebp"; unpack libwebp
     cmake_build libwebp "$SRC_DIR" -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
@@ -167,7 +164,6 @@ EOM
         --enable-zlib --enable-bzlib --enable-iconv --enable-audiotoolbox --enable-videotoolbox \
         --enable-libvpx --enable-libsvtav1 --enable-libdav1d \
         --enable-libopus --enable-libvorbis --enable-libtheora --enable-libmp3lame \
-        --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libvo-amrwbenc \
         --enable-libwebp --enable-libsoxr --enable-libzimg \
         --enable-libass --enable-libfreetype --enable-libharfbuzz --enable-libfribidi >/dev/null &&
         make -j "$jobs" >/dev/null && make install >/dev/null)

@@ -1,4 +1,5 @@
-// Links AVIF.xcframework and round-trips an image with the two bundled codecs: SVT-AV1 encodes, dav1d decodes.
+// Links AVIF.xcframework and round-trips an image with the bundled codecs: SVT-AV1 encodes lossy 4:2:0, libaom encodes
+// lossless 4:4:4 (identity matrix, bit-exact RGBA), dav1d decodes.
 import Foundation
 import AVIF
 
@@ -7,6 +8,7 @@ func check(_ ok: Bool, _ message: @autoclosure () -> String) {
 }
 
 check(avifCodecName(AVIF_CODEC_CHOICE_SVT, avifCodecFlags(AVIF_CODEC_FLAG_CAN_ENCODE.rawValue)) != nil, "SVT-AV1 encoder missing")
+check(avifCodecName(AVIF_CODEC_CHOICE_AOM, avifCodecFlags(AVIF_CODEC_FLAG_CAN_ENCODE.rawValue)) != nil, "libaom encoder missing")
 check(avifCodecName(AVIF_CODEC_CHOICE_DAV1D, avifCodecFlags(AVIF_CODEC_FLAG_CAN_DECODE.rawValue)) != nil, "dav1d decoder missing")
 
 let width: UInt32 = 64, height: UInt32 = 48
@@ -56,6 +58,44 @@ for y in 0..<Int(height) {
 }
 let psnr = 10 * log10(255.0 * 255.0 / (squared / Double(width * height * 3)))
 check(psnr > 30, "PSNR \(psnr) dB")
+
+// Lossless: libaom, 8-bit 4:4:4, identity matrix, full range; dav1d must give back every RGBA sample unchanged.
+let exact = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV444)!
+exact.pointee.yuvRange = AVIF_RANGE_FULL
+exact.pointee.matrixCoefficients = avifMatrixCoefficients(AVIF_MATRIX_COEFFICIENTS_IDENTITY)
+for y in 0..<Int(height) {
+    for x in 0..<Int(width) {
+        source.pixels[y * Int(source.rowBytes) + x * 4 + 2] = UInt8((x * 37 + y * 91) % 256)   // noise the encoder can't smooth
+        source.pixels[y * Int(source.rowBytes) + x * 4 + 3] = UInt8((x * 13 + y * 7) % 256)
+    }
+}
+source.ignoreAlpha = AVIF_FALSE
+check(avifImageRGBToYUV(exact, &source) == AVIF_RESULT_OK, "RGB to YUV (lossless)")
+let aom = avifEncoderCreate()!
+aom.pointee.codecChoice = AVIF_CODEC_CHOICE_AOM
+aom.pointee.speed = 9
+aom.pointee.quality = Int32(AVIF_QUALITY_LOSSLESS)
+aom.pointee.qualityAlpha = Int32(AVIF_QUALITY_LOSSLESS)
+var losslessOutput = avifRWData()
+let aomFinish = avifEncoderWrite(aom, exact, &losslessOutput)
+check(aomFinish == AVIF_RESULT_OK, "libaom lossless encode: \(String(cString: avifResultToString(aomFinish)))")
+let back = avifDecoderCreate()!
+back.pointee.codecChoice = AVIF_CODEC_CHOICE_DAV1D
+check(avifDecoderSetIOMemory(back, losslessOutput.data, losslessOutput.size) == AVIF_RESULT_OK && avifDecoderParse(back) == AVIF_RESULT_OK
+      && avifDecoderNextImage(back) == AVIF_RESULT_OK, "dav1d decode (lossless)")
+check(back.pointee.image.pointee.yuvFormat == AVIF_PIXEL_FORMAT_YUV444, "lossless AVIF is 4:4:4")
+var exactRGB = avifRGBImage()
+avifRGBImageSetDefaults(&exactRGB, back.pointee.image)
+exactRGB.format = AVIF_RGB_FORMAT_RGBA
+check(avifRGBImageAllocatePixels(&exactRGB) == AVIF_RESULT_OK && avifImageYUVToRGB(back.pointee.image, &exactRGB) == AVIF_RESULT_OK, "YUV to RGB (lossless)")
+var differing = 0
+for y in 0..<Int(height) {
+    for i in 0..<(Int(width) * 4) where source.pixels[y * Int(source.rowBytes) + i] != exactRGB.pixels[y * Int(exactRGB.rowBytes) + i] { differing += 1 }
+}
+check(differing == 0, "lossless round trip: \(differing) samples differ")
+print("libaom lossless 4:4:4 RGBA: \(losslessOutput.size) bytes, bit-exact OK")
+avifRGBImageFreePixels(&exactRGB); avifImageDestroy(exact); avifEncoderDestroy(aom); avifDecoderDestroy(back); avifRWDataFree(&losslessOutput)
+
 var versions = [CChar](repeating: 0, count: 256)
 avifCodecVersions(&versions)
 print("libavif \(String(cString: avifVersion())) (\(String(cString: versions))): SVT-AV1 encode, dav1d decode, \(output.size) bytes, PSNR \(Int(psnr)) dB OK")

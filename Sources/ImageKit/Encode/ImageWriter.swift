@@ -39,9 +39,8 @@ struct ImageWriter {
         case .jpeg, .png, .tiff, .heic:
             try ImageIOWriter(kind: kind, settings: settings, context: context).write(asset, to: url)
         case .avif:
-            // Neither ImageIO (it refuses quality 1.0) nor the bundled SVT-AV1 (4:2:0 only) writes lossless 4:4:4 AVIF.
-            if settings.lossless == true { throw ConversionError.failed("Lossless AVIF can’t be made on this Mac. Turn off Lossless, or choose PNG or WebP.") }
-            if ImageIOSupport.writesAVIF { try ImageIOWriter(kind: kind, settings: settings, context: context).write(asset, to: url) }
+            // ImageIO refuses quality 1.0, so lossless AVIF is always libavif's (libaom, 8-bit 4:4:4).
+            if ImageIOSupport.writesAVIF && settings.lossless != true { try ImageIOWriter(kind: kind, settings: settings, context: context).write(asset, to: url) }
             else { try writeAVIF(asset, to: url) }
         case .webp: try writeWebP(asset, to: url)
         case .gif: try writeGIF(asset, to: url)
@@ -91,6 +90,10 @@ struct ImageWriter {
         let frame = asset.frames[0]
         guard let raster = FrameIO.raster(frame) else { throw ConversionError.failed("The picture couldn’t be read.") }
         let depth = frame.bitsPerComponent > 8 ? 16 : 8
+        let lossless = settings.lossless == true
+        if lossless && depth > 8 {
+            throw ConversionError.failed("Lossless AVIF holds 8 bits per channel. Set Bit depth to 8, turn off Lossless, or choose PNG or TIFF.")
+        }
         let scale: Float = depth == 16 ? 65535 : 255
         var samples = [UInt16](repeating: UInt16(scale), count: raster.pixelCount * 4)
         let s = raster.stride, gray = raster.space.components == 1
@@ -100,7 +103,7 @@ struct ImageWriter {
         }
         let (exif, xmp) = exifAndXMP(asset, frame: frame)
         let data = try AVIFWriter.encode(width: raster.width, height: raster.height, rgba: samples, depth: depth, alpha: raster.hasAlpha,
-                                         quality: settings.lossless == true ? 100 : settings.quality(for: .avif),
+                                         quality: settings.quality(for: .avif), lossless: lossless,
                                          space: gray ? .sRGB : raster.space, exif: exif, xmp: xmp)
         try data.write(to: url, options: .atomic)
     }
