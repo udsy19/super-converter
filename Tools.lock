@@ -16,8 +16,6 @@ source libogg      1.3.6     libogg-1.3.6.tar.xz        5c8253428e181840cd20d41f
 source libvorbis   1.3.7     libvorbis-1.3.7.tar.xz     b33cc4934322bcbf6efcbacf49e3ca01aadbea4114ec9589d1b1e9d20f72954b https://downloads.xiph.org/releases/vorbis/libvorbis-1.3.7.tar.xz
 source libtheora   1.2.0     libtheora-1.2.0.tar.xz     ebdf77a8f5c0a8f7a9e42323844fa09502b34eb1d1fece7b5f54da41fe2122ec https://downloads.xiph.org/releases/theora/libtheora-1.2.0.tar.xz
 source lame        3.100     lame-3.100.tar.gz          ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
-source opencore    0.1.6     opencore-amr-0.1.6.tar.gz  483eb4061088e2b34b358e47540b5d495a96cd468e361050fae615b1809dc4a1 https://downloads.sourceforge.net/project/opencore-amr/opencore-amr/opencore-amr-0.1.6.tar.gz
-source voamrwbenc  0.1.3     vo-amrwbenc-0.1.3.tar.gz   5652b391e0f0e296417b841b02987d3fd33e6c0af342c69542cbb016a71d9d4e https://downloads.sourceforge.net/project/opencore-amr/vo-amrwbenc/vo-amrwbenc-0.1.3.tar.gz
 source libwebp     1.5.0     libwebp-1.5.0.tar.gz       7d6fab70cf844bf6769077bd5d7a74893f8ffd4dfb42861745750c63c2a5c92c https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0.tar.gz
 source soxr        0.1.3     soxr-0.1.3-Source.tar.xz   b111c15fdc8c029989330ff559184198c161100a59312f5dc19ddeb9b5a15889 https://downloads.sourceforge.net/project/soxr/soxr-0.1.3-Source.tar.xz
 source zimg        3.0.5     zimg-3.0.5.tar.gz          a9a0226bf85e0d83c41a8ebe4e3e690e1348682f6a2a7838f1b8cbff1b799bcf https://github.com/sekrit-twc/zimg/archive/refs/tags/release-3.0.5.tar.gz
@@ -26,6 +24,6 @@ source fribidi     1.0.16    fribidi-1.0.16.tar.xz      1b1cde5b235d40479e91be2f
 source harfbuzz    10.4.0    harfbuzz-10.4.0.tar.xz     480b6d25014169300669aa1fc39fb356c142d5028324ea52b3a27648b9beaad8 https://github.com/harfbuzz/harfbuzz/releases/download/10.4.0/harfbuzz-10.4.0.tar.xz
 source libass      0.17.3    libass-0.17.3.tar.xz       eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959 https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz
 source 7zip        25.01     7z2501-src.tar.xz          ed087f83ee789c1ea5f39c464c55a5c9d4008deb0efe900814f2df262b82c36e https://7-zip.org/a/7z2501-src.tar.xz
-release tools-2026-10-22
-asset tools-macos-universal.zip 8b1202846a4f4e084dc69169138d90409bb5c0a18911525a956fa3642a05966c
-asset tools-sources.tar.gz 06c22e77e0034e11b76b2b74a94383464654c496d75b8d170bcbf5a5b873fc4a
+release tools-2026-10-29
+asset tools-macos-universal.zip d1a0159ccfa6d3213e4e00020ac26744195ef0ded3b316317326586fb5904a84
+asset tools-sources.tar.gz 6006e5d508f6810628c0c5165d6cea3540c1b529f9fa5eeabcf19dd35c740f3f

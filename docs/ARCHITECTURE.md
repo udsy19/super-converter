@@ -260,7 +260,7 @@ SHA-256 + signature verification with fixtures; no network in tests.
 
 **WP0b — Vendor libraries** (careful). `scripts/build-vendor.sh`, `scripts/fetch-vendor.sh`, `Vendor.lock`,
 `.github/workflows/vendor.yml`, `THIRD_PARTY_NOTICES.md` (vendor section), `Package.swift` binary targets. Universal
-static xcframeworks with module maps for libwebp, libavif + SVT-AV1 + dav1d, libarchive (+ liblzma, zstd, lz4; system
+static xcframeworks with module maps for libwebp, libavif + SVT-AV1 + libaom + dav1d, libarchive (+ liblzma, zstd, lz4; system
 zlib/bzip2/iconv), libxls, google/woff2 + Brotli, unalz; `libraw_r.dylib` (LGPL, dynamic, with X3F tools after the
 licence check, formats §3.3). Published on this repository's Releases, pinned by SHA-256; a licence allow-list check
 (MIT, BSD, Apache-2.0, ISC, zlib, 0BSD, LGPL-as-dylib) fails the build otherwise. Acceptance: a scratch executable
@@ -268,10 +268,10 @@ links every library on both slices and round-trips one file through each.
 
 **WP0c — Bundled executables** (careful). `scripts/build-ffmpeg.sh`, `scripts/build-7zz.sh`, workflow, notices.
 FFmpeg 7.1 LGPL build (`--enable-version3 --disable-gpl --disable-nonfree`, VideoToolbox, AudioToolbox, libvpx,
-SVT-AV1, dav1d, libopus, libvorbis, libtheora, LAME, opencore-amr, vo-amrwbenc, libwebp, soxr, zimg, libass +
+SVT-AV1, dav1d, libopus, libvorbis, libtheora, LAME, libwebp, soxr, zimg, libass +
 HarfBuzz + FreeType + FriBidi), `ffmpeg` + `ffprobe` universal; 7-Zip `7zz` universal from source. `ffmpeg
 -buildconf` checked by a script that fails on `--enable-gpl`/`nonfree`; source tarballs and build scripts published
-next to the binaries (LGPL). Acceptance: smoke conversions (H.264 VideoToolbox, VP9, AV1, Opus, MP3, AMR, GIF palette)
+next to the binaries (LGPL). Acceptance: smoke conversions (H.264 VideoToolbox, VP9, AV1, Opus, MP3, AMR decode, GIF palette)
 on both slices; `7zz` extracts AES-7z, RAR5, ARJ, FAT image fixtures.
 
 **WP1 — Core contracts and scaffold** (heavy, single owner, first). `Package.swift`, `Sources/SuperConverterCore/**`,

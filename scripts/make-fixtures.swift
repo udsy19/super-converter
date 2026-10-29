@@ -1054,9 +1054,33 @@ func media() throws {
         ("opus", sound(), ["-c:a", "libopus", "-b:a", "96k", "-f", "opus"]),
         ("weba", sound(), ["-c:a", "libopus", "-b:a", "96k", "-f", "webm"]),
         ("wma", sound(rate: 44100), ["-c:a", "wmav2", "-b:a", "128k", "-f", "asf"]),
-        ("amr", sound(rate: 8000, channels: 1), ["-c:a", "libopencore_amrnb", "-b:a", "12.2k", "-f", "amr"]),
     ]
     for (name, audio, codecs) in audios { try run(audio + exact + codecs + ["sample.\(name)"]) }
+    // AMR-NB (440 Hz, 8 kHz mono, 12.2 kbit/s): no AMR encoder is bundled any more (formats §2.7), so these are the bytes
+    // the earlier opencore-amr build made, kept as they were; FFmpeg's native amrnb decoder reads them.
+    let amr = [
+        "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"
+    ].joined()
+    try Data(base64Encoded: amr)!.write(to: folder.appendingPathComponent("sample.amr"))
     // Quality §5.3 sources: interlaced SD fields, PQ HDR with mastering metadata, a flash-and-beep clip, BT.601 bars, a
     // 24-bit tone for the resampling test.
     try run(picture("720x576", rate: "50", seconds: "1") + exact + ["-vf", "scale=720:288,weave=first_field=top,setfield=tff", "-c:v", "mpeg2video",

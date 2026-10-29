@@ -294,6 +294,22 @@ func registerMediaKitTests() {
            let out = outputFile(o) {
             check(abs(Double(probe(out)?.audio.first?.bitRate ?? 0) - 128_000) < 2000, "a set bitrate is CBR")
         } else { check(false, "WAV → MP3 at 128 kb/s converts") }
+        // AMR is decoded only (formats §2.7): the bundled FFmpeg has no AMR encoder, and its native amrnb decoder reads the
+        // committed AMR-NB fixture into a WAV holding every frame.
+        for (encoder, rate) in [("libopencore_amrnb", 8000), ("libvo_amrwbenc", 16000)] {
+            let made = try? complete(30) { try await tools.analyse(["-f", "lavfi", "-i", "sine=sample_rate=\(rate):d=0.1", "-ac", "1", "-c:a", encoder],
+                                                                    workFolder: work("no-\(encoder)")) }?.get()
+            check(made == nil, "the bundled FFmpeg has no \(encoder) encoder")
+        }
+        let amr = media.appendingPathComponent("sample.amr")
+        if case .success(let o) = convert(Step(.ffmpeg, "amr", "wav"), amr), let out = outputFile(o),
+           let source = probe(amr), let wav = probe(out), let a = wav.audio.first, let bytes = try? Data(contentsOf: amr) {
+            check(source.audio.first?.codec == "amr_nb", "the fixture is AMR-NB (\(source.audio.first?.codec ?? "none"))")
+            check(a.codec.hasPrefix("pcm") && a.sampleRate == 8000 && a.channels == 1, "AMR → WAV is 8 kHz mono PCM (\(a.codec) \(a.sampleRate ?? 0))")
+            // "#!AMR\n", then 32-byte 12.2 kbit/s frames of 20 ms each (ffprobe only estimates an AMR file's length).
+            let frames = Double(bytes.count - 6) / 32
+            check(abs((wav.duration ?? 0) - frames * 0.02) < 0.001, "AMR → WAV decodes all \(Int(frames)) frames (\(wav.duration ?? 0) s)")
+        } else { check(false, "AMR → WAV converts through FFmpeg's native decoder") }
     }))
 
     SelfTest.cases.append(("MediaKit.animation", {

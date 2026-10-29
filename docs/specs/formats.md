@@ -64,8 +64,8 @@ an output wherever a pair exists. Extensions that are the same format (JPG/JPEG/
    Vorbis, Theora and FLAC are royalty-free; MP3 and AC-3 patents have expired. **AMR encoding is not offered [D]**
    (checked in WP-M, 2026-10): AMR-NB (3GPP, 1999) and AMR-WB (2001) are licensed through VoiceAge's patent pool, which
    claims about 150 essential patents; the core filings look expired, but no statement from the pool or 3GPP confirms
-   that every family has lapsed (public sources disagree on the last AMR-WB families), so the bundled opencore-amr /
-   vo-amrwbenc encoders are never invoked and AMR → AMR is "not offered" (§7). Decoding AMR to other formats stays:
+   that every family has lapsed (public sources disagree on the last AMR-WB families), so the bundled FFmpeg is built
+   without any AMR encoder (no opencore-amr / vo-amrwbenc) and AMR → AMR is "not offered" (§7). Decoding AMR to other formats stays:
    the pool has licensed PC playback free of charge. Revisit with a patent attorney's opinion or a pool statement.
 8. **Every bundled component** is listed with version, SHA-256, licence text and source URL in
    `THIRD_PARTY_NOTICES.md`, which the app shows in Settings › About.
@@ -129,7 +129,7 @@ an output wherever a pair exists. Extensions that are the same format (JPG/JPEG/
 | Component | Licence | Ships as | Used by |
 |---|---|---|---|
 | libwebp 1.5 | BSD-3-Clause | static, xcframework | WebP encode (still and animated) |
-| libavif 1.x + SVT-AV1 (encode) + dav1d (decode) | BSD-2-Clause; BSD-3-Clause-Clear with AOM patent licence; BSD-2-Clause | static, xcframework | AVIF when ImageIO cannot write it |
+| libavif 1.x + SVT-AV1 (lossy encode) + libaom (lossless 4:4:4 encode) + dav1d (decode) | BSD-2-Clause; BSD-3-Clause-Clear with AOM patent licence; BSD-2-Clause with AOM patent licence; BSD-2-Clause | static, xcframework | AVIF when ImageIO cannot write it; lossless AVIF always |
 | libarchive 3.8 (+ liblzma 0BSD, zstd BSD-3, lz4 BSD-2; system zlib, bzip2, iconv) | BSD-2-Clause | static, xcframework | Most archive reading and all ZIP/TAR/7Z writing, CBR/CBZ |
 | libxls | BSD-2-Clause | static (C target) | XLS (BIFF5/8) reading |
 | google/woff2 + Brotli | MIT | static (C++ target) | WOFF2 read/write |
@@ -139,7 +139,7 @@ an output wherever a pair exists. Extensions that are the same format (JPG/JPEG/
 | CMU Serif/Sans/Typewriter (Computer Modern Unicode) | SIL OFL 1.1 | OTF resources | Greek and Cyrillic in the LaTeX look |
 | STIX Two Math | SIL OFL 1.1 | OTF resource | Math glyphs Latin Modern Math lacks |
 | Carlito, Caladea | SIL OFL 1.1 | TTF resources | Metric-compatible stand-ins for Calibri and Cambria in the "As written" look (quality §3.5) |
-| **FFmpeg 7.1 LGPL build** (`--enable-version3`, no `--enable-gpl`, no `--enable-nonfree`) with libvpx (BSD-3), SVT-AV1, dav1d, libopus (BSD-3), libvorbis/libogg (BSD-3), libtheora (BSD-3), LAME (LGPL-2.0), opencore-amr + vo-amrwbenc (Apache-2.0), libwebp, soxr (LGPL-2.1), zimg (WTFPL), libass (ISC) with HarfBuzz (MIT), FreeType (FTL) and FriBidi (LGPL-2.1); VideoToolbox and AudioToolbox enabled | LGPL-3.0-or-later as a whole | **separate executables** `ffmpeg`, `ffprobe` in `Contents/Helpers/` | Every audio/video pair AVFoundation cannot do alone |
+| **FFmpeg 7.1 LGPL build** (`--enable-version3`, no `--enable-gpl`, no `--enable-nonfree`) with libvpx (BSD-3), SVT-AV1, dav1d, libopus (BSD-3), libvorbis/libogg (BSD-3), libtheora (BSD-3), LAME (LGPL-2.0), libwebp, soxr (LGPL-2.1), zimg (WTFPL), libass (ISC) with HarfBuzz (MIT), FreeType (FTL) and FriBidi (LGPL-2.1); VideoToolbox and AudioToolbox enabled | LGPL-3.0-or-later as a whole | **separate executables** `ffmpeg`, `ffprobe` in `Contents/Helpers/` | Every audio/video pair AVFoundation cannot do alone |
 | **7-Zip 25 `7zz`** | LGPL-2.1 + BSD-3 parts + unRAR licence restriction (may not be used to re-create RAR compression) | **separate executable** | Encrypted 7z/ZIP/RAR, ARJ, IMG (FAT/NTFS/MBR/GPT), UDF ISO, Quantum CAB, CHM extraction |
 | **LibRaw 0.21** built with `USE_X3FTOOLS` | LGPL-2.1 or CDDL-1.0 (we take LGPL-2.1); X3F tools code BSD-style | **dynamic library** `libraw_r.dylib` | Sigma X3F only (WP-I verifies the X3F tools licence before shipping; without it X3F becomes a P3 gap) |
 

@@ -32,8 +32,6 @@ COMPONENTS=(
 "libvorbis|libvorbis|BSD-3-Clause|https://xiph.org/vorbis|COPYING"
 "libtheora|libtheora|BSD-3-Clause|https://xiph.org/theora|COPYING LICENSE"
 "lame|LAME (MP3 encoder)|LGPL-2.0-or-later|https://lame.sourceforge.io|COPYING LICENSE"
-"opencore|opencore-amr (AMR-NB/WB decoder, AMR-NB encoder)|Apache-2.0|https://opencore-amr.sourceforge.io|LICENSE opencore/NOTICE"
-"voamrwbenc|vo-amrwbenc (AMR-WB encoder)|Apache-2.0|https://sourceforge.net/projects/opencore-amr|COPYING NOTICE"
 "libwebp|libwebp|BSD-3-Clause + WebM patent grant|https://developers.google.com/speed/webp|COPYING PATENTS"
 "soxr|SoX Resampler (soxr)|LGPL-2.1-or-later|https://sourceforge.net/projects/soxr|LICENCE COPYING.LGPL"
 "zimg|zimg (colour space / scaling)|WTFPL|https://github.com/sekrit-twc/zimg|COPYING"
@@ -138,10 +136,10 @@ smoke_ffmpeg() { # arch
     expect "$d/tone.ogg" "vorbis"
     ffq "${tone[@]}" -c:a libmp3lame -b:a 128k "$d/tone.mp3"
     expect "$d/tone.mp3" "mp3"; decodes -i "$d/tone.mp3"
-    ffq "${tone[@]}" -ar 8000 -ac 1 -c:a libopencore_amrnb -b:a 12.2k "$d/tone.amr"
-    expect "$d/tone.amr" "amr_nb"; decodes -c:a libopencore_amrnb -i "$d/tone.amr"
-    ffq "${tone[@]}" -ar 16000 -ac 1 -c:a libvo_amrwbenc -b:a 23.05k "$d/tone-wb.amr"
-    expect "$d/tone-wb.amr" "amr_wb"; decodes -c:a libopencore_amrwb -i "$d/tone-wb.amr"
+    # AMR is decoded only (formats §2.7): no AMR encoder is built; the native decoder reads the committed AMR-NB fixture
+    if "${ff[@]:0:3}" -hide_banner -encoders 2>/dev/null | grep -q -i amr; then die "[$arch] ffmpeg has an AMR encoder"; fi
+    ffq -c:a amrnb -i "$ROOT/Tests/Corpus/generated/media/sample.amr" -c:a pcm_s16le "$d/amr.wav"
+    expect "$d/amr.wav" "pcm_s16le"
     ffq "${tone[@]}" -c:a alac "$d/tone.m4a"
     expect "$d/tone.m4a" "alac"
     ffq "${tone[@]}" -af "aresample=resampler=soxr:osr=16000" -c:a pcm_s16le "$d/soxr.wav"
@@ -158,7 +156,7 @@ smoke_ffmpeg() { # arch
     printf '[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 240\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Helvetica,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Super Converter\n' > "$d/sub.ass"
     ffq "${video[@]}" -vf "subtitles=$d/sub.ass" -c:v ffv1 "$d/subbed.mkv"
     expect "$d/subbed.mkv" "ffv1"
-    log "    [$arch] ffmpeg: $n conversions ok (H.264 + native-slice HEVC VideoToolbox, AAC AudioToolbox, VP8, VP9, AV1, Theora, Opus, Vorbis, MP3, AMR-NB, AMR-WB, ALAC, soxr, GIF palette, WebP, zscale, libass)"
+    log "    [$arch] ffmpeg: $n conversions ok (H.264 + native-slice HEVC VideoToolbox, AAC AudioToolbox, VP8, VP9, AV1, Theora, Opus, Vorbis, MP3, AMR-NB decode, ALAC, soxr, GIF palette, WebP, zscale, libass)"
 }
 
 smoke_7zz() { # arch
@@ -196,8 +194,8 @@ cmd_smoke() { # [ffmpeg|7zz]: only that tool
     local arch
     for arch in "${ARCHS[@]}"; do
         log "Smoke tests ($arch)"
-        [[ -z "$only" || "$only" == ffmpeg ]] && smoke_ffmpeg "$arch"
-        [[ -z "$only" || "$only" == 7zz ]] && smoke_7zz "$arch"
+        if [[ -z "$only" || "$only" == ffmpeg ]]; then smoke_ffmpeg "$arch"; fi
+        if [[ -z "$only" || "$only" == 7zz ]]; then smoke_7zz "$arch"; fi
     done
 }
 
@@ -235,7 +233,7 @@ upstream source: `ffmpeg`, `ffprobe` (FFmpeg, with the libraries below linked st
 - **FFmpeg is licensed LGPL-3.0-or-later as a whole.** The build uses `--enable-version3 --disable-gpl
   --disable-nonfree`; no GPL or non-free component is compiled in (no x264, x265, Xvid, fdk-aac, libxavs, rubberband,
   OpenSSL). `ffmpeg -L` and `ffmpeg -buildconf` show this, and `scripts/tools.sh check` fails the build otherwise.
-  Components that need `--enable-version3`: opencore-amr and vo-amrwbenc (Apache-2.0).
+  No AMR encoder is built (formats §2.7); AMR is read by FFmpeg's own decoders.
 - **7-Zip** is LGPL-2.1-or-later with BSD-3-Clause parts and the **unRAR licence restriction** (below).
 - **Complete corresponding source.** Every upstream source archive, exactly as downloaded and checked against the
   SHA-256 below, the build scripts (`scripts/build-ffmpeg.sh`, `scripts/build-7zz.sh`, `scripts/tools-common.sh`,
@@ -272,9 +270,9 @@ EOF
 
 Where each is used. `ffmpeg`/`ffprobe`: FFmpeg with VideoToolbox and AudioToolbox (macOS system frameworks, not
 redistributed), libvpx (VP8/VP9), SVT-AV1 (AV1 encode), dav1d (AV1 decode), libtheora + libogg (Theora/Ogg), libopus
-(Opus), libvorbis (Vorbis), LAME (MP3 encode), opencore-amr (AMR-NB/WB decode, AMR-NB encode), vo-amrwbenc (AMR-WB
-encode), libwebp (WebP, animated WebP), soxr (resampling), zimg (colour-space conversion and scaling), libass with
-HarfBuzz, FreeType and FriBidi (subtitle rendering; fonts come from CoreText), and the system zlib, bzip2 and iconv.
+(Opus), libvorbis (Vorbis), LAME (MP3 encode), libwebp (WebP, animated WebP), soxr (resampling), zimg (colour-space
+conversion and scaling), libass with HarfBuzz, FreeType and FriBidi (subtitle rendering; fonts come from CoreText), and
+the system zlib, bzip2 and iconv. AMR-NB and AMR-WB are decoded by FFmpeg itself; nothing encodes AMR.
 `7zz`: 7-Zip 25.01 (arm64 with its assembler routines, x86_64 portable C).
 
 ### Licence texts
@@ -284,7 +282,7 @@ EOF
         printf '\n#### %s\n' "$name"
         for f in $files; do
             printf '\n`%s`\n\n```text\n' "$f"
-            cat "$lic/$id/$(basename "$f")"
+            tr -d '\r' < "$lic/$id/$(basename "$f")"   # 7-Zip's texts have DOS line ends
             printf '\n```\n'
         done
     done
