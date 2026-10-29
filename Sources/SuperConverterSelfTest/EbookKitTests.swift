@@ -511,10 +511,8 @@ func registerEbookKitTests() {
         check(back.cover != nil && back.resources[back.cover!]?.data == ebCover, "cover bytes")
         check(back.resources.values.contains { $0.mediaType == "text/css" && $0.data == ebData("p { color: #333; }\n") }, "carried stylesheet")
         check(back.resources.values.contains { $0.data == Data(repeating: 7, count: 2048) }, "carried font")
-        let before = ebDocs(original), after = ebDocs(back)
+        let after = ebDocs(back)
         check(after.count == 2, "two documents")
-        for (a, b) in zip(before, after) {
-            }
         let c1 = ebPlain(after[0].doc.blocks)
         check(c1.contains("h1:Chapter One"), "heading round-trips: \(c1)")
         check(c1.contains { $0.hasPrefix("Plain, emphasis, strong, struck, code() and a link with a note") && $0.hasSuffix("Unicode: café, 日本語, Ελληνικά.") }, "paragraph text round-trips: \(c1)")

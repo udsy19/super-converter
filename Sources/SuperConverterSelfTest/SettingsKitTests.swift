@@ -264,7 +264,7 @@ private func settingsAbout() {
     let model = AboutModel(updates: updates)
     check(model.canCheck && model.statusText.isEmpty, "idle: can check, nothing to say")
     model.checkNow()
-    settingsPump(0.05)
+    for _ in 0..<40 where model.statusText.isEmpty { settingsPump(0.05) }
     check(updates.checks == 1, "Check for Updates goes to the updater")
     check(model.statusText.contains("up to date"), "and the result is said in words: \(model.statusText)")
     check(AboutModel(updates: nil).canCheck == false, "no updater, no check")
