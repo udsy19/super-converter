@@ -94,8 +94,11 @@ enum LineBuilder {
                 if let last = current.last {
                     let gap = word.bounds.minX - last.bounds.maxX
                     let size = max(Typography.fontSize(of: word), Typography.fontSize(of: last))
-                    let gapRange = last.bounds.maxX...word.bounds.minX
-                    let crossesGutter = gap >= 0.8 * size && gutters.contains { $0.overlaps(gapRange) && $0.lowerBound >= gapRange.lowerBound - 1 && $0.upperBound <= gapRange.upperBound + 1 }
+                    // Overlapping words have no gap to cross (and no range to make of it).
+                    let crossesGutter = gap > 0 && gap >= 0.8 * size && gutters.contains {
+                        $0.lowerBound <= word.bounds.minX && $0.upperBound >= last.bounds.maxX
+                            && $0.lowerBound >= last.bounds.maxX - 1 && $0.upperBound <= word.bounds.minX + 1
+                    }
                     if gap > 3 * size || crossesGutter {
                         lines.append(TextLine(words: current))
                         current = []
