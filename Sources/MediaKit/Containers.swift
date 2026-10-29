@@ -70,18 +70,17 @@ enum VideoCodec: String, CaseIterable, Sendable {
     }
 }
 
-/// The audio encoders (quality §5.2 transparent defaults; formats §5 O-AUDIO codec list).
+/// The audio encoders (quality §5.2 transparent defaults; formats §5 O-AUDIO codec list). No AMR encoder: its patent
+/// status couldn't be confirmed (formats §2.7); AMR streams are still decoded, and copied where a container takes them.
 enum AudioCodec: String, CaseIterable, Sendable {
     case aac, heAAC, heAACv2, alac, flac, mp3, opus, vorbis, ac3, wmav2, mp2
     case pcm16, pcm24, pcm32, float32, pcm8
-    case mulaw, alaw, amrNB, amrWB
+    case mulaw, alaw
 
     /// The name ffprobe gives such a stream (for copy decisions); PCM is matched by family in `canCopy`.
     var probeName: String {
         switch self {
         case .aac, .heAAC, .heAACv2: "aac"
-        case .amrNB: "amr_nb"
-        case .amrWB: "amr_wb"
         case .mulaw: "pcm_mulaw"
         case .alaw: "pcm_alaw"
         case .pcm16: "pcm_s16le"
@@ -127,8 +126,6 @@ enum AudioCodec: String, CaseIterable, Sendable {
         case "pcm_u8", "pcm8": self = .pcm8
         case "mulaw", "pcm_mulaw", "ulaw", "µ-law": self = .mulaw
         case "alaw", "pcm_alaw", "a-law": self = .alaw
-        case "amr_nb", "amrnb", "libopencore_amrnb", "amr": self = .amrNB
-        case "amr_wb", "amrwb", "libvo_amrwbenc": self = .amrWB
         default: return nil
         }
     }
@@ -229,7 +226,7 @@ struct MediaContainer: Sendable {
         add(video("flv", "flv", [.h264, .flv1], [.aac, .mp3], copyV: ["h264", "flv1"], copyA: ["aac", "mp3"], subs: .none))
         add(video("wmv", "asf", [.msmpeg4v3, .wmv2], [.wmav2], copyV: asfVideo, copyA: asfAudio, subs: .none, cfr: true))
         for f: FormatID in ["3gp", "3gpp"] {
-            add(video(f, "3gp", threeGP, [.aac, .amrNB], copyV: ["h264", "h263", "mpeg4"], copyA: ["aac", "amr_nb", "amr_wb"], subs: .text("mov_text"), web: true))
+            add(video(f, "3gp", threeGP, [.aac], copyV: ["h264", "h263", "mpeg4"], copyA: ["aac", "amr_nb", "amr_wb"], subs: .text("mov_text"), web: true))
         }
         add(video("3g2", "3g2", threeGP, [.aac], copyV: ["h264", "h263", "mpeg4"], copyA: ["aac", "amr_nb"], subs: .text("mov_text"), web: true))
         add(video("mpeg", "mpeg", [.mpeg2], [.mp2, .ac3], copyV: psVideo, copyA: psAudio, subs: .dvd, cfr: true))
@@ -267,7 +264,6 @@ struct MediaContainer: Sendable {
         add(audio("weba", "webm", [.opus, .vorbis], copy: ["opus", "vorbis"]))
         add(audio("wma", "asf", [.wmav2], copy: ["wmav2", "wmav1"]))
         add(audio("ac3", "ac3", [.ac3], copy: ["ac3"]))
-        add(audio("amr", "amr", [.amrNB], copy: ["amr_nb"]))
         add(audio("au", "au", [.pcm16, .mulaw, .alaw], copy: ["pcm_s16be", "pcm_mulaw", "pcm_alaw"]))
         add(audio("voc", "voc", [.pcm16, .pcm8], copy: ["pcm_s16le", "pcm_u8"]))
         return t

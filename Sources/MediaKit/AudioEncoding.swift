@@ -58,7 +58,6 @@ struct AudioEncoding {
         var rate = s.sampleRate ?? sourceRate
         rate = allowedRate(rate, codec: codec, target: target)
         var channels = s.channels ?? main.channels ?? 2
-        if codec == .amrNB || codec == .amrWB { channels = 1 }
         if target.format == "dv" || ["mp3", "mp2", "wmav2"].contains(codec.rawValue) { channels = min(channels, 2) }
         if codec == .opus, channels > 8 { channels = 8 }
 
@@ -137,8 +136,6 @@ struct AudioEncoding {
         case .opus: return [48000, 24000, 16000, 12000, 8000].contains(rate) ? rate : 48000
         case .ac3: return nearest([48000, 44100, 32000])
         case .mp2: return nearest([48000, 44100, 32000, 24000, 22050, 16000])
-        case .amrNB: return 8000
-        case .amrWB: return 16000
         case .mp3 where ["swf", "flv"].contains(target.format.rawValue): return nearest([44100, 22050, 11025])
         case .mp3: return nearest([48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000])
         case .wmav2: return min(rate, 48000)
@@ -180,8 +177,6 @@ struct AudioEncoding {
         case .pcm8: return ["-c:a", "pcm_u8"]
         case .mulaw: return ["-c:a", "pcm_mulaw"]
         case .alaw: return ["-c:a", "pcm_alaw"]
-        case .amrNB: return ["-c:a", "libopencore_amrnb", "-b:a", "12.2k"]
-        case .amrWB: return ["-c:a", "libvo_amrwbenc", "-b:a", "23.85k"]
         }
     }
 }
