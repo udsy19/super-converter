@@ -104,7 +104,7 @@ private func png(_ r: UInt8, _ g: UInt8, _ b: UInt8, size: Int = 4) -> Data {
     var px = Data()
     for _ in 0..<(size * size) { px.append(contentsOf: [r, g, b, 255]) }
     let asset = ImageAsset(frames: [ImageFrame(width: size, height: size, pixels: .rgba8(px, bytesPerRow: size * 4), hasAlpha: false)])
-    return ImageBridge.pngData(asset)!
+    return asset.frames[0].pngData()!
 }
 
 private let arialURL = URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf")

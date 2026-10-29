@@ -56,7 +56,7 @@ final class XPSPackageBuilder {
 
     func imagePart(_ asset: ImageAsset) -> String? {
         if let hit = imageParts[asset] { return hit }
-        guard let png = ImageBridge.pngData(asset) else { return nil }
+        guard let png = asset.frames.first?.pngData() else { return nil }
         let name = "/Resources/Images/\(imageParts.count + 1).png"
         add(name, png)
         imageParts[asset] = name

@@ -34,7 +34,7 @@ enum HTMLSources {
                     })))
                 case .figure(_, let image):
                     flushList()
-                    if let image, let png = ImageAssetData.png(image) {
+                    if let image, let png = image.frames.first?.pngData() {
                         let key = "figure\(model.resources.count + 1).png"
                         model.resources[key] = png
                         model.blocks.append(.figure(resource: key, caption: nil, altText: nil))
@@ -90,7 +90,7 @@ enum HTMLSources {
                 case .paragraph(let l, _), .heading(_, let l), .listItem(_, let l), .header(let l), .footer(let l): lines(l)
                 case .table(let rows, _): for row in rows { for cell in row { lines(cell) } }
                 case .figure(let box, let image):
-                    if let image, let png = ImageAssetData.png(image) {
+                    if let image, let png = image.frames.first?.pngData() {
                         body += "<image x=\"\(num(box.x))\" y=\"\(num(h - box.y - box.height))\" width=\"\(num(box.width))\" height=\"\(num(box.height))\" href=\"data:image/png;base64,\(png.base64EncodedString())\"/>"
                     }
                 }
@@ -176,7 +176,7 @@ enum HTMLSources {
                 let family = run.fontName.split(separator: "+").last.map(String.init) ?? run.fontName
                 return "<text transform=\"translate(\(num(run.origin.x)) \(num(run.origin.y))) scale(1 -1)\" font-size=\"\(num(run.size))\" font-family=\"'\(HTMLEntities.escape(family, attribute: true))', sans-serif\" fill=\"\(paint(run.fill))\" xml:space=\"preserve\">\(HTMLEntities.escape(run.text))</text>"
             case .image(let asset, let t):
-                guard let png = ImageAssetData.png(asset) else { return "" }
+                guard let png = asset.frames.first?.pngData() else { return "" }
                 return "<image transform=\"matrix(\(num(t.a)) \(num(t.b)) \(num(t.c)) \(num(t.d)) \(num(t.tx)) \(num(t.ty))) translate(0 1) scale(1 -1)\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,\(png.base64EncodedString())\"/>"
             case .group(let children, let t, let clip, let alpha):
                 var attrs = ""

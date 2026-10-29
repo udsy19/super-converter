@@ -3,8 +3,8 @@ import Foundation
 import ImageIO
 import SuperConverterCore
 
-/// CGImage and image bytes → ImageAsset for the vector readers (pictures inside drawings), and PNG bytes back; the other
-/// direction is Core's `ImageFrame.cgImage()`.
+/// CGImage and image bytes → ImageAsset for the vector readers (pictures inside drawings), the other direction is
+/// Core's `ImageFrame.cgImage()` and `pngData()`.
 public enum ImageBridge {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
@@ -38,14 +38,5 @@ public enum ImageBridge {
     public static func asset(decoding data: Data) -> ImageAsset? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         return asset(image)
-    }
-
-    /// PNG bytes of an asset's first frame.
-    public static func pngData(_ asset: ImageAsset) -> Data? {
-        guard let image = asset.frames.first?.cgImage() else { return nil }
-        let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, image, nil)
-        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 }

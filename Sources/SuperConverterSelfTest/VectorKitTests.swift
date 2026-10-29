@@ -121,7 +121,7 @@ func registerVectorKitTests() {
         let asset = ImageAsset(frames: [ImageFrame(width: 40, height: 20, pixels: .rgba8(px, bytesPerRow: 160), hasAlpha: false)])
         let picture = pdf(svtRun(Step(.cgPDF, .imageAsset, "pdf"), .image(asset), options: ["pageSize": "a4"]))
         check(picture?.numberOfPages == 1 && abs((picture?.page(at: 1)?.getBoxRect(.mediaBox).height ?? 0) - 595.276) < 0.5, "picture → A4 landscape page")
-        let png = ImageBridge.pngData(asset)!
+        let png = asset.frames[0].pngData()!
         let book = Publication(layout: .fixed, spine: [PublicationItem(id: "p1", content: .page(resource: "i1")), PublicationItem(id: "p2", content: .page(resource: "i1"))],
                                resources: ["i1": PublicationResource(mediaType: "image/png", data: png)])
         let comic = pdf(svtRun(Step(.cgPDF, .publication, "pdf"), .publication(book)))

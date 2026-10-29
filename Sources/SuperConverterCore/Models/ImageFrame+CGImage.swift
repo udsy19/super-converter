@@ -46,4 +46,15 @@ public extension ImageFrame {
             return CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
         }
     }
+
+    /// The frame as PNG bytes for writers that embed pictures (HTML, SVG, XPS): a PNG file passes through untouched,
+    /// anything else is encoded from `cgImage()` in its own colour space.
+    func pngData() -> Data? {
+        if case .file(let url) = pixels, url.pathExtension.lowercased() == "png", let data = try? Data(contentsOf: url) { return data }
+        guard let image = cgImage() else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
+    }
 }

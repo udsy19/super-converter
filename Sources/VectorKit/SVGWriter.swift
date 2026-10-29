@@ -141,7 +141,7 @@ public enum SVGWriter {
             case .text(let run):
                 return text(run)
             case .image(let asset, let t):
-                guard let png = ImageBridge.pngData(asset) else { return "" }
+                guard let png = asset.frames.first?.pngData() else { return "" }
                 let m = VectorTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: 1).then(t).then(flip)
                 return "<image width=\"1\" height=\"1\" preserveAspectRatio=\"none\" transform=\"\(matrix(m))\" xlink:href=\"data:image/png;base64,\(png.base64EncodedString())\"/>\n"
             case .group(let children, let t, let clip, let opacity):
@@ -159,7 +159,7 @@ public enum SVGWriter {
         }
 
         mutating func rasterFill(_ segments: [PathSegment], _ asset: ImageAsset) -> String {
-            guard let png = ImageBridge.pngData(asset) else { return "" }
+            guard let png = asset.frames.first?.pngData() else { return "" }
             let box = segments.cgPath.boundingBoxOfPath
             let id = nextID("c")
             defs.append("<clipPath id=\"\(id)\"><path d=\"\(pathData(segments))\"/></clipPath>")
