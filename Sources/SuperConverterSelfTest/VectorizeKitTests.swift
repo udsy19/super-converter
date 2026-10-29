@@ -5,7 +5,8 @@ import VectorizeKit
 // VectorizeKit's checks (WP-V). Every trace is rasterised again by a small path rasteriser below (M L H V C Z, fill,
 // evenodd) and compared with the source picture.
 
-private let vzOut = "/private/tmp/claude-501/-Users-udsy-PycharmProjects-CleanShotX/9bff2f70-7ce5-4c96-b4ab-fdfd6dd402f3/scratchpad/wpv-c"
+/// Side-by-side renders go under $SUPERCONVERTER_SELFTEST_RENDERS when it is set (as VectorKit's `svtSave` does).
+private let vzOut = ProcessInfo.processInfo.environment["SUPERCONVERTER_SELFTEST_RENDERS"]
 
 private struct VZImage {
     var w: Int, h: Int
@@ -104,6 +105,7 @@ private func vzMismatch(_ a: [UInt8], _ b: [UInt8], threshold: Int = 64) -> Doub
 }
 
 private func vzSave(_ name: String, _ source: [UInt8], _ traced: [UInt8], w: Int, h: Int) {
+    guard let vzOut else { return }
     try? FileManager.default.createDirectory(atPath: vzOut, withIntermediateDirectories: true)
     var both = [UInt8](repeating: 255, count: (w * 2 + 4) * h * 4)
     for y in 0..<h {
@@ -212,11 +214,14 @@ func registerVectorizeKitTests() {
         let drawn = vzRaster(r.svg, w: 96, h: 64, antialias: true)
         let m = vzMismatch(vzWhite(drawn), vzExpected(img, onWhite: true))
         vzSave("glyphs", img.px, vzWhite(drawn), w: 96, h: 64)
-        check(m < 0.01, "spline glyphs mismatch \(m)")
+        // vtracer smooths by 4-point subdivision (outset 1/8) and fits one Bézier per splice: edges deviate by up to
+        // about a pixel on these small glyphs, so the bound is 2 % of pixels (it was 1 % for the old least-squares fitter).
+        check(m < 0.02, "spline glyphs mismatch \(m)")
         // The ring's hole stays open.
         check(vzWhite(drawn)[(32 * 96 + 20) * 4] > 200, "hole in the ring stays white")
         let poly = trace(img, TraceSettings(mode: .polygon))
-        check(poly.map { vzMismatch(vzWhite(vzRaster($0.svg, w: 96, h: 64, antialias: true)), vzExpected(img, onWhite: true)) < 0.015 } == true, "polygon mode")
+        let pm = poly.map { vzMismatch(vzWhite(vzRaster($0.svg, w: 96, h: 64, antialias: true)), vzExpected(img, onWhite: true)) } ?? 1
+        check(pm < 0.03, "polygon mode mismatch \(pm)")
         check(poly.map { !String(decoding: $0.svg, as: UTF8.self).contains("C") || true } == true, "polygon svg")
         check(poly.map { !String(decoding: $0.svg, as: UTF8.self).contains(" C") } == true, "polygon mode writes no curves")
     }))
@@ -234,8 +239,9 @@ func registerVectorizeKitTests() {
         guard let a = trace(crisp, TraceSettings(preset: .bw)), let b = trace(soft, TraceSettings(preset: .bw)) else { check(false, "circle trace"); return }
         let da = vzWhite(vzRaster(a.svg, w: 64, h: 64, antialias: true)), db = vzWhite(vzRaster(b.svg, w: 64, h: 64, antialias: true))
         vzSave("circle", crisp.px, da, w: 64, h: 64); vzSave("circle-soft", soft.px, db, w: 64, h: 64)
-        check(vzMismatch(da, crisp.px, threshold: 100) < 0.03, "crisp disc \(vzMismatch(da, crisp.px, threshold: 100))")
-        check(vzMismatch(db, soft.px, threshold: 100) < 0.03, "anti-aliased disc \(vzMismatch(db, soft.px, threshold: 100))")
+        // vtracer's spline rounds a 24 px disc to within about a pixel: 4 % of pixels (3 % for the old fitter).
+        check(vzMismatch(da, crisp.px, threshold: 100) < 0.04, "crisp disc \(vzMismatch(da, crisp.px, threshold: 100))")
+        check(vzMismatch(db, soft.px, threshold: 100) < 0.04, "anti-aliased disc \(vzMismatch(db, soft.px, threshold: 100))")
         check(String(decoding: a.svg, as: UTF8.self).contains("C"), "a round shape is written with curves")
         let flat = trace(crisp, TraceSettings(preset: .bw, mode: .polygon))
         let curved = trace(crisp, TraceSettings(preset: .bw, mode: .spline))
@@ -264,7 +270,9 @@ func registerVectorizeKitTests() {
     SelfTest.cases.append(("VectorizeKit.gradientPhoto", {
         let img = vzGradient()
         guard let r = trace(img, TraceSettings()) else { check(false, "gradient trace"); return }
-        check(r.preset == .photo && r.colourCount > 16 && r.colourCount <= 64, "photo preset, banded colours: \(r.colourCount) \(r.preset)")
+        // The photo preset keeps a layer where neighbours differ by more than 48 (vtracer's layer_difference), so a smooth
+        // gradient becomes a handful of bands rather than the old fixed 64-entry palette.
+        check(r.preset == .photo && r.colourCount >= 8 && r.colourCount <= 64, "photo preset, banded colours: \(r.colourCount) \(r.preset)")
         let drawn = vzRaster(r.svg, w: 64, h: 64, antialias: false)
         vzSave("gradient", img.px, drawn, w: 64, h: 64)
         var total = 0
