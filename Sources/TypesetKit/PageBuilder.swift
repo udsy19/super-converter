@@ -23,6 +23,8 @@ struct Page {
     var header: [Placed] = []
     var headerHeight = 0.0
     var marks: [HeadingMark] = []
+    /// A float page turned sideways: the paper landscape, the text block `\textheight` wide and `\textwidth` tall.
+    var landscape = false
 }
 
 /// TeX's page builder (The TeXbook, chapter 15) with LaTeX's output routine reduced to what documents need: the best
@@ -96,7 +98,8 @@ final class PageBuilder {
         while !queue.isEmpty || !deferred.isEmpty {
             guardCount += 1
             if guardCount > 200_000 { break }
-            if columns.isEmpty, let first = deferred.first, first.height > geometry.textHeight * style.topfraction || queue.isEmpty {
+            if columns.isEmpty, let first = deferred.first,
+               first.landscape || first.height > geometry.textHeight * style.topfraction || queue.isEmpty {
                 // A float too tall for the top of a text page, or the floats left at the end: a float page.
                 deferred.removeFirst()
                 emitFloatPage(first)
@@ -170,8 +173,9 @@ final class PageBuilder {
 
     private func emitFloatPage(_ f: FloatBlock) {
         var p = newPage()
+        p.landscape = f.landscape
         // \@fptop and \@fpbot are 0pt plus 1fil: the float is centred on the page.
-        let offset = max(0, (geometry.textHeight - f.height) / 2)
+        let offset = max(0, ((f.landscape ? geometry.textWidth : geometry.textHeight) - f.height) / 2)
         p.columns = [place(f.items, startY: offset, shrinkRatio: 0).placed]
         while p.columns.count < geometry.columns { p.columns.append([]) }
         p.footnotes = Array(repeating: [], count: geometry.columns)
@@ -199,7 +203,7 @@ final class PageBuilder {
         // Deferred floats first, at the top (at most two, at most \topfraction of the page).
         if allowTopFloats {
             var used = 0.0
-            while let f = deferred.first, topFloats.count < 2, used + f.height <= geometry.textHeight * style.topfraction {
+            while let f = deferred.first, !f.landscape, topFloats.count < 2, used + f.height <= geometry.textHeight * style.topfraction {
                 topFloats.append(f); deferred.removeFirst()
                 used += f.height + style.textfloatsep.width
             }
@@ -300,7 +304,7 @@ final class PageBuilder {
                 add(item, queued: true)
             case .float(let f):
                 // The top of this column if it fits with what is already here (LaTeX's \@addtotoporbot), else later.
-                if allowTopFloats && topFloats.count < 2 && deferred.isEmpty
+                if allowTopFloats && !f.landscape && topFloats.count < 2 && deferred.isEmpty
                     && f.height + style.textfloatsep.width + total <= goal
                     && topFloats.reduce(0.0, { $0 + $1.height }) + f.height <= geometry.textHeight * style.topfraction {
                     topFloats.append(f)

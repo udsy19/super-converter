@@ -19,7 +19,8 @@ struct GridTable {
 
 /// Booktabs tables (quality §3.2): `\toprule`, `\midrule`, `\bottomrule` and no vertical rules, `\tabcolsep` 6 pt,
 /// numbers right- and decimal-aligned. A table too wide for the measure steps down to `\small`, then `\footnotesize`,
-/// then wraps its text columns. Captioned tables that fit on a page float (`[tbp]`) with the caption above; others
+/// then gets landscape pages of its own (the text block turned: as wide as `\textheight`), and only a table too wide
+/// even for those wraps its text columns. Captioned tables that fit on a page float (`[tbp]`) with the caption above; others
 /// stay in the text and break across pages with the header repeated (longtable).
 final class TableComposer {
     unowned let composer: Composer
@@ -31,6 +32,9 @@ final class TableComposer {
     struct Result {
         var items: [VItem]
         var isFloat: Bool
+        /// A table too wide for the text block even at `\footnotesize`: landscape float pages (a `sidewaystable`), the
+        /// rows split across as many as it takes with the header repeated; `items` is then empty.
+        var landscape: [[VItem]] = []
     }
 
     // MARK: From the document model
@@ -69,7 +73,7 @@ final class TableComposer {
             if values.count >= 2 && values.allSatisfy(\.numeric) { alignments[j] = "r" }
         }
         return layout(GridTable(header: header.map { $0.map { cell($0, bold: true) } }, body: body, alignments: alignments,
-                                caption: t.caption), number: number)
+                                caption: t.caption), number: number, allowLandscape: true)
     }
 
     private func inlineOf(_ block: DocBlock, _ s: RunStyle) -> [InlinePiece] {
@@ -113,9 +117,11 @@ final class TableComposer {
         var size: SizeCommand
         var widths: [Double]
         var wrap: Bool
+        var landscape = false
     }
 
-    func layout(_ grid: GridTable, number: Int?) -> Result {
+    /// `allowLandscape`: a table of the document's main text (not a spreadsheet, list or column) may turn sideways.
+    func layout(_ grid: GridTable, number: Int?, allowLandscape: Bool = false) -> Result {
         let measure = composer.lineWidth(ctx)
         let columns = grid.alignments.count
         let sep = 6.0   // \tabcolsep
@@ -141,6 +147,15 @@ final class TableComposer {
             let natural = widths(size).natural
             if natural.reduce(0, +) <= available { plan = Plan(size: size, widths: natural, wrap: false); break }
         }
+        let landscapeMeasure = style.geometry.textHeight - 2 * sep * Double(columns)
+        // A table of sentences wraps them (as a `p{}` column would); a wide table of figures and short labels turns.
+        let hasProse = allRows.contains { $0.contains { $0.text.split(whereSeparator: \.isWhitespace).count >= 6 } }
+        if plan == nil && allowLandscape && !hasProse && ctx.listDepth == 0 && style.geometry.columns == 1 {
+            for size in sizes {
+                let natural = widths(size).natural
+                if natural.reduce(0, +) <= landscapeMeasure { plan = Plan(size: size, widths: natural, wrap: false, landscape: true); break }
+            }
+        }
         if plan == nil {
             for size in sizes {
                 let (natural, minimum) = widths(size)
@@ -162,7 +177,7 @@ final class TableComposer {
         let fontSize = style.size(p.size).size
         let strutHeight = 0.7 * leading, strutDepth = 0.3 * leading
         let tableWidth = p.widths.reduce(0, +) + 2 * sep * Double(columns)
-        let left = ctx.left + max(0, (measure - tableWidth) / 2)
+        let left = p.landscape ? max(0, (style.geometry.textHeight - tableWidth) / 2) : ctx.left + max(0, (measure - tableWidth) / 2)
         var xs: [Double] = []
         var x = sep
         for w in p.widths { xs.append(x); x += w + 2 * sep }
@@ -223,7 +238,9 @@ final class TableComposer {
         if let number, let caption = grid.caption {
             let saved = composer.items
             composer.items = []
-            composer.captionLines(label: "Table \(number)", caption, ctx)
+            var captionCtx = ctx
+            if p.landscape { captionCtx.right = ctx.right + style.geometry.columnWidth - style.geometry.textHeight }
+            composer.captionLines(label: "Table \(number)", caption, captionCtx)
             items += composer.items
             composer.items = saved
             items.append(.glue(Glue(width: style.abovecaptionskip)))
@@ -233,6 +250,11 @@ final class TableComposer {
             append(rowBox(h, header: true), into: &headerItems)
             headerItems += [.kern(above), .box(rule(light)), .kern(below)]
             prevDepth = nil
+        }
+        if p.landscape {
+            return Result(items: [], isFloat: true,
+                          landscape: landscapePages(caption: items, header: headerItems, body: grid.body.map { rowBox($0, header: false) },
+                                                    closing: [.kern(above), .box(rule(heavy))], leading: leading))
         }
         items += headerItems
         let tableID = composer.nextTableID()
@@ -247,6 +269,32 @@ final class TableComposer {
         composer.registerTableHeader(tableID, headerItems)
         let isFloat = number != nil && Composer.height(of: items) <= style.geometry.textHeight * style.topfraction
         return Result(items: items, isFloat: isFloat)
+    }
+
+    /// The rows of a sideways table in pages: each as tall as the text block is wide, the caption on the first, the
+    /// header on every one.
+    private func landscapePages(caption: [VItem], header: [VItem], body: [VBox], closing: [VItem], leading: Double) -> [[VItem]] {
+        let room = style.geometry.textWidth
+        var pages: [[VItem]] = []
+        var start = 0
+        while start < body.count {
+            let top = (pages.isEmpty ? caption : []) + header
+            func page(_ end: Int) -> [VItem] {
+                var list = top
+                var prevDepth: Double? = nil
+                for v in body[start..<end] {
+                    if let pd = prevDepth { let g = leading - pd - v.box.height; list.append(.glue(Glue(width: g < 0 ? 1 : g))) }
+                    list.append(.box(v))
+                    prevDepth = v.box.depth
+                }
+                return list + closing
+            }
+            var end = start + 1
+            while end < body.count && Composer.height(of: page(end + 1)) <= room { end += 1 }
+            pages.append(page(end))
+            start = end
+        }
+        return pages
     }
 
     private func cellStyle(_ size: SizeCommand) -> RunStyle {

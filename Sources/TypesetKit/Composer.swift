@@ -765,7 +765,9 @@ final class Composer {
         let number = t.caption != nil ? tableCount + 1 : nil
         if number != nil { tableCount += 1 }
         let result = TableComposer(composer: self, ctx: ctx).compose(t, number: number)
-        if result.isFloat {
+        if !result.landscape.isEmpty {
+            for page in result.landscape { items.append(.float(FloatBlock(items: page, height: Self.height(of: page), landscape: true))) }
+        } else if result.isFloat {
             items.append(.float(FloatBlock(items: result.items, height: Self.height(of: result.items))))
         } else {
             let spacing = listLevel(min(ctx.listDepth, 2))

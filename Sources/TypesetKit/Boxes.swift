@@ -85,6 +85,8 @@ struct VBox {
 struct FloatBlock {
     var items: [VItem]
     var height: Double
+    /// A sideways table: a float page of its own with the text block turned (`sidewaystable`).
+    var landscape = false
 }
 
 /// A heading's mark: bookmarks, the contents page and running heads read these.

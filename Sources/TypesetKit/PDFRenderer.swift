@@ -47,8 +47,10 @@ final class PDFRenderer {
         guard let ctx = CGContext(url as CFURL, mediaBox: &media, info as CFDictionary) else {
             throw TypesetError.cannotWrite(url.lastPathComponent)
         }
+        let turned = CGRect(x: 0, y: 0, width: media.height, height: media.width)
         for (index, page) in pages.enumerated() {
-            ctx.beginPDFPage([kCGPDFContextMediaBox: media] as CFDictionary)
+            var box = page.landscape ? turned : media
+            ctx.beginPDFPage([kCGPDFContextMediaBox: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary)
             ctx.textMatrix = .identity
             drawPage(page, ctx)
             ctx.endPDFPage()
@@ -70,18 +72,32 @@ final class PDFRenderer {
 
     // MARK: Pages
 
+    /// Where the text block is on a page: portrait as the geometry says, or a landscape float page's turned block centred.
+    private struct Frame {
+        var left: Double, top: Double, width: Double, height: Double, paperHeight: Double
+    }
+
+    private func frame(_ page: Page, odd: Bool) -> Frame {
+        let g = style.geometry
+        if page.landscape {
+            return Frame(left: (g.paper.height - g.textHeight) / 2, top: (g.paper.width - g.textWidth) / 2,
+                         width: g.textHeight, height: g.textWidth, paperHeight: g.paper.width)
+        }
+        return Frame(left: odd ? g.oddLeft : g.evenLeft, top: g.textTop, width: g.textWidth, height: g.textHeight, paperHeight: g.paper.height)
+    }
+
     private func drawPage(_ page: Page, _ ctx: CGContext) {
         let g = style.geometry
-        let height = g.paper.height
         let odd = page.number % 2 == 1 || !style.twoSided
-        let left = odd ? g.oddLeft : g.evenLeft
+        let f = frame(page, odd: odd)
+        let height = f.paperHeight, left = f.left
         openTags = []
         for p in page.header {
             syncTags(p.box.tags, ctx)
             draw(p.box.box.ops, x: left + p.x, y: height - (g.textTop + p.y), ctx)
         }
         closeTags(ctx)
-        let top = g.textTop + (page.number == 1 ? page.headerHeight : 0)
+        let top = f.top + (page.number == 1 ? page.headerHeight : 0)
         for (c, column) in page.columns.enumerated() {
             let colLeft = left + Double(c) * (g.columnWidth + g.columnSep)
             for p in column {
@@ -101,13 +117,14 @@ final class PDFRenderer {
                 closeTags(ctx)
             }
         }
-        drawFurniture(page, left: left, odd: odd, ctx)
+        drawFurniture(page, f, odd: odd, ctx)
     }
 
     /// Page numbers and running heads: `plain` centres the number in the footer, `\footskip` below the text block; the
     /// book's `headings` style puts it at the outer edge of the head with the chapter title in slanted capitals.
-    private func drawFurniture(_ page: Page, left: Double, odd: Bool, _ ctx: CGContext) {
+    private func drawFurniture(_ page: Page, _ f: Frame, odd: Bool, _ ctx: CGContext) {
         let g = style.geometry
+        let left = f.left
         let size = style.normal.size
         let roman = fonts.font(for: RunStyle(size: size, documentFont: documentFont))
         switch page.style {
@@ -115,17 +132,17 @@ final class PDFRenderer {
             return
         case .plain:
             let number = textLine("\(page.number)", font: roman)
-            drawLine(number, x: left + (g.textWidth - width(number)) / 2, y: g.paper.height - (g.textTop + g.textHeight + g.footSkip), ctx)
+            drawLine(number, x: left + (f.width - width(number)) / 2, y: f.paperHeight - (f.top + f.height + g.footSkip), ctx)
         case .headings:
-            let baseline = g.paper.height - (g.textTop - g.headSep)
+            let baseline = f.paperHeight - (f.top - g.headSep)
             let number = textLine("\(page.number)", font: roman)
             let head = page.runningHead.flatMap { $0.isEmpty ? nil : textLine($0, font: fonts.font(for: RunStyle(shape: .slanted, size: size, documentFont: documentFont))) }
             if odd {
                 if let head { drawLine(head, x: left, y: baseline, ctx) }
-                drawLine(number, x: left + g.textWidth - width(number), y: baseline, ctx)
+                drawLine(number, x: left + f.width - width(number), y: baseline, ctx)
             } else {
                 drawLine(number, x: left, y: baseline, ctx)
-                if let head { drawLine(head, x: left + g.textWidth - width(head), y: baseline, ctx) }
+                if let head { drawLine(head, x: left + f.width - width(head), y: baseline, ctx) }
             }
         }
     }

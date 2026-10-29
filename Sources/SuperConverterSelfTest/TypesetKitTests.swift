@@ -18,7 +18,7 @@ func registerTypesetKitTests() {
     SelfTest.cases.append(("TypesetKit.hyphenation", { typesetHyphenation() }))
     SelfTest.cases.append(("TypesetKit.prose", { typesetGolden("prose", TypesetSamples.prose) }))
     SelfTest.cases.append(("TypesetKit.math", { typesetGolden("math", TypesetSamples.math) }))
-    SelfTest.cases.append(("TypesetKit.tables", { typesetGolden("tables", TypesetSamples.tables) }))
+    SelfTest.cases.append(("TypesetKit.tables", { typesetTables() }))
     SelfTest.cases.append(("TypesetKit.longDocument", { typesetLongDocument() }))
     SelfTest.cases.append(("TypesetKit.looks", { typesetLooks() }))
     SelfTest.cases.append(("TypesetKit.workbook", { typesetWorkbook() }))
@@ -43,6 +43,26 @@ private func letter(_ o: TypesetOptions = TypesetOptions()) -> TypesetOptions {
     var o = o
     if o.paper == "auto" { o.paper = "letter" }
     return o
+}
+
+// MARK: - Tables
+
+/// Booktabs tables, and a table too wide even at \footnotesize on landscape pages of its own (quality §3.2).
+private func typesetTables() {
+    guard typesetGolden("tables", TypesetSamples.tables, minPages: 3) != nil,
+          let pdf = CGPDFDocument(typesetRenders.appendingPathComponent("tables.pdf") as CFURL) else { return }
+    let boxes = (1...pdf.numberOfPages).compactMap { pdf.page(at: $0)?.getBoxRect(.mediaBox) }
+    let landscape = boxes.indices.filter { boxes[$0].width > boxes[$0].height }
+    check(landscape.count >= 2, "the wide table takes landscape pages (\(landscape.count) of \(boxes.count))")
+    check(landscape.first.map { $0 > 0 } == true && landscape == Array(landscape[0]...landscape[landscape.count - 1]),
+          "the sideways pages follow the portrait text page, together")
+    if let i = landscape.first, let text = pdf.page(at: i + 1).flatMap({ PDFDocument(url: typesetRenders.appendingPathComponent("tables.pdf"))?.page(at: $0.pageNumber - 1)?.string }) {
+        check(text.contains("Station 1") && text.contains("Year"), "the landscape page holds the table with its header")
+    }
+    if landscape.count >= 2, let doc = PDFDocument(url: typesetRenders.appendingPathComponent("tables.pdf")),
+       let second = doc.page(at: landscape[1])?.string {
+        check(second.contains("Year") && !second.contains("Monthly mean"), "later landscape pages repeat the header, not the caption")
+    }
 }
 
 // MARK: - Hyphenation
@@ -486,8 +506,27 @@ private enum TypesetSamples {
                 [cell("Penalty"), cell("The cost of breaking at a particular place, such as after a hyphen or before a display.")],
                 [cell("Demerits"), cell("The quantity the line breaker minimises over the whole paragraph.")],
             ], alignments: [.start, .start])),
-            para("Tables of many rows break across pages and repeat their header."),
+            para("Tables of many rows break across pages and repeat their header. Table 2 is too wide for the text block even in footnote size, so it turns sideways onto pages of its own while the text goes on."),
+            .table(wideTable),
+            para("The text continues after the sideways table."),
         ])
+
+    /// Fourteen columns of figures over forty rows: wider than 345 pt at \footnotesize, narrower than 550 pt, taller
+    /// than one landscape page.
+    static let wideTable: DocTable = {
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Year"]
+        var rows: [[DocTable.Cell]] = [[cell("Station", header: true)] + months.map { cell($0, header: true) }]
+        for r in 1...40 {
+            var row = [cell("Station \(r)")]
+            for c in 1...13 {
+                let value = Double((r * 37) % 97 + (c * 13) % 31) / 3
+                row.append(cell(String(format: "%.1f", value)))
+            }
+            rows.append(row)
+        }
+        return DocTable(rows: rows, caption: md("Monthly mean temperatures (°C) at forty stations"),
+                        alignments: [.start] + Array(repeating: .end, count: 13))
+    }()
 
     static let workbook = Workbook(sheets: [
         Sheet(name: "Results", rows: [
