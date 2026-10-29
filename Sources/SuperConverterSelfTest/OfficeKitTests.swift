@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
-import OfficeKit
+@testable import OfficeKit
 import PDFKit
 import SuperConverterCore
 
@@ -162,60 +162,83 @@ private func officeSampleDeck() -> Deck {
                 theme: DeckTheme(headingFont: "Georgia", bodyFont: "Arial", accents: ["#112233", "#445566", "#778899", "#AABBCC", "#DDEEFF", "#FF00FF"]))
 }
 
-/// A hand-made xlsx with a shared formula, an inline string and a boolean, in the shape Excel writes them.
-private func officeHandMadeXLSX() -> Data {
-    var zip = ZipHelper()
+/// A hand-made xlsx with a shared formula, an inline string and a boolean, in the shape Excel writes them; `sheet` and
+/// `styles` replace the worksheet and add a style sheet.
+private func officeHandMadeXLSX(sheet: String? = nil, styles: String? = nil) -> Data {
+    var zip = ZipWriter()
     zip.add("[Content_Types].xml", #"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>"#)
     zip.add("_rels/.rels", #"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#)
     zip.add("xl/workbook.xml", #"<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#)
     zip.add("xl/_rels/workbook.xml.rels", #"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#)
-    zip.add("xl/worksheets/sheet1.xml", #"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f t="shared" ref="B1:B3" si="0">A1*2+$A$1</f><v>3</v></c><c r="C1" t="inlineStr"><is><t>note</t></is></c><c r="D1" t="b"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c><c r="B2"><f t="shared" si="0"/><v>6</v></c></row><row r="3"><c r="A3"><v>3</v></c><c r="B3"><f t="shared" si="0"/><v>9</v></c></row></sheetData></worksheet>"#)
+    zip.add("xl/worksheets/sheet1.xml", sheet ?? #"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f t="shared" ref="B1:B3" si="0">A1*2+$A$1</f><v>3</v></c><c r="C1" t="inlineStr"><is><t>note</t></is></c><c r="D1" t="b"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c><c r="B2"><f t="shared" si="0"/><v>6</v></c></row><row r="3"><c r="A3"><v>3</v></c><c r="B3"><f t="shared" si="0"/><v>9</v></c></row></sheetData></worksheet>"#)
+    if let styles { zip.add("xl/styles.xml", styles) }
     return zip.finish()
 }
 
-/// Test-side ZIP builder (stored entries): the module's own writer is internal.
-private struct ZipHelper {
-    private var body = Data(), directory = Data(), count = 0
-    mutating func add(_ path: String, _ text: String) { add(path, Data(text.utf8)) }
-    mutating func add(_ path: String, _ data: Data) {
-        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)] }
-        func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24 & 0xFF)] }
-        var crc: UInt32 = 0xFFFF_FFFF
-        for byte in data {
-            crc ^= UInt32(byte)
-            for _ in 0..<8 { crc = crc & 1 != 0 ? 0xEDB8_8320 ^ (crc >> 1) : crc >> 1 }
-        }
-        crc = ~crc
-        let name = Data(path.utf8), offset = UInt32(body.count)
-        body.append(contentsOf: le32(0x0403_4B50) + le16(20) + le16(0) + le16(0) + le16(0) + le16(0x21) + le32(crc) + le32(UInt32(data.count)) + le32(UInt32(data.count)) + le16(name.count) + le16(0))
-        body.append(name); body.append(data)
-        directory.append(contentsOf: le32(0x0201_4B50) + le16(20) + le16(20) + le16(0) + le16(0) + le16(0) + le16(0x21) + le32(crc) + le32(UInt32(data.count)) + le32(UInt32(data.count))
-                         + le16(name.count) + le16(0) + le16(0) + le16(0) + le16(0) + le32(0) + le32(offset))
-        directory.append(name)
-        count += 1
+/// Packages whose numbers are hostile where the readers turn them into counts, sizes and Ints, each read once as it is
+/// by the fuzz case: rows and repeats near Int.max or below zero, a cell at the last column of 400 rows (a grid past the
+/// cell limit), widths that each span the sheet, NaN and 1e300 through fraction, exponent and fraction-of-a-second
+/// formats, digit counts of 10¹¹, table spans and list numbering near Int.max, and an arc of 1e308 degrees.
+private func officeHostileXLSX() -> Data {
+    let cols = String(repeating: #"<col min="1" max="16384" width="9"/>"#, count: 3_000)
+    let far = (2...401).map { #"<row r="\#($0)"><c r="XFD\#($0)"><v>1</v></c></row>"# }.joined()
+    let sheet = #"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>\#(cols)</cols><sheetData>"#
+        + #"<row r="1"><c r="A1" s="1"><v>1e300</v></c><c r="B1" s="2"><v>1e307</v></c><c r="C1" s="3"><v>0.5</v></c><c r="D1" s="4"><v>0.5</v></c><c r="E1" s="1"><v>NaN</v></c></row>"#
+        + far + #"<row r="9223372036854775807"/><row/><row/><row r="-9223372036854775808"><c><v>2</v></c></row></sheetData></worksheet>"#
+    let styles = #"<?xml version="1.0"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="4">"#
+        + ##"<numFmt numFmtId="164" formatCode="# ?/?"/><numFmt numFmtId="165" formatCode="0.00E+00%"/><numFmt numFmtId="166" formatCode="?/??????????????????????"/>"##
+        + #"<numFmt numFmtId="167" formatCode="[h]:mm:ss.00000000000000000000"/></numFmts><cellXfs count="5"><xf numFmtId="0"/><xf numFmtId="164"/><xf numFmtId="165"/>"#
+        + #"<xf numFmtId="166"/><xf numFmtId="167"/></cellXfs></styleSheet>"#
+    return officeHandMadeXLSX(sheet: sheet, styles: styles)
+}
+
+private func officeHostileODS() -> Data {
+    var zip = ZipWriter()
+    zip.add("mimetype", "application/vnd.oasis.opendocument.spreadsheet", compress: false)
+    zip.add("content.xml", #"<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" "#
+        + #"xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" "#
+        + #"xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"><office:automatic-styles>"#
+        + #"<number:number-style style:name="N1"><number:number number:min-integer-digits="99999999999" number:decimal-places="99999999999"/></number:number-style>"#
+        + #"<style:style style:name="ce1" style:family="table-cell" style:data-style-name="N1"/></office:automatic-styles><office:body><office:spreadsheet><table:table table:name="S">"#
+        + #"<table:table-column table:number-columns-repeated="-1"/><table:table-column table:number-columns-repeated="99999999"/><table:table-column table:number-columns-repeated="99999999"/>"#
+        + #"<table:table-row table:number-rows-repeated="-5"><table:table-cell table:number-columns-repeated="-3" office:value-type="float" office:value="1" "#
+        + #"table:number-columns-spanned="9223372036854775807" table:number-rows-spanned="9223372036854775807"><text:p>a<text:s text:c="-1"/></text:p></table:table-cell></table:table-row>"#
+        + #"<table:table-row><table:table-cell office:value-type="date" office:date-value=""/><table:table-cell office:value-type="date" office:date-value="2024-01-01T99999999999999999999:00"/>"#
+        + #"<table:table-cell table:style-name="ce1" office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>"#)
+    return zip.finish()
+}
+
+private func officeHostilePPTX() -> Data {
+    let written = PPTXWriter.write(officeSampleDeck(), title: "Hostile")
+    guard let archive = try? ZipArchive(data: written) else { return written }
+    var zip = ZipWriter()
+    for entry in archive.entries {
+        guard let data = try? archive.data(for: entry) else { continue }
+        var text = String(decoding: data, as: UTF8.self)
+        text = text.replacingOccurrences(of: "</a:path>", with: #"<a:arcTo wR="10" hR="10" stAng="0" swAng="1e308"/></a:path>"#)
+            .replacingOccurrences(of: "<a:buChar[^>]*/>", with: #"<a:buAutoNum type="arabicPeriod" startAt="9223372036854775807"/>"#, options: .regularExpression)
+            .replacingOccurrences(of: "<a:tc>", with: #"<a:tc gridSpan="9223372036854775807" rowSpan="9223372036854775807">"#)
+        zip.add(entry.path, entry.path.hasSuffix(".xml") ? Data(text.utf8) : data)
     }
-    func finish() -> Data {
-        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)] }
-        func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24 & 0xFF)] }
-        var out = body
-        out.append(directory)
-        out.append(contentsOf: le32(0x0605_4B50) + le16(0) + le16(0) + le16(count) + le16(count) + le32(UInt32(directory.count)) + le32(UInt32(body.count)) + le16(0))
-        return out
-    }
-    /// The file names inside a ZIP and the text of one entry, read with the system's `unzip -p` is avoided: parse the central directory.
-    static func names(_ data: Data) -> [String] {
-        var names: [String] = []
-        guard let eocd = (0..<max(data.count - 21, 0)).reversed().first(where: { data[$0] == 0x50 && data[$0 + 1] == 0x4B && data[$0 + 2] == 5 && data[$0 + 3] == 6 }) else { return [] }
-        func u16(_ o: Int) -> Int { Int(data[o]) | Int(data[o + 1]) << 8 }
-        func u32(_ o: Int) -> Int { u16(o) | u16(o + 2) << 16 }
-        var p = u32(eocd + 16)
-        for _ in 0..<u16(eocd + 10) {
-            let n = u16(p + 28), e = u16(p + 30), c = u16(p + 32)
-            names.append(String(decoding: data[(p + 46)..<(p + 46 + n)], as: UTF8.self))
-            p += 46 + n + e + c
-        }
-        return names
-    }
+    return zip.finish()
+}
+
+/// The file names inside a ZIP, in the central directory's order.
+private func officeNames(_ data: Data) -> [String] { (try? ZipArchive(data: data))?.entries.map(\.path) ?? [] }
+
+/// A fuzz seed for a ZIP package (XLSX, ODS, PPTX, ODF): three inputs in four damage one member, unpacked with the module's
+/// ZipArchive and re-zipped with its ZipWriter, so the damage reaches the XML readers; the rest damage the package's own
+/// bytes for the ZIP reader.
+private func officePackageSeed(_ name: String, _ ext: String, _ data: Data, nesting: [String] = ["<a>"]) -> FuzzSeed {
+    let bytes = [UInt8](data)
+    let archive = try? ZipArchive(data: data)
+    let entries = (archive?.entries ?? []).compactMap { entry in (try? archive?.data(for: entry)).flatMap { $0 }.map { (path: entry.path, bytes: [UInt8]($0)) } }
+    return FuzzSeed(name: name, ext: ext, bytes: bytes, mutate: { rng in
+        guard Int.random(in: 0..<4, using: &rng) != 0 else { return Fuzz.mutate(bytes, nesting: nesting, using: &rng) }
+        var zip = ZipWriter()
+        for entry in Fuzz.mutateEntries(entries, nesting: nesting, using: &rng) { zip.add(entry.path, Data(entry.bytes), compress: entry.path != "mimetype") }
+        return [UInt8](zip.finish())
+    }, nesting: nesting)
 }
 
 @MainActor private func officeCSVWorkbook(_ data: Data, name: String = "t.csv") -> Workbook? {
@@ -327,7 +350,7 @@ func registerOfficeKitTests() {
         let book = Workbook(sheets: [one, two])
         let zipped = officeURL(officeRun(.csvWriter, .workbook, "csv", .workbook(book), source: src))
         check(zipped?.pathExtension == "zip", "several sheets are zipped by default")
-        check(zipped.flatMap { try? Data(contentsOf: $0) }.map(ZipHelper.names) == ["multi - One.csv", "multi - Two2.csv"], "one CSV per sheet: \(String(describing: zipped.flatMap { try? Data(contentsOf: $0) }.map(ZipHelper.names)))")
+        check(zipped.flatMap { try? Data(contentsOf: $0) }.map(officeNames) == ["multi - One.csv", "multi - Two2.csv"], "one CSV per sheet: \(String(describing: zipped.flatMap { try? Data(contentsOf: $0) }.map(officeNames)))")
         let chosen = officeURL(officeRun(.csvWriter, .workbook, "csv", .workbook(book), source: src, options: ["sheet": "Two/2"]))
         check(chosen.flatMap { try? String(contentsOf: $0, encoding: .utf8) } == "b,2\r\n", "the Sheets option picks a sheet by name")
         let byNumber = officeURL(officeRun(.csvWriter, .workbook, "csv", .workbook(book), source: src, options: ["sheet": "1"]))
@@ -354,7 +377,7 @@ func registerOfficeKitTests() {
         let src = officeFile(Data(), "sample.csv")
         guard let url = officeURL(officeRun(.xlsxWriter, .workbook, "xlsx", .workbook(book), source: src, options: ["formulas": "keep"])),
               let data = try? Data(contentsOf: url) else { return }
-        let names = ZipHelper.names(data)
+        let names = officeNames(data)
         check(names.first == "[Content_Types].xml" && names.contains("xl/workbook.xml") && names.contains("xl/styles.xml") && names.contains("xl/sharedStrings.xml"), "package parts \(names)")
         guard let out = officeReadWorkbook(.xlsxReader, "xlsx", url), let back = officeWorkbook(out) else { return }
         officeCompare(book, back, "xlsx")
@@ -408,7 +431,7 @@ func registerOfficeKitTests() {
         let src = officeFile(Data(), "sample.csv")
         guard let url = officeURL(officeRun(.odsWriter, .workbook, "ods", .workbook(book), source: src, options: ["formulas": "keep"])),
               let data = try? Data(contentsOf: url) else { return }
-        let names = ZipHelper.names(data)
+        let names = officeNames(data)
         check(names.first == "mimetype" && names.contains("content.xml") && names.contains("META-INF/manifest.xml"), "package parts \(names)")
         check(data.range(of: Data("application/vnd.oasis.opendocument.spreadsheet".utf8)).map { $0.lowerBound < 80 } == true, "the mimetype is first and stored")
         guard let out = officeReadWorkbook(.odsReader, "ods", url), let back = officeWorkbook(out) else { return }
@@ -468,7 +491,7 @@ func registerOfficeKitTests() {
         let deck = officeSampleDeck()
         let src = officeFile(Data(), "talk.pdf")
         guard let url = officeURL(officeRun(.pptxWriter, .deck, "pptx", .deck(deck), source: src)), let data = try? Data(contentsOf: url) else { return }
-        let names = ZipHelper.names(data)
+        let names = officeNames(data)
         for part in ["ppt/presentation.xml", "ppt/slides/slide1.xml", "ppt/slideMasters/slideMaster1.xml", "ppt/theme/theme1.xml", "ppt/notesSlides/notesSlide1.xml",
                      "ppt/notesMasters/notesMaster1.xml", "ppt/media/image1.png"] { check(names.contains(part), "\(part) is in the package") }
 
@@ -520,7 +543,7 @@ func registerOfficeKitTests() {
         let image = officePixels(width: 5, height: 4)
         let src = officeFile(Data(), "pic.png")
         guard let url = officeURL(officeRun(.odfWriter, .imageAsset, "odd", .image(image), source: src)), let data = try? Data(contentsOf: url) else { return }
-        let names = ZipHelper.names(data)
+        let names = officeNames(data)
         check(names.first == "mimetype" && names.contains("Pictures/image1.png") && names.contains("content.xml"), "package parts \(names)")
         guard let read = officeRun(.odfReader, "odd", .imageAsset, .file(url), source: url), case .image(let back) = read.value, let frame = back.frames.first else { return }
         check(frame.width == 5 && frame.height == 4, "size \(frame.width)×\(frame.height)")
@@ -535,7 +558,7 @@ func registerOfficeKitTests() {
     // MARK: Repackaging
     SelfTest.cases.append(("OfficeKit.ooxmlRepackage", {
         OfficeKitModule.install()
-        var zip = ZipHelper()
+        var zip = ZipWriter()
         zip.add("[Content_Types].xml", #"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#)
         zip.add("_rels/.rels", #"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#)
         zip.add("xl/_rels/workbook.xml.rels", #"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/></Relationships>"#)
@@ -545,7 +568,7 @@ func registerOfficeKitTests() {
         let url = officeFile(zip.finish(), "macros.xlsm")
         guard let out = officeRun(.ooxmlRepackage, .format("xlsm"), .format("xlsx"), .file(url), source: url), let result = officeURL(out), let data = try? Data(contentsOf: result) else { return }
         check(out.lossNotes.contains { $0.kind == .macrosDropped }, "macros dropped is reported")
-        let names = ZipHelper.names(data)
+        let names = officeNames(data)
         check(!names.contains("xl/vbaProject.bin") && names.contains("xl/worksheets/sheet1.xml") && names.first == "[Content_Types].xml", "macro part gone, others kept \(names)")
         let text = String(decoding: data, as: UTF8.self)
         check(!text.contains("macroEnabled") && !text.contains("vbaProject"), "content types and relationships are clean")
@@ -559,5 +582,42 @@ func registerOfficeKitTests() {
         if case .failure(let error)? = complete(10, { try await officeConverter(.xlsxWriter)!.run(Step(.xlsxWriter, .workbook, "xlsx"), input: .workbook(Workbook(sheets: [])), context: context) }) {
             check((error as? ConversionError) == .cancelled, "cancelled before any work: \(error)")
         } else { check(false, "a cancelled step throws") }
+    }))
+    SelfTest.cases.append(("OfficeKit.damagedInputNeverCrashes", {
+        OfficeKitModule.install()
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let book = officeSampleWorkbook()
+        var seeds = [officePackageSeed("xlsx", "xlsx", XLSXWriter.write(book)), officePackageSeed("xlsx-hand", "xlsx", officeHandMadeXLSX()),
+                     officePackageSeed("ods", "ods", ODSWriter.write(book)), officePackageSeed("pptx", "pptx", PPTXWriter.write(officeSampleDeck(), title: "Fuzz"))]
+        if let picture = try? ODFPicture.write(officePixels(width: 5, height: 4)) { seeds.append(officePackageSeed("odd", "odd", picture)) }
+        for (name, ext) in [("Tests/Corpus/generated/sample.xlsx", "xlsx"), ("Tests/Corpus/generated/sample.csv", "csv"), ("scripts/vendor/smoke/fixture.xls", "xls")] {
+            guard let data = try? Data(contentsOf: repository.appendingPathComponent(name)) else { check(false, "\(name) is in the repository"); continue }
+            seeds.append(ext == "xlsx" ? officePackageSeed("corpus-xlsx", ext, data) : FuzzSeed(name: "corpus-\(ext)", ext: ext, bytes: [UInt8](data), nesting: ["\""]))
+        }
+        // The hostile ODS and PPTX are fuzzed too; the XLSX, whose grid fills the cell limit, is read once (it is slow).
+        let hostile = [officePackageSeed("hostile-ods", "ods", officeHostileODS()), officePackageSeed("hostile-pptx", "pptx", officeHostilePPTX())]
+        let folder = officeWorkFolder("fuzz")
+        /// Every reader the app runs on the format: a thrown error is a clean failure, only a trap or a hang is not.
+        @MainActor func read(_ url: URL, _ ext: String) async {
+            let format = FormatID(ext)
+            let steps: [(EngineID, StepEndpoint)] = switch ext {
+            case "csv": [(.csvReader, .workbook)]
+            case "xlsx": [(.xlsxReader, .workbook)]
+            case "ods": [(.odsReader, .workbook)]
+            case "xls": [(.xlsReader, .workbook)]
+            case "odd": [(.odfReader, .imageAsset)]
+            default: [(.slideReader, .docModel), (.slideRenderer, "pdf")]
+            }
+            for (engine, to) in steps {
+                let context = StepContext(workFolder: folder, source: url, sourceFormat: format, targetFormat: FormatID(to.description))
+                _ = try? await officeConverter(engine)!.run(Step(engine, .format(format), to), input: .file(url), context: context)
+            }
+        }
+        for (name, ext, data) in hostile.map({ ($0.name, $0.ext, Data($0.bytes)) }) + [("hostile-xlsx", "xlsx", officeHostileXLSX())] {
+            let url = officeFile(data, "hostile.\(ext)")
+            check(complete(30, { await read(url, ext) }) != nil, "\(name) is read in time")
+        }
+        let ran = fuzzNeverCrashes("OfficeKit.damagedInputNeverCrashes", seeds: seeds + hostile, count: 45) { url, seed in await read(url, seed.ext) }
+        check(ran == 45 * 10 && seeds.count == 8, "every damaged input was handled without a crash (\(ran))")
     }))
 }
