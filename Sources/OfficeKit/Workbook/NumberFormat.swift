@@ -112,6 +112,7 @@ struct SheetNumberFormat: Sendable {
 
     /// Excel's "General": up to 11 significant characters, scientific for very large or small numbers.
     static func general(_ value: Double) -> String {
+        guard value.isFinite else { return "#NUM!" }
         let magnitude = abs(value)
         if magnitude == 0 { return "0" }
         let decimal = "."
@@ -228,7 +229,7 @@ struct SheetNumberFormat: Sendable {
         for _ in 0..<min(scaleCommas, 4) { number /= 1000 }
 
         var exponent = 0
-        if exponentIndex != nil, number != 0 {
+        if exponentIndex != nil, number != 0, number.isFinite {
             let intCount = max(intPlaceholders.count, 1)
             // "##0.0E+0": exponents in multiples of the integer placeholders' count (engineering notation).
             let step = intPlaceholders.count > 1 && intPlaceholders.first == "#" ? intCount : 1
@@ -300,13 +301,16 @@ struct SheetNumberFormat: Sendable {
             return Int(literal)
         }()
         let magnitude = abs(value)
+        // The whole part and the numerator become Ints; past 10¹⁵ a fraction has no digits left to show anyway.
+        guard magnitude < 1e15 else { return general(value) }
         var whole = integerEnd != nil ? floor(magnitude) : 0
         let fraction = magnitude - whole
         var numerator = 0, denominator = 1
-        if let fixed = fixedDenominator, fixed > 0 {
+        if let fixed = fixedDenominator, fixed > 0, fixed < 1_000_000_000 {
             numerator = Int((fraction * Double(fixed)).rounded()); denominator = fixed
         } else {
-            let limit = max(Int(pow(10, Double(max(denominatorDigits, 1)))) - 1, 1)
+            // Up to five denominator digits: "?/????????????????????" would overflow the limit and search for ever.
+            let limit = max(Int(pow(10, Double(min(max(denominatorDigits, 1), 5)))) - 1, 1)
             var best = (n: 0, d: 1, error: fraction)
             for d in 1...limit {
                 let n = Int((fraction * Double(d)).rounded())
@@ -474,7 +478,9 @@ struct SheetNumberFormat: Sendable {
             case .ampm(let full):
                 let pm = p.hour >= 12
                 out += full ? (pm ? symbols.pm : symbols.am) : (pm ? "P" : "A")
-            case .fraction(let digits):
+            case .fraction(let shown):
+                // Fractions of a second to nine digits, a nanosecond: more would overflow the Int they are rounded to.
+                let digits = min(shown, 9)
                 let value = Int((p.fraction * pow(10, Double(digits))).rounded())
                 out += Self.decimalSeparator + String(format: "%0\(digits)d", min(value, Int(pow(10, Double(digits))) - 1))
             case .elapsed(let letter, let width):
