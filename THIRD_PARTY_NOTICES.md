@@ -7283,6 +7283,41 @@ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR B
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+## Bundled fonts, MathJax and hyphenation patterns (TypesetKit, MathKit)
+
+Copied unmodified into `Contents/Resources/{Fonts,MathJax,Hyphenation}`; versions, sources and SHA-256 are in each
+folder's `README.md`, and each folder carries the full licence texts.
+
+### Fonts (`Resources/Fonts/`)
+
+- **Latin Modern** 2.004 and **Latin Modern Math** 1.959 — GUST Font License 1.0 (`GUST-FONT-LICENSE.txt`).
+  Copyright 2003–2021 B. Jackowski and J. M. Nowacki (GUST e-foundry), based on Donald E. Knuth's Computer Modern.
+- **CMU** (Computer Modern Unicode) 0.7.0 — SIL Open Font License 1.1 (`CMU/OFL.txt`). Copyright Donald E. Knuth
+  (cm fonts), Jörg Knappen and Norbert Schwarz (ec fonts), Andrey V. Panov and contributors.
+- **STIX Two Math** 2.12 — SIL Open Font License 1.1 (`STIXTwo/OFL.txt`). Copyright 2001–2021 The STIX Fonts Project
+  Authors. STIX Fonts is a trademark of The Institute of Electrical and Electronics Engineers, Inc.
+- **Carlito** 1.103 — SIL Open Font License 1.1 (`Carlito/OFL.txt`). Copyright 2010–2013 tyPoland Łukasz Dziedzic,
+  Reserved Font Name "Carlito".
+- **Caladea** 1.002 — Apache License 2.0 (`Caladea/LICENSE-2.0.txt`). Copyright 2012 Huerta Tipografía.
+
+### MathJax (`Resources/MathJax/`)
+
+**MathJax** 3.2.2 (`mathjax-full`), Apache License 2.0 (`MathJax/LICENSE`), Copyright (c) 2009–2022 The MathJax
+Consortium; with **mhchemParser** 4.2.1, Apache License 2.0, Copyright (c) 2015–2023 Martin Hensel. Bundled into one
+script with MathKit's entry point (`entry.js`); the bundle keeps their licence notices.
+
+### Hyphenation patterns (`Resources/Hyphenation/`)
+
+TeX hyphenation patterns from hyph-utf8 (https://github.com/hyphenation/tex-hyphen, commit `5684c0f`), each file
+unmodified with its copyright and licence header: `hyph-en-us.tex` (Gerard D. C. Kuiken, after Frank M. Liang; "Copying and distribution of this
+file, with or without modification, are permitted in any medium without royalty provided the copyright notice and this
+notice are preserved."), `hyph-en-gb.tex` (Dominik Wujastyk, Graham Toal; MIT), `hyph-de-1996.tex` (Deutschsprachige
+Trennmustermannschaft; MIT), `hyph-es.tex` (Javier Bezos, CervanTeX; MIT), `hyph-fr.tex` (Daniel Flipo, Bernard Gaulle,
+Arthur Reutenauer; MIT), `hyph-nl.tex` (Piet Tutelaers; MIT), `hyph-pl.tex` (Hanna Kołodziejska, Bogusław Jackowski,
+Marek Ryćko; MIT), `hyph-pt.tex` (Pedro J. de Rezende, J. Joao Dias Almeida, Leonardo Araujo, Aline Benevides;
+BSD 3-clause), `hyph-uk.tex` (Maksym Polyakov; MIT), `hyph-da.tex` (Frank Jensen; MIT), `hyph-el-monoton.tex`
+(Dimitrios Filippou; MIT). The MIT and BSD texts are in each file's header.
+
 ## The app
 
 The app target, the Finder Quick Actions, the build and release scripts and the app icon contain no third-party code or
