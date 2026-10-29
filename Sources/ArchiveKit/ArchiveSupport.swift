@@ -28,7 +28,7 @@ public enum ArchiveError: Error, Equatable, Sendable {
         case .damaged: .damaged(format)
         case .tooLarge(let why): .failed(why)
         case .looksLikeBomb:
-            .needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?",
+            .needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?",
                                proceed: .extractAnyway, option: ExtractionLimits.extractAnywayOption)
         case .notEnoughSpace(let needed): .notEnoughSpace(volume: "this Mac", needed: needed)
         case .unsupported(let why): .failed(why)

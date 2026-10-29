@@ -761,7 +761,7 @@ func registerConvertKitTests() {
         let folder = tempFolder("cli-bomb")
         let zip = folder.appendingPathComponent("Huge.zip")
         try? TestZip.write([("a.txt", "a")], to: zip)
-        let question = ConversionError.needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
+        let question = ConversionError.needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
         let probe = Probe()
         let stack = Stack({ step, input, context in
             if context.options["extractAnyway"]?.bool != true { throw question }
@@ -778,7 +778,7 @@ func registerConvertKitTests() {
         }
         let asked = sconv([zip.path, "--to", "tar"])
         check(asked.status == 2 && asked.out.isEmpty, "a question is exit status 2, nothing written: \(asked)")
-        check(asked.err == "Huge.zip: This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway? To go ahead, run again with --option extractAnyway=yes.\n",
+        check(asked.err == "Huge.zip: This archive unpacks to over 1,000 times its size — extract it anyway? To go ahead, run again with --option extractAnyway=yes.\n",
               "it says what to pass: \(asked.err)")
         let agreed = sconv([zip.path, "--to", "tar", "--option", "extractAnyway=yes"])
         check(agreed.status == 0 && agreed.out == folder.appendingPathComponent("Huge.tar").path + "\n", "--option extractAnyway=yes goes ahead: \(agreed)")

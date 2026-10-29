@@ -443,7 +443,7 @@ func registerArchiveKitTests() {
         guard case .needsConfirmation(let question, .extractAnyway, "extractAnyway") = ArchiveError.looksLikeBomb.conversionError(for: "zip") else {
             check(false, "a bomb maps to a question with Extract Anyway"); return
         }
-        check(question.hasSuffix("Extract it anyway?") && question.contains("decompression bomb"), "the question: \(question)")
+        check(question == "This archive unpacks to over 1,000 times its size — extract it anyway?", "the question (ux §7.2, one line): \(question)")
         check(ExtractionLimits().ratioFloor == 10_000_000_000 && ExtractionLimits().maxRatio == 1000, "asks past 1000:1 and 10 GB (quality §8)")
         check(!ExtractionLimits().looksLikeBomb(expanded: 9_999_999_999, archiveSize: 1) && ExtractionLimits().looksLikeBomb(expanded: 10_000_000_001, archiveSize: 10_000_000),
               "both the size and the ratio must be over")

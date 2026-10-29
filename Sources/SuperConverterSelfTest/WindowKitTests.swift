@@ -320,9 +320,9 @@ private func pump(_ seconds: TimeInterval = 0.05) { RunLoop.main.run(until: Date
     // same job again with the option the question names.
     f.vm.add([f.file("Huge.zip", bytes: 10_000)])
     let bomb = f.card("Huge.zip")
-    let question = ConversionError.needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
+    let question = ConversionError.needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
     bomb.state = .failed(question)
-    check(Strings.problem(question).fix == .extractAnyway && Strings.problem(question).message.hasSuffix("Extract it anyway?"), "the card asks, with Extract Anyway")
+    check(Strings.problem(question).fix == .extractAnyway && Strings.problem(question).message.hasSuffix("extract it anyway?"), "the card asks, with Extract Anyway")
     let queued = f.queue.enqueued.count
     f.vm.perform(.extractAnyway, for: bomb)
     check(f.queue.enqueued.count == queued + 1 && f.queue.enqueued.last?.plan.request.options["extractAnyway"] == .bool(true), "Extract Anyway re-runs it with the option set")

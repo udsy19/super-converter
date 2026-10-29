@@ -458,7 +458,7 @@ private func coreStrings() {
         .helperTimedOut(.libreoffice, seconds: 120), .notEnoughSpace(volume: "Macintosh HD", needed: 1_200_000_000),
         .folderNotWritable(name: "Shared"), .notReadableYet, .classicDWF, .impossiblePair(reason: "GIF pictures have no sound"),
         .unsupportedPair(from: "gif", to: "mp3"), .cancelled,
-        .needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?",
+        .needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?",
                            proceed: .extractAnyway, option: "extractAnyway"),
     ]
     lines += errors.map { Strings.problem($0, libreOfficeInstalled: true).message }

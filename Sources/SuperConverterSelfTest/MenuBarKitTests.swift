@@ -292,13 +292,13 @@ private struct MenuBarFixture {
     // A question (a decompression bomb asks first, quality §8) is passed on as its own notification, not as a failure; its
     // click opens the file's card in the window, which asks it.
     let zip = f.file("Huge.zip")
-    let question = ConversionError.needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
+    let question = ConversionError.needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
     f.queue.outcome = { _ in .failure(question) }
     let posted = f.notifier.posted.count
     _ = complete(10) { await f.converter.convert([zip], target: "tar").value }
     check(f.notifier.asked.count == 1 && f.notifier.posted.count == posted, "one question, no Done notification")
     if let asked = f.notifier.asked.first {
-        check(asked.title == "“Huge.zip”" && asked.body.hasSuffix("Extract it anyway?") && asked.target == "tar", "it names the file and asks: \(asked.body)")
+        check(asked.title == "“Huge.zip”" && asked.body.hasSuffix("extract it anyway?") && asked.target == "tar", "it names the file and asks: \(asked.body)")
         let window = FakeWindow()
         Services.window = window
         asked.open()
