@@ -473,6 +473,27 @@ def ace_bytes(items) -> bytes:
     return out
 
 
+BOMB_BYTES = 10_200_000_000
+
+
+def bomb_tar_bz2() -> bytes:
+    """A decompression bomb (quality §8 "Safety"): a TAR of one file of zeros past 10 GB, bzip2'd to a few KB (far over
+    1000:1). Everything after the header is zeros, so it is streamed into the compressor rather than built."""
+    info = tarfile.TarInfo("zeros.bin")
+    info.size, info.mtime = BOMB_BYTES, MTIME
+    header = info.tobuf(tarfile.PAX_FORMAT)   # past 8 GB the size needs a PAX record
+    total = -(-(len(header) + BOMB_BYTES + 1024) // tarfile.RECORDSIZE) * tarfile.RECORDSIZE   # data, end blocks, record
+    compressor = bz2.BZ2Compressor(9)
+    out = [compressor.compress(header)]
+    zeros = bytes(4 << 20)
+    left = total - len(header)
+    while left > 0:
+        out.append(compressor.compress(zeros[:min(left, len(zeros))]))
+        left -= len(zeros)
+    out.append(compressor.flush())
+    return b"".join(out)
+
+
 def eml_bytes() -> bytes:
     import base64
     one, two = FULL[5].data, FULL[2].data
@@ -606,6 +627,10 @@ def corpus(out: Path) -> None:
         info.size, info.mtime = 5, MTIME
         t.addfile(info, io.BytesIO(b"safe\n"))
     put("link-escape.tar", escape.getvalue(), [Item("outside", "directory"), Item("outside/passwd", data=b"evil"), Item("safe.txt", data=b"safe\n")])
+    # A decompression bomb asks first. Its one file is too big for a manifest: the bench checks its name and size.
+    bomb = bomb_tar_bz2()
+    (out / "bomb.tar.bz2").write_bytes(bomb)
+    written["bomb.tar.bz2"] = len(bomb)
 
     # Made by the bundled 7zz: 7Z, TAR in 7Z, AES-256 ZIP, ZipCrypto ZIP, 7Z with encrypted names.
     if SEVENZIP.exists():

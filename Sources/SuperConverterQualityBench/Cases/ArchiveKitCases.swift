@@ -73,6 +73,23 @@ enum ArchiveKitCases {
                                checks: [.archiveMatches("zip-slip.zip"), .lossNote(.otherLoss)]))
         cases.append(BenchCase(id: "archivekit.link-escape", category: .archive, fixture: "generated/archives/link-escape.tar", target: "zip",
                                checks: [.archiveMatches("link-escape.tar"), .lossNote(.otherLoss)]))
+        // A decompression bomb asks first: 7 KB of TAR.BZ2 that unpacks to 10.2 GB of zeros. With the person's yes it
+        // converts whole; without it the same conversion stops on the question. Full tier: it writes 10 GB twice.
+        cases.append(BenchCase(id: "archivekit.bomb-extract-anyway", category: .archive, tier: .full, fixture: "generated/archives/bomb.tar.bz2",
+                               target: "zip", options: OptionValues(["extractAnyway": .bool(true)]),
+                               checks: [.holds("zeros.bin", bytes: 10_200_000_000), .asksBeforeABomb()], timeout: 1800))
+
+        // Archives this Mac cannot make, from other projects' test suites (`scripts/fetch-corpus.sh`; skipped when absent).
+        // Encrypted names (RAR5 and RAR4, libarchive's tests): 7zz opens them with the password; without one the card asks.
+        for fixture in ["test_read_format_rar5_encrypted_filenames.rar", "test_read_format_rar4_encrypted_filenames.rar"] {
+            cases.append(BenchCase(id: "archivekit.\(fixture.split(separator: "_")[3])-encrypted-password", category: .archive, tier: .full,
+                                   fixture: "external/archives/\(fixture)", target: "tar", options: OptionValues(["password": "password"]),
+                                   checks: [.sourceFormat("rar"), .archiveMatches(fixture), .lossNote(.encryptionRemoved), .asksForPassword()]))
+        }
+        // A CAB with MSZIP, LZX and Quantum folders (libmspack's tests): libarchive has no Quantum decoder, so the planner's
+        // route falls back to 7zz, and every file comes out.
+        cases.append(BenchCase(id: "archivekit.quantum-cab", category: .archive, tier: .full, fixture: "external/archives/mszip_lzx_qtm.cab",
+                               target: "zip", checks: [.sourceFormat("cab"), .archiveMatches("mszip_lzx_qtm.cab")]))
         return cases
     }
 }
@@ -152,6 +169,31 @@ extension Check {
             guard let output = ctx.output else { throw CheckFailure("no output") }
             let folder = ctx.work.appendingPathComponent("no-password", isDirectory: true)
             if IndependentReader.sevenZip(password: "wrong").extract(output, into: folder) { throw CheckFailure("7zz unpacked it with a wrong password") }
+            return []
+        }
+    }
+
+    /// The output lists `path` at `bytes` (for a file too big to compare by manifest), read by the system's bsdtar.
+    static func holds(_ path: String, bytes: Int64) -> Check {
+        Check(name: "holds \(path)") { ctx in
+            guard let output = ctx.output else { throw CheckFailure("no output") }
+            let listing = Subprocess.run(URL(fileURLWithPath: "/usr/bin/tar"), ["-tvf", output.path])
+            let lines = (listing.standardOutput ?? "").split(separator: "\n").map { $0.split(separator: " ", omittingEmptySubsequences: true) }
+            guard listing.status == 0, lines.count == 1, let line = lines.first, line.last.map(String.init) == path else {
+                throw CheckFailure("bsdtar lists \(listing.standardOutput ?? "nothing")")
+            }
+            guard line.contains(Substring(String(bytes))) else { throw CheckFailure("\(path) is not \(bytes) bytes: \(line.joined(separator: " "))") }
+            return [.exact("bytes", Double(bytes), equals: Double(bytes))]
+        }
+    }
+
+    /// Without the person's yes the same conversion stops on the bomb question (quality §8 "Safety", ux §7.2 "Extract Anyway").
+    static func asksBeforeABomb() -> Check {
+        Check(name: "asks first without extractAnyway") { ctx in
+            let run = await Pipeline.convert(ctx.source, to: ctx.bench.target, into: ctx.work.appendingPathComponent("no-yes"), timeout: ctx.bench.timeout)
+            guard case .failed(let why) = run.outcome, why.contains("needsConfirmation"), why.contains("extract it anyway?") else {
+                throw CheckFailure("without extractAnyway: \(run.outcome)")
+            }
             return []
         }
     }
