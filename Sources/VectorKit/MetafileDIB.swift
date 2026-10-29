@@ -28,6 +28,13 @@ enum MetafileDIB {
             return Image(width: x1 - x0, height: y1 - y0, rgba: out, hasAlpha: hasAlpha, embedded: nil, bottomUp: bottomUp)
         }
 
+        /// The source rectangle of a blit (x, y from the top-left, or from the bottom for bottom-up files); the whole
+        /// picture for an empty rectangle.
+        func source(x: Int, y: Int, w: Int, h: Int) -> Image? {
+            if w <= 0 || h <= 0 { return self }
+            return cropped(x: x, y: bottomUp ? height - y - h : y, w: w, h: h)
+        }
+
         var averageColour: VectorColour {
             guard embedded == nil, !rgba.isEmpty else { return .black }
             var r = 0, g = 0, b = 0

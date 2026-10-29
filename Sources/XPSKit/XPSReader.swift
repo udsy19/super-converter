@@ -62,7 +62,7 @@ final class XPSShared {
     }
 }
 
-/// An embedded font program opened for outlines.
+/// An embedded font program: carried on text runs, or opened for outlines.
 struct XPSFont {
     let data: Data
     let cgFont: CGFont
@@ -433,6 +433,17 @@ final class XPSPageReader {
                 }
             } else {
                 entries = glyphs.map { (Int($0), nil, 0, 0) }
+            }
+            // Text stays text in the embedded program (quality §6) when the program's own character map, advances and
+            // positions give exactly what the Indices say; otherwise it is drawn as outlines.
+            let natural = glyphs.map { g -> Double in var g = g, size = CGSize.zero; CTFontGetAdvancesForGlyphs(ct, .horizontal, &g, &size, 1); return Double(size.width) }
+            let asText = !bidiOdd && !glyphs.contains(0) && entries.count <= glyphs.count && entries.enumerated().allSatisfy { i, e in
+                (e.gid == nil || e.gid == Int(glyphs[i])) && e.du == 0 && e.dv == 0 && (e.advance.map { abs($0 * em / 100 - natural[i]) <= max(0.01, natural[i] * 0.01) } ?? true)
+            }
+            if asText {
+                let run = VectorTextRun(text: text, fontName: font.postScriptName, size: em, origin: VectorPoint(0, 0), fill: fill, fontData: font.data)
+                out.append(.group([.text(run)], transform: VectorTransform(a: 1, b: 0, c: 0, d: -1, tx: ox, ty: oy), clip: nil, opacity: 1))
+                return
             }
             var outline: [PathSegment] = []
             var pen = ox

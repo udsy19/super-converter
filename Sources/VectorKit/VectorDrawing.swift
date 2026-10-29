@@ -41,6 +41,17 @@ public enum VectorDrawing {
         case .path(let segments, let fill, let stroke, let rule):
             let path = segments.cgPath
             if path.isEmpty { return }
+            // A solid fill and a solid stroke paint in one operation, so a PDF context writes one path (`B`), as the
+            // source had it.
+            if case .solid(let fillColour)? = fill, let stroke, stroke.width > 0, case .solid(let strokeColour) = stroke.paint {
+                context.saveGState()
+                setStroke(stroke, in: context)
+                context.setFillColor(fillColour.cg); context.setStrokeColor(strokeColour.cg)
+                context.addPath(path)
+                context.drawPath(using: rule == .evenOdd ? .eoFillStroke : .fillStroke)
+                context.restoreGState()
+                return
+            }
             if let fill { paintFill(path, fill, rule: rule, in: context) }
             if let stroke, stroke.width > 0 { paintStroke(path, stroke, in: context) }
         case .text(let run):
@@ -89,12 +100,7 @@ public enum VectorDrawing {
     private static func paintStroke(_ path: CGPath, _ stroke: VectorStroke, in context: CGContext) {
         context.saveGState()
         defer { context.restoreGState() }
-        context.setLineWidth(CGFloat(stroke.width))
-        context.setLineCap(stroke.cap == .round ? .round : stroke.cap == .square ? .square : .butt)
-        context.setLineJoin(stroke.join == .round ? .round : stroke.join == .bevel ? .bevel : .miter)
-        context.setMiterLimit(CGFloat(stroke.miterLimit))
-        let dash = stroke.dash.map { CGFloat(max(0, $0)) }
-        if dash.contains(where: { $0 > 0 }) { context.setLineDash(phase: CGFloat(stroke.dashPhase), lengths: dash) }
+        setStroke(stroke, in: context)
         context.addPath(path)
         if case .solid(let colour) = stroke.paint {
             context.setStrokeColor(colour.cg)
@@ -104,6 +110,16 @@ public enum VectorDrawing {
             context.clip()
             paintClip(stroke.paint, bounds: path.boundingBoxOfPath.insetBy(dx: -stroke.width, dy: -stroke.width), in: context)
         }
+    }
+
+    /// The stroke's geometry: width, cap, join, miter limit, dashes with their phase.
+    private static func setStroke(_ stroke: VectorStroke, in context: CGContext) {
+        context.setLineWidth(CGFloat(stroke.width))
+        context.setLineCap(stroke.cap == .round ? .round : stroke.cap == .square ? .square : .butt)
+        context.setLineJoin(stroke.join == .round ? .round : stroke.join == .bevel ? .bevel : .miter)
+        context.setMiterLimit(CGFloat(stroke.miterLimit))
+        let dash = stroke.dash.map { CGFloat(max(0, $0)) }
+        if dash.contains(where: { $0 > 0 }) { context.setLineDash(phase: CGFloat(stroke.dashPhase), lengths: dash) }
     }
 
     /// Paints into the current clip.

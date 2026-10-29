@@ -254,18 +254,7 @@ struct EMFPlayer {
     }
 
     func brushIndirect(_ o: Int) {
-        let style = d.u32(o + 12), colour = GDIPlayer.colour(d.u32(o + 16))
-        let brush: GDIPlayer.Brush
-        switch style {
-        case 0: brush = .solid(colour)
-        case 1: brush = .none
-        case 2:
-            var tint = colour; tint.alpha = 0.4
-            brush = .approximated(tint)
-            note("Hatched fills were drawn as tints.")
-        default: brush = .approximated(colour); note("Pattern fills were drawn as one colour.")
-        }
-        p.objects[d.u32(o + 8)] = .brush(brush)
+        p.objects[d.u32(o + 8)] = .brush(p.brush(style: d.u32(o + 12), colour: GDIPlayer.colour(d.u32(o + 16))))
     }
 
     func dibBrush(_ o: Int) {
@@ -380,12 +369,6 @@ struct EMFPlayer {
 
     // MARK: Pictures
 
-    func source(_ img: MetafileDIB.Image, x: Int, y: Int, w: Int, h: Int) -> MetafileDIB.Image? {
-        if w <= 0 || h <= 0 { return img }
-        let top = img.bottomUp ? img.height - y - h : y
-        return img.cropped(x: x, y: top, w: w, h: h)
-    }
-
     func blit(_ type: Int, _ o: Int, _ end: Int) {
         let xd = Double(d.i32(o + 24)), yd = Double(d.i32(o + 28)), cxd = Double(d.i32(o + 32)), cyd = Double(d.i32(o + 36))
         let rop = d.u32(o + 40)
@@ -414,7 +397,7 @@ struct EMFPlayer {
         if type == 116 { keyColour = GDIPlayer.colour(rop) }
         guard var img = MetafileDIB.decode(bmi: d.slice(o + offBmi, cbBmi), bits: d.slice(o + offBits, cbBits), honourAlpha: honour) else { return }
         let cxs = type == 76 ? img.width : d.i32(o + 100), cys = type == 76 ? img.height : d.i32(o + 104)
-        guard let cropped = source(img, x: xs, y: ys, w: type == 76 ? img.width - xs : cxs, h: type == 76 ? img.height - ys : cys) else { return }
+        guard let cropped = img.source(x: xs, y: ys, w: type == 76 ? img.width - xs : cxs, h: type == 76 ? img.height - ys : cys) else { return }
         img = cropped
         if let key = keyColour, img.embedded == nil { img = chromaKey(img, key) }
         let wasSuppressed = p.suppressDrawing
@@ -441,7 +424,7 @@ struct EMFPlayer {
         let cxd = Double(d.i32(o + 72)), cyd = Double(d.i32(o + 76))
         guard cbBmi > 0, d.has(o + offBmi, cbBmi), d.has(o + offBits, cbBits), d.u32(o + 64) == 0 else { return }
         guard let img = MetafileDIB.decode(bmi: d.slice(o + offBmi, cbBmi), bits: d.slice(o + offBits, cbBits)),
-              let part = source(img, x: xs, y: ys, w: cxs, h: cys) else { return }
+              let part = img.source(x: xs, y: ys, w: cxs, h: cys) else { return }
         p.draw(part, x: xd, y: yd, w: cxd, h: cyd)
     }
 
@@ -450,7 +433,7 @@ struct EMFPlayer {
         let offBmi = d.u32(o + 48), cbBmi = d.u32(o + 52), offBits = d.u32(o + 56), cbBits = d.u32(o + 60)
         guard cbBmi > 0, d.has(o + offBmi, cbBmi), d.has(o + offBits, cbBits) else { return }
         guard let img = MetafileDIB.decode(bmi: d.slice(o + offBmi, cbBmi), bits: d.slice(o + offBits, cbBits)),
-              let part = source(img, x: xs, y: ys, w: cxs, h: cys) else { return }
+              let part = img.source(x: xs, y: ys, w: cxs, h: cys) else { return }
         // Drawn 1:1 with its top-left at the destination.
         p.draw(part, x: xd, y: yd, w: Double(part.width), h: Double(part.height))
     }

@@ -192,7 +192,15 @@ func registerXPSKitTests() {
         var dark = 0
         for y in 30..<85 { for x in 10..<130 where bmp.at(x, y).r < 100 { dark += 1 } }
         check(dark > 600, "embedded obfuscated font drawn (\(dark) dark pixels)")
-        check(result.lossNotes.contains { $0.kind == .textAsOutlines }, "outlines reported")
+        // The program maps "HHH" itself and the run has no explicit positions: it stays text, in that program (quality §6).
+        var runs: [VectorTextRun] = []
+        func walk(_ nodes: [VectorNode]) { for n in nodes { if case .text(let r) = n { runs.append(r) }; if case .group(let k, _, _, _) = n { walk(k) } } }
+        walk(result.document.pages[0].nodes)
+        check(runs.count == 1 && runs[0].text == "HHH" && runs[0].fontData != nil && !result.lossNotes.contains { $0.kind == .textAsOutlines }, "text stays text in the embedded font")
+        // Glyph indices the character map doesn't give (here: a shifted glyph) can only be drawn as outlines.
+        let shifted = page.replacingOccurrences(of: "Fill=", with: "Indices=\";;,,10\" Fill=")
+        let moved = try? XPSReader.read(data: handPackage(shifted, extra: [(part, obfuscated)]))
+        check(moved?.lossNotes.contains { $0.kind == .textAsOutlines } == true, "positioned glyphs become outlines, reported")
         // Writer: a run carrying its font program travels as an obfuscated part and comes back drawn the same.
         let doc = VectorDocument(pages: [VectorPage(size: VectorSize(width: 150, height: 75), nodes: [
             .text(VectorTextRun(text: "HHH", fontName: "ArialMT", size: 45, origin: VectorPoint(7.5, 15), fill: .solid(.black), fontData: ttf))])])

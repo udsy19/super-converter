@@ -95,6 +95,7 @@ func registerVectorKitTests() {
     registerVectorKitMetafileTests()
     registerVectorKitSVGTests()
     registerVectorKitPDFTests()
+    registerVectorKitPSTests()
 
     SelfTest.cases.append(("VectorKit.coverage", {
         VectorKitModule.install(); XPSKitModule.install(); VectorizeKitModule.install()

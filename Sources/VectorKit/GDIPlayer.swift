@@ -74,6 +74,8 @@ final class GDIPlayer {
     var pixelsPerMM = (x: 3.78, y: 3.78)
     /// WMF has no viewport mapping: logical units are the device units and the reader maps the window to the page.
     var usesPageMapping = true
+    /// The width of a cosmetic (one-pixel) pen in device units: 1 for EMF's pixels; WMF sets a 96-dpi pixel.
+    var hairline = 1.0
     /// A rectangle in device units that bounds everything (for exclude-clip and region fills).
     var deviceBounds = CGRect(x: -100_000, y: -100_000, width: 200_000, height: 200_000)
 
@@ -186,16 +188,21 @@ final class GDIPlayer {
         let p = dc.pen
         guard p.visible else { return nil }
         let scale = transform().lengthScale
-        var width = p.geometric ? p.width * scale : 1.0
-        if p.geometric, width < 1 { width = 1 }
-        let base = max(width, 1)
+        var width = p.geometric ? p.width * scale : hairline
+        if p.geometric, width < hairline { width = hairline }
+        let base = max(width, hairline)
         return VectorStroke(paint: .solid(p.colour), width: width, dash: p.dash.map { $0 * base }, dashPhase: 0,
                             cap: p.geometric ? p.cap : .butt, join: p.geometric ? p.join : .round, miterLimit: dc.miterLimit)
     }
 
     /// Paints device-space segments with the current brush and/or pen (or records them into an open path).
     func paint(_ segments: [PathSegment], fill: Bool, stroke: Bool) {
-        if pathRecording { path.append(contentsOf: segments); return }
+        if pathRecording {
+            // A POLYLINETO or POLYBEZIERTO continues the open figure from the current point rather than starting a new one.
+            var continued = segments
+            if case .move(let start)? = continued.first, let last = path.last, last != .close, last.end == start { continued.removeFirst() }
+            path.append(contentsOf: continued); return
+        }
         flushLine()
         let f = fill ? brushPaint() : nil
         let s = stroke ? strokeSpec() : nil
@@ -216,6 +223,21 @@ final class GDIPlayer {
         flushLine()
         pendingLine = [.move(a), .line(b)]
         pendingPen = dc.pen
+    }
+
+    /// A LOGBRUSH (MS-WMF 2.2.2.10, shared by EMF): solid and hollow brushes as they are, hatches and patterns approximated.
+    func brush(style: Int, colour: VectorColour) -> Brush {
+        switch style {
+        case 0: return .solid(colour)
+        case 1: return .none
+        case 2:
+            var tint = colour; tint.alpha = 0.4
+            note(.otherLoss, "Hatched fills were drawn as tints.")
+            return .approximated(tint)
+        default:
+            note(.otherLoss, "Pattern fills were drawn as one colour.")
+            return .approximated(colour)
+        }
     }
 
     func samePen(_ a: Pen, _ b: Pen) -> Bool { a.width == b.width && a.colour == b.colour && a.visible == b.visible && a.dash == b.dash }
@@ -339,7 +361,7 @@ final class GDIPlayer {
         let attrs: [CFString: Any] = [kCTFontAttributeName: ct]
         let line = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, text as CFString, attrs as CFDictionary))
         let naturalWidth = CTLineGetTypographicBounds(line, nil, nil, nil)
-        let scaleX = max(abs(t.a), 1e-9)
+        let scaleX = max((t.a * t.a + t.b * t.b).squareRoot(), 1e-9)
         let deviceDx = dx.map { abs($0) * scaleX }
         let usable = deviceDx.count >= chars.count && chars.count > 0
         let fileWidth = usable ? deviceDx.prefix(chars.count).reduce(0, +) : naturalWidth
@@ -467,6 +489,16 @@ final class GDIPlayer {
         default: break
         }
         return pen
+    }
+}
+
+extension PathSegment {
+    /// Where the segment ends (nil for a close).
+    var end: VectorPoint? {
+        switch self {
+        case .move(let p), .line(let p), .cubic(_, _, let p), .quad(_, let p): p
+        case .close: nil
+        }
     }
 }
 
