@@ -13,9 +13,9 @@ enum XCFDecoder {
         let bytes: [UInt8]
         var i = 0
         let wide: Bool
-        mutating func u8() throws -> Int { guard i < bytes.count else { throw ConversionError.damaged("xcf") }; i += 1; return Int(bytes[i - 1]) }
+        mutating func u8() throws -> Int { guard i >= 0, i < bytes.count else { throw ConversionError.damaged("xcf") }; i += 1; return Int(bytes[i - 1]) }
         mutating func u32() throws -> Int {
-            guard i + 4 <= bytes.count else { throw ConversionError.damaged("xcf") }
+            guard i >= 0, i <= bytes.count - 4 else { throw ConversionError.damaged("xcf") }
             defer { i += 4 }
             return Int(bytes[i]) << 24 | Int(bytes[i + 1]) << 16 | Int(bytes[i + 2]) << 8 | Int(bytes[i + 3])
         }
@@ -25,12 +25,12 @@ enum XCFDecoder {
         mutating func string() throws -> String {
             let n = try u32()
             guard n > 0 else { return "" }
-            guard i + n <= bytes.count else { throw ConversionError.damaged("xcf") }
+            guard n <= bytes.count - i else { throw ConversionError.damaged("xcf") }
             defer { i += n }
             return String(decoding: bytes[i..<(i + n - 1)], as: UTF8.self)
         }
         mutating func take(_ n: Int) throws -> ArraySlice<UInt8> {
-            guard n >= 0, i + n <= bytes.count else { throw ConversionError.damaged("xcf") }
+            guard i >= 0, n >= 0, n <= bytes.count - i else { throw ConversionError.damaged("xcf") }
             defer { i += n }
             return bytes[i..<(i + n)]
         }
@@ -85,7 +85,11 @@ enum XCFDecoder {
                 }
             }
         }
-        guard width > 0, height > 0, width * height < 1 << 30 else { throw ConversionError.damaged("xcf") }
+        // GIMP's limit is 524,288 pixels a side. The canvas is allocated whole, so it may not claim more than a layer covering it
+        // could describe — one 4-byte tile pointer per 64 × 64 tile, 1024 pixels for every byte of the file.
+        guard (1...524_288).contains(width), (1...524_288).contains(height), width * height < 1 << 30, width * height <= bytes.count * 1024 else {
+            throw ConversionError.damaged("xcf")
+        }
 
         var compression = 0, dpi = 72.0, colormap: [UInt8] = [], icc: Data?
         try properties(&r) { type, payload in
@@ -143,6 +147,8 @@ enum XCFDecoder {
         var visibleCount = 0
         for layer in layers.reversed() where layer.visible && !layer.isGroup && layer.opacity > 0 {
             visibleCount += 1
+            // Indexed layers are always 8-bit (xcf.txt), so a pixel is a palette index.
+            guard layer.type < 4 || precision == .int8 else { throw ConversionError.damaged("xcf") }
             let hasAlpha = layer.type % 2 == 1
             let channels = (layer.type <= 1 ? 3 : 1) + (hasAlpha ? 1 : 0)
             let pixels = try readHierarchy(bytes, at: layer.hierarchy, wide: r.wide, compression: compression, precision: precision,
@@ -231,11 +237,17 @@ enum XCFDecoder {
         let width = try r.u32(), height = try r.u32(), bpp = try r.u32()
         r.i = try r.pointer()
         let lw = try r.u32(), lh = try r.u32()
-        guard lw == width, lh == height, bpp == expectedChannels * precision.bytes, width * height < 1 << 30 else {
+        guard lw == width, lh == height, bpp == expectedChannels * precision.bytes, (1...524_288).contains(width), (1...524_288).contains(height),
+              width * height < 1 << 30 else {
             throw ConversionError.damaged("xcf")
         }
         var tiles: [Int] = []
-        while true { let p = try r.pointer(); if p == 0 { break }; tiles.append(p) }
+        while true {
+            let p = try r.pointer()
+            if p == 0 { break }
+            guard p > 0, p < bytes.count else { throw ConversionError.damaged("xcf") }
+            tiles.append(p)
+        }
         let tilesAcross = (width + 63) / 64, tilesDown = (height + 63) / 64
         guard tiles.count >= tilesAcross * tilesDown else { throw ConversionError.damaged("xcf") }
         var values = [Float](repeating: 0, count: width * height * expectedChannels)
@@ -246,12 +258,12 @@ enum XCFDecoder {
             let raw: [UInt8]
             switch compression {
             case 0:
-                guard tiles[t] + count * bpp <= bytes.count else { throw ConversionError.damaged("xcf") }
+                guard count * bpp <= bytes.count - tiles[t] else { throw ConversionError.damaged("xcf") }
                 raw = Array(bytes[tiles[t]..<(tiles[t] + count * bpp)])
             case 1:
                 raw = try unRLE(bytes, from: tiles[t], pixels: count, bpp: bpp)
             case 2:
-                guard tiles[t] < bytes.count, let inflated = Zlib.decompress(Data(bytes[tiles[t]...]), expectedSize: count * bpp) else {
+                guard let inflated = Zlib.decompress(Data(bytes[tiles[t]...]), expectedSize: count * bpp) else {
                     throw ConversionError.damaged("xcf")
                 }
                 raw = [UInt8](inflated)
