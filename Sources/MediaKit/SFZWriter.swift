@@ -127,13 +127,15 @@ struct SFZWriter {
     /// RIFF WAVE with `fmt `, a `smpl` chunk (unity note, pitch fraction, loop) and `data`.
     func wavData(_ sample: SoundFont.Sample) -> Data {
         let pcm = font.pcm(of: sample)
-        let bits = font.bitDepth, rate = UInt32(max(sample.sampleRate, 1))
+        // The header stores the byte rate in 32 bits too, so a damaged sample rate is cut to what WAV can say.
+        let bits = font.bitDepth, rate = UInt32(min(max(sample.sampleRate, 1), Int(UInt32.max) / 3))
         var fmt = Data()
         fmt.le16(1); fmt.le16(1); fmt.le32(rate); fmt.le32(rate * UInt32(bits / 8)); fmt.le16(UInt16(bits / 8)); fmt.le16(UInt16(bits))
         var smpl = Data()
         smpl.le32(0); smpl.le32(0); smpl.le32(1_000_000_000 / rate)
         smpl.le32(UInt32(max(sample.originalPitch, 0)))
-        smpl.le32(sample.pitchCorrection > 0 ? UInt32(Double(sample.pitchCorrection) / 100 * 4294967296.0) : 0)
+        // The fraction of a semitone above the unity note; SF2 allows ±99 cents, a damaged byte up to 127.
+        smpl.le32(sample.pitchCorrection > 0 ? UInt32(Double(min(sample.pitchCorrection, 99)) / 100 * 4294967296.0) : 0)
         smpl.le32(0); smpl.le32(0)
         let looped = sample.loopEnd > sample.loopStart && sample.loopStart >= sample.start
         smpl.le32(looped ? 1 : 0); smpl.le32(0)

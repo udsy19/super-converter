@@ -43,6 +43,9 @@ struct SoundFont {
 
     var bitDepth: Int { sm24 == nil ? 16 : 24 }
 
+    /// The most SFZ regions (preset zone × instrument zone pairs) a bank may describe.
+    static let maxRegions = 1_000_000
+
     // MARK: Parsing
 
     static func read(_ data: Data) throws -> SoundFont {
@@ -94,7 +97,9 @@ struct SoundFont {
             guard from <= to, to < bags.count else { return (nil, []) }
             for z in from..<to {
                 var zone = Zone()
-                for g in bags[z]..<min(bags[z + 1], gens.count) { zone.generators[gens[g].0] = gens[g].1 }
+                // A damaged bag list can run backwards or past the generators: such a zone has none.
+                let first = bags[z], end = min(bags[z + 1], gens.count)
+                if first < end { for g in first..<end { zone.generators[gens[g].0] = gens[g].1 } }
                 if zone.generators[terminal] == nil {
                     if z == from { global = zone }   // a first zone without its terminal generator is the global zone
                 } else { list.append(zone) }
@@ -133,6 +138,14 @@ struct SoundFont {
                                   originalPitch: pitch, pitchCorrection: corr, link: link, type: type))
         }
         if !samples.isEmpty { samples.removeLast() }   // the terminal "EOS" record
+        // Each preset zone × instrument zone becomes an SFZ region. Banks have thousands; a damaged one whose zones all point
+        // at the same huge instrument would ask for billions of lines of text.
+        let regions = presets.reduce(0) { total, preset in
+            preset.zones.reduce(total) { sum, zone in
+                sum + (zone.instrument.flatMap { instruments.indices.contains($0) ? instruments[$0].zones.count : nil } ?? 0)
+            }
+        }
+        guard regions <= maxRegions else { throw ConversionError.damaged("sf2") }
         return SoundFont(name: info["INAM"] ?? "SoundFont", samples: samples, instruments: instruments, presets: presets,
                          smpl: smpl, sm24: sm24)
     }
