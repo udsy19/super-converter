@@ -15,6 +15,8 @@ public enum Services {
 
     // HelperKit
     public static var helpers: HelperManaging!
+    /// The runner for the executables bundled with the app (`7zz`, `ffmpeg`, `ffprobe`) and `hdiutil`.
+    public static var tools: ToolRunning!
 
     // WindowKit
     public static var window: WindowPresenting!

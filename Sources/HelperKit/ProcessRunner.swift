@@ -24,6 +24,10 @@ struct ProcessSpec {
     var network = false
     var sandbox = true
     var niceness = 10
+    /// Written to standard input and closed; nil means no input at all.
+    var standardInput: Data?
+    /// How much of standard output is kept.
+    var outputLimit = 256_000
 }
 
 enum RunFailure: Error, Equatable {
@@ -56,11 +60,11 @@ enum ProcessRunner {
         process.arguments = args
         process.currentDirectoryURL = spec.workFolder
         process.environment = environment(spec, home: home, tmp: tmp)
-        let out = Pipe(), err = Pipe()
-        process.standardInput = FileHandle.nullDevice
+        let out = Pipe(), err = Pipe(), input = spec.standardInput.map { _ in Pipe() }
+        process.standardInput = input ?? FileHandle.nullDevice
         process.standardOutput = out
         process.standardError = err
-        let stdout = Collector(out.fileHandleForReading), stderr = Collector(err.fileHandleForReading)
+        let stdout = Collector(out.fileHandleForReading, limit: spec.outputLimit), stderr = Collector(err.fileHandleForReading)
         let state = RunState()
 
         try await withTaskCancellationHandler {
@@ -77,6 +81,13 @@ enum ProcessRunner {
                 }
                 let pid = process.processIdentifier
                 state.started(pid)
+                if let input, let data = spec.standardInput {
+                    // A tool that exits without reading its input must not stop the run (no SIGPIPE; the write end is closed
+                    // either way). The input is small (a password), well under a pipe's buffer.
+                    _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+                    try? input.fileHandleForWriting.write(contentsOf: data)
+                    try? input.fileHandleForWriting.close()
+                }
                 if let limit = spec.timeLimit {
                     DispatchQueue.global().asyncAfter(deadline: .now() + limit) {
                         guard !state.isFinished else { return }
@@ -142,16 +153,17 @@ enum ProcessRunner {
         func finish() { lock.withLock { _finished = true } }
     }
 
-    /// Reads one pipe as it fills (kept to 256 KB) and notes its end, so a chatty helper never blocks on a full pipe.
+    /// Reads one pipe as it fills (kept to `limit` bytes, 256 KB by default) and notes its end, so a chatty helper never
+    /// blocks on a full pipe.
     private final class Collector: @unchecked Sendable {
         private let lock = NSLock()
         private var data = Data()
         private let ended = DispatchSemaphore(value: 0)
-        init(_ handle: FileHandle) {
+        init(_ handle: FileHandle, limit: Int = 256_000) {
             handle.readabilityHandler = { [self] h in
                 let chunk = h.availableData
                 if chunk.isEmpty { h.readabilityHandler = nil; ended.signal(); return }
-                lock.withLock { if data.count < 256_000 { data.append(chunk) } }
+                lock.withLock { if data.count < limit { data.append(chunk) } }
             }
         }
         /// A descendant that keeps the pipe open must not hold the run up: wait briefly for the end of the stream.
