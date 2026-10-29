@@ -64,10 +64,7 @@ enum SevenZip {
         if items.count > limits.maxEntries { throw ArchiveError.tooLarge("This archive holds more than \(limits.maxEntries) items, which is more than Super Converter will unpack.") }
         let total = items.reduce(Int64(0)) { $0 + $1.size }
         if total > limits.maxTotalBytes { throw ArchiveError.tooLarge("This archive unpacks to more than \(Formatting.bytes(limits.maxTotalBytes)), which is more than Super Converter will unpack.") }
-        let size = request.sourceSize
-        if total > limits.ratioFloor, size > 0, Double(total) > limits.maxRatio * Double(size) {
-            throw ArchiveError.tooLarge("This archive expands far more than a real one does (a decompression bomb), so it was stopped.")
-        }
+        if limits.looksLikeBomb(expanded: total, archiveSize: request.sourceSize) { throw ArchiveError.looksLikeBomb }
         if let free = try? request.root.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage,
            total + limits.reserveBytes > free {
             throw ArchiveError.notEnoughSpace(needed: total + limits.reserveBytes)

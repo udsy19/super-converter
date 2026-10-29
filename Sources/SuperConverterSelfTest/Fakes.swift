@@ -147,6 +147,10 @@ final class FakeWindow: WindowPresenting {
     var hasWork: Bool { !added.isEmpty }
     func show() { shown += 1 }
     func add(_ urls: [URL], target: FormatID?) { added.append((urls, target)) }
+    private(set) var problems: [(url: URL, target: FormatID, options: OptionValues, problem: ConversionError)] = []
+    func showProblem(_ url: URL, target: FormatID, options: OptionValues, problem: ConversionError) {
+        problems.append((url, target, options, problem)); shown += 1
+    }
 }
 
 @MainActor

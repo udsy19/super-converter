@@ -225,6 +225,18 @@ final class WindowViewModel: ObservableObject {
         for card in added { loadDetails(card) }
     }
 
+    /// A file whose conversion elsewhere stopped on a problem the person answers here (`WindowPresenting.showProblem`, from
+    /// a background conversion's notification): its card keeps that conversion's target and options and shows the problem
+    /// with its fix (ux §7.2).
+    func showProblem(_ url: URL, target: FormatID, options: OptionValues, problem: ConversionError) {
+        add([url], target: target)
+        guard let card = cards.last(where: { $0.url == url }), card.source != nil, !card.state.isActive else { return }
+        card.target = target
+        card.options = options
+        replan(card)
+        card.state = .failed(problem)
+    }
+
     /// The position of a newly added card in its drop, for the staggered appearance (ux §3.6).
     private(set) var appearIndex: [UUID: Int] = [:]
 
@@ -555,6 +567,12 @@ final class WindowViewModel: ObservableObject {
         case .install, .get:
             installHelper(for: card)
         case .tryAgain:
+            card.state = .ready
+            convert([card])
+        case .extractAnyway:
+            // The question names the option that goes ahead (quality §8: a decompression bomb asks first).
+            guard case .failed(.needsConfirmation(_, _, let option)) = card.state else { return }
+            card.options[option] = .bool(true)
             card.state = .ready
             convert([card])
         case .showInFinder:

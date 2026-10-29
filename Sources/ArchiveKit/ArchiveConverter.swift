@@ -9,13 +9,16 @@ final class ArchiveConverter: Converter {
     let handles: [StepPattern]
     /// HelperKit's runner for 7zz and hdiutil (`Services.tools`); nil leaves those two unavailable.
     let tools: (any ToolRunning)?
+    /// The caps every read runs under; the self-test lowers them to make a small bomb.
+    let limits: ExtractionLimits
 
     /// The archive engines this module registers (`EngineID.info.module == .archiveKit`).
     static let engines: [EngineID] = EngineID.allCases.filter { $0.info.module == .archiveKit }
 
-    init(_ id: EngineID, tools: (any ToolRunning)?) {
+    init(_ id: EngineID, tools: (any ToolRunning)?, limits: ExtractionLimits = ExtractionLimits()) {
         self.id = id
         self.tools = tools
+        self.limits = limits
         var reads = Set<FormatID>(), writes = Set<FormatID>()
         for route in FormatMatrix.routes {
             for step in (route.builtin ?? []) + (route.helper ?? []) + route.alternates.flatMap(\.steps) where step.engine == id {
@@ -56,11 +59,13 @@ final class ArchiveConverter: Converter {
 
     private func read(_ url: URL, format: FormatID, context: StepContext) async throws -> StepOutput {
         let options = context.options
+        var limits = limits
+        limits.extractAnyway = options[ExtractionLimits.extractAnywayOption]?.bool ?? false
         let request = ArchiveReadRequest(
             source: url, format: format, root: context.workFolder.appendingPathComponent("unpacked-\(UUID().uuidString)", isDirectory: true),
             password: options["password"]?.string.flatMap { $0.isEmpty ? nil : $0 },
             nameEncoding: NameEncoding(option: options["nameEncoding"]?.string),
-            unpackPayload: options["unpackPayload"]?.bool ?? true, tools: tools,
+            unpackPayload: options["unpackPayload"]?.bool ?? true, limits: limits, tools: tools,
             report: context.report, isCancelled: context.isCancelled)
         let tree = try await Archives.read(request, engine: id)
         return StepOutput(.archive(tree), lossNotes: request.diagnostics.lossNotes)

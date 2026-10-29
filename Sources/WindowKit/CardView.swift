@@ -371,7 +371,12 @@ private struct CardRow: View {
         if let fix = problem.fix {
             FixButton(title: fix.rawValue, symbol: fix == .enterPassword ? "lock" : (fix == .showInFinder ? "folder" : nil)) { vm.perform(fix, for: card) }
             Spacer(minLength: 4)
-            CircleIconButton(symbol: "slider.horizontal.3", label: "Options", filled: card.hasChangedOptions) { vm.openOptions(for: card) }
+            if case .needsConfirmation = error {
+                // A question: going ahead is the fix, declining removes the card (nothing was written).
+                CircleIconButton(symbol: "xmark", label: "Cancel") { vm.remove([card]) }
+            } else {
+                CircleIconButton(symbol: "slider.horizontal.3", label: "Options", filled: card.hasChangedOptions) { vm.openOptions(for: card) }
+            }
         } else {
             conversionPills(chevron: card.isEditable)
             Spacer(minLength: 4)

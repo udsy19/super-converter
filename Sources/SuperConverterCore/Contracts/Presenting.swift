@@ -7,6 +7,10 @@ public protocol WindowPresenting: AnyObject {
     func show()
     /// Adds files (dropped, opened, from a Quick Action) with an optional preset target.
     func add(_ urls: [URL], target: FormatID?)
+    /// Adds a file whose conversion elsewhere (a Quick Action, the menu-bar panel) stopped on a problem the person answers
+    /// on its card, such as `ConversionError.needsConfirmation`: the card shows `problem` with the same target and options,
+    /// and its fix runs the conversion again (ux §7.2). Shows the window.
+    func showProblem(_ url: URL, target: FormatID, options: OptionValues, problem: ConversionError)
     var hasWork: Bool { get }
 }
 

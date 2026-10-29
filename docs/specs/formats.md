@@ -370,6 +370,7 @@ folder or a ZIP of the project), Shell escape⁺ (always off).
 | Keep Mac extras⁺ | — | off | off drops `__MACOSX`, `._*`, `.DS_Store`; on stores extended attributes in TAR (PAX) |
 | Unpack package payload⁺ | — | on | DEB `data.tar.*`, RPM cpio |
 | File-name encoding⁺ | — | auto | CP437, Shift-JIS, GBK, EUC-KR detected for old ZIPs |
+| Extract even if it expands like a decompression bomb⁺ | — | off | Asked on the card when an archive expands over 1000:1 and past 10 GB (quality §8) |
 
 Single-file compressors (GZ, BZ2, XZ, LZ, LZMA, Z, LZO, RZ) hold one file: converting to an archive puts that file in
 it under its own name; converting `.gz` → `.tar.gz` is not a re-wrap of the tar unless the content is a tar.

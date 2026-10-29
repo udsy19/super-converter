@@ -301,6 +301,8 @@ public enum OptionProfiles {
             choice("nameEncoding", "File-name encoding", [("auto", "Automatic"), ("cp437", "CP437"), ("shiftJIS", "Shift-JIS"), ("gbk", "GBK"), ("eucKR", "EUC-KR")], "auto", more: true),
             toggle("compatibleZip", "Compatible ZIP password (ZipCrypto)", false, more: true),
             password(),
+            // Set from the card's "Extract Anyway" (quality §8: a decompression bomb asks first), or `--option extractAnyway=yes`.
+            toggle("extractAnyway", "Extract even if it expands like a decompression bomb", false, more: true),
         ],
         "O-VIDEO": [
             int("quality", "Smaller file ↔ Best quality", 0...51, 20, cc: "crf", t: "CRF"),

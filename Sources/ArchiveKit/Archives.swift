@@ -57,7 +57,7 @@ public enum Archives {
                     throw ArchiveError.passwordRequired
                 } catch let second as ArchiveError {
                     switch second {
-                    case .cancelled, .tooLarge, .notEnoughSpace: throw second
+                    case .cancelled, .tooLarge, .looksLikeBomb, .notEnoughSpace: throw second
                     default: throw error == .needsSevenZip ? second : error   // keep libarchive's verdict, except "needs 7zz"
                     }
                 }
