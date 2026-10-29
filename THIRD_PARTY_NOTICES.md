@@ -7250,3 +7250,15 @@ KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHAN
 AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
 THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## The app
+
+The app target, the Finder Quick Actions, the build and release scripts and the app icon contain no third-party code or
+artwork. The icon is original, drawn in code by `scripts/make-icon.swift`. Parts adapted from the author's own MIT-licensed
+sister apps carry a provenance comment naming the file and commit: `scripts/build-app.sh`, `scripts/make-dmg.sh`,
+`scripts/release.sh`, `scripts/signing-setup.sh`, `scripts/make-icon.swift` and `.github/workflows/ci.yml` from Super PDF
+(https://github.com/udsy19/super-pdf, commit 2079863), and UpdateKit from Super Flow (https://github.com/udsy19/super-flow).
+
+Inside the app bundle the licence texts sit next to what they cover: this file and `LICENSE` in `Contents/Resources/`,
+the bundled executables' licences (FFmpeg and every library linked into it, 7-Zip) in `Contents/Resources/Licenses/Tools/`,
+LibRaw's in `Contents/Resources/Licenses/LibRaw/`, and each typeface's licence with its fonts in `Contents/Resources/Fonts/`.

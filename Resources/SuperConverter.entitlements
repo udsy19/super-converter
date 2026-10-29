@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- No App Sandbox (ARCHITECTURE §7): results are written next to the files people drop, helpers run from their own
+	     install places, Office and iWork export through Apple Events, and disk images open with hdiutil. The hardened
+	     runtime still asks for each capability used, so each one is declared here. -->
+	<!-- Pages, Numbers, Keynote, Word, Excel and PowerPoint export through Apple Events (NSAppleEventsUsageDescription). -->
+	<key>com.apple.security.automation.apple-events</key><true/>
+	<!-- libraw_r.dylib in Contents/Frameworks is signed with the app's own identity, which has no Apple Team ID; library
+	     validation would refuse to load it. -->
+	<key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict>
+</plist>

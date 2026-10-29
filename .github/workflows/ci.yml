@@ -1,0 +1,46 @@
+name: CI
+
+# Build, self-tests, the fast quality bench and the app bundle's static launch checks on every push to main and every
+# pull request. Nothing here launches the app, opens a window or publishes anything; cases that need a signed build, a
+# helper (LibreOffice, calibre, …) or an external corpus file skip themselves.
+# Adapted from super-pdf .github/workflows/ci.yml (commit 2079863): the vendor libraries and bundled executables are
+# fetched instead of QPDF, and the fast bench runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build, self-tests and fast bench
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Vendor libraries and bundled executables (the pinned release assets, checked against Vendor.lock and Tools.lock)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/fetch-vendor.sh
+          scripts/tools.sh fetch
+      - name: Build
+        run: swift build
+      - name: Self-tests
+        run: .build/debug/SuperConverterSelfTest
+      - name: Quality bench (fast tier)
+        run: .build/debug/SuperConverterQualityBench --tier fast
+      - name: Bench report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: .build/quality/
+          if-no-files-found: ignore
+      - name: App bundle (ad hoc signed) and its static launch checks
+        run: ./scripts/build-app.sh --debug

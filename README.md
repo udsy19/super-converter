@@ -10,7 +10,7 @@
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-52CC64"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white">
   <img alt="Local" src="https://img.shields.io/badge/cloud-none-111">
-  <img alt="Status" src="https://img.shields.io/badge/status-specification-F2B705">
+  <img alt="Status" src="https://img.shields.io/badge/status-pre--release-F2B705">
 </p>
 
 <p align="center">
@@ -43,20 +43,36 @@ format from a short, searchable list if you like, press **Convert**, and the new
 - **Nothing leaves the Mac.** No account, no analytics; the only network use is the update check and the helper
   downloads you start.
 
-## Status
+## Install
 
-The specification is complete: format matrix, quality plan, UX with rendered mockups, architecture and work
-packages. Implementation follows the work packages in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Download `SuperConverter.dmg` from the [latest release](https://github.com/udsy19/super-converter/releases/latest), drag
+Super Converter into Applications and open it (the DMG's notes say how to get past Gatekeeper: the app is self-signed,
+not notarized). It updates itself from GitHub Releases; Settings › General turns that off. macOS 14 or later, Apple
+silicon or Intel.
+
+What leaves the Mac, exactly: [PRIVACY.md](PRIVACY.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Building
 
 SwiftPM and the Command Line Tools only (no Xcode). macOS 14 or later.
 
 ```sh
-python3 -I scripts/gen-format-matrix.py   # regenerate the format matrix from the CloudConvert snapshot
-sh docs/mockups/render.sh                 # re-render the mockups (needs Google Chrome)
+scripts/fetch-vendor.sh              # the pinned vendor libraries (libwebp, libavif, libarchive, LibRaw, …) into Vendor/
+scripts/tools.sh fetch               # the bundled LGPL FFmpeg, ffprobe and 7-Zip into Vendor/Tools
+swift build                          # everything; `swift run sconv <files…> --to jpg` converts from the command line
+swift run SuperConverterSelfTest     # headless checks for every module
+swift run SuperConverterQualityBench # the quality bench (quality.md §9); report in .build/quality/index.html
+scripts/signing-setup.sh             # once: a project-local signing identity in .signing/ (keep it)
+scripts/build-app.sh                 # build/Super Converter.app, signed, with its static launch checks
+scripts/make-dmg.sh                  # dist/SuperConverter-<version>.dmg (universal)
 ```
+
+`scripts/release.sh <version>` publishes a release (the maintainer's; it needs the signing identity in `.signing/`).
+Generated data: `python3 -I scripts/gen-format-matrix.py` rewrites the format matrix from the CloudConvert snapshot,
+`SUPERCONVERTER_WRITE_PLISTS=1 swift run SuperConverterSelfTest` rewrites `Resources/Info.plist` and the Quick Actions'
+plists from the catalog, and `sh docs/mockups/render.sh` re-renders the mockups (needs Google Chrome).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Third-party components and their licences will be listed in `THIRD_PARTY_NOTICES.md`.
+MIT — see [LICENSE](LICENSE). Third-party components and their licences are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and shown in Settings › About.
