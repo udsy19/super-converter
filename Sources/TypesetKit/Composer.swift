@@ -591,8 +591,7 @@ final class Composer {
         func scale(_ op: DrawOp) -> DrawOp {
             switch op {
             case .text(let a, let x, let y): .text(a, x: x * s, y: y * s)
-            case .glyphs(let f, let g, let p, let c):
-                .glyphs(CTFontCreateCopyWithAttributes(f, CTFontGetSize(f) * s, nil, nil), g, p.map { CGPoint(x: $0.x * s, y: $0.y * s) }, colour: c)
+            case .vector(let n, let x, let y, let k): .vector(n, x: x * s, y: y * s, scale: k * s)
             case .rule(let x, let y, let w, let h, let c): .rule(x: x * s, y: y * s, width: w * s, height: h * s, colour: c)
             case .image(let i, let x, let y, let w, let h): .image(i, x: x * s, y: y * s, width: w * s, height: h * s)
             case .tagged(let t, let ops): .tagged(t, ops.map(scale))

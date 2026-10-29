@@ -112,7 +112,7 @@ public final class Typesetter {
 
     private func engines(_ style: StyleSheet, latex: Bool, sans: Bool, language: String?, hyphenate: Bool) -> Engines {
         let fonts = FontResolver(library: library, latex: latex, sans: sans, normalSize: style.normal.size)
-        let math = MathBridge(library: library, fonts: fonts)
+        let math = MathBridge()
         let setter = ParagraphSetter(fonts: fonts, hyphenator: hyphenate ? Hyphenator(language: language) : nil,
                                      mathBox: { tex, s in math.box(tex, display: false, size: s.size).box })
         return Engines(fonts: fonts, math: math, setter: setter)
@@ -379,7 +379,14 @@ public final class Typesetter {
     }
 
     private func mathNotes(_ math: MathBridge) -> [LossNote] {
-        math.problems.isEmpty ? [] : [LossNote(.otherLoss, detail: "Unknown in formulas: " + math.problems.sorted().joined(separator: ", "))]
+        var notes: [LossNote] = []
+        if math.skipped > 0, let reason = math.unavailable {
+            notes.append(LossNote(.otherLoss, detail: "\(math.skipped) formula(s) left out: \(reason)"))
+        }
+        if !math.problems.isEmpty {
+            notes.append(LossNote(.otherLoss, detail: "Unknown in formulas: " + math.problems.sorted().joined(separator: ", ")))
+        }
+        return notes
     }
 
     static func unique(_ notes: [LossNote]) -> [LossNote] {

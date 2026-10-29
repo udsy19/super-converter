@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import SuperConverterCore
 
 // The typeset material between composition and the PDF: TeX-like boxes in TeX points. Inside a box, x runs right from
 // the box's left edge and y runs up from its baseline.
@@ -23,8 +24,8 @@ struct TagNode: Hashable, Sendable {
 enum DrawOp {
     /// Text set with Core Text at (x, y): one word or word part, kerned and ligatured by the font.
     case text(NSAttributedString, x: Double, y: Double)
-    /// Glyphs at positions relative to the box origin (math).
-    case glyphs(CTFont, [CGGlyph], [CGPoint], colour: CGColor?)
+    /// Vector drawing (MathKit's formulas) in points from (x, y), y up, scaled by `scale`; drawn by VectorKit.
+    case vector([VectorNode], x: Double, y: Double, scale: Double)
     /// A filled rectangle; y is its bottom edge.
     case rule(x: Double, y: Double, width: Double, height: Double, colour: CGColor?)
     case image(ImageContent, x: Double, y: Double, width: Double, height: Double)

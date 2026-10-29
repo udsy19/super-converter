@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import VectorKit
 
 /// A bookmark: a heading's title, its page and position, and its children.
 struct OutlineEntry {
@@ -220,12 +221,12 @@ final class PDFRenderer {
             switch op {
             case .text(let s, let dx, let dy):
                 drawLine(s, x: x + dx, y: y + dy, ctx)
-            case .glyphs(let font, let glyphs, let points, let colour):
-                ctx.setFillColor(colour ?? CGColor(gray: 0, alpha: 1))
-                ctx.textMatrix = .identity
-                let placed = points.map { CGPoint(x: (x + Double($0.x)) * k, y: (y + Double($0.y)) * k) }
-                CTFontDrawGlyphs(scaled(font), glyphs, placed, glyphs.count, ctx)
-                ctx.setFillColor(CGColor(gray: 0, alpha: 1))
+            case .vector(let nodes, let vx, let vy, let scale):
+                ctx.saveGState()
+                ctx.translateBy(x: (x + vx) * k, y: (y + vy) * k)
+                ctx.scaleBy(x: scale * k, y: scale * k)
+                for node in nodes { VectorDrawing.draw(node, in: ctx) }
+                ctx.restoreGState()
             case .rule(let rx, let ry, let w, let h, let colour):
                 fill(CGRect(x: x + rx, y: y + ry, width: w, height: h), colour: colour, ctx)
                 ctx.setFillColor(CGColor(gray: 0, alpha: 1))

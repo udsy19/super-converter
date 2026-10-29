@@ -607,7 +607,7 @@ final class ParagraphSetter {
     static func shifted(_ op: DrawOp, by dx: Double) -> DrawOp {
         switch op {
         case .text(let s, let x, let y): .text(s, x: x + dx, y: y)
-        case .glyphs(let f, let g, let p, let c): .glyphs(f, g, p.map { CGPoint(x: $0.x + dx, y: $0.y) }, colour: c)
+        case .vector(let n, let x, let y, let k): .vector(n, x: x + dx, y: y, scale: k)
         case .rule(let x, let y, let w, let h, let c): .rule(x: x + dx, y: y, width: w, height: h, colour: c)
         case .image(let i, let x, let y, let w, let h): .image(i, x: x + dx, y: y, width: w, height: h)
         case .link(let u, let x, let y, let w, let h): .link(u, x: x + dx, y: y, width: w, height: h)
