@@ -79,7 +79,8 @@ enum MediaTime {
 
     /// "0:07", "3:40", "1:02:03".
     static func clock(_ seconds: Double) -> String {
-        let s = Int(seconds.rounded(.down))
+        // A damaged file's timestamps can be anything; a clock shows up to about 30,000 years.
+        let s = seconds.isFinite ? Int(min(max(seconds, -1e12), 1e12).rounded(.down)) : 0
         return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
 

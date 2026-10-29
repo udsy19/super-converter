@@ -120,18 +120,18 @@ struct MediaProbe: Sendable, Equatable {
         let tags = Self.tags(s["tags"])
         let disposition = s["disposition"] as? [String: Any] ?? [:]
         let average = rate(s["avg_frame_rate"]), real = rate(s["r_frame_rate"])
-        var rotation = tags["rotate"].flatMap(Double.init).map { -$0 }
+        var rotation = tags["rotate"].flatMap(Double.init).map { -$0 }.flatMap(angle)
         var hdr = HDRMetadata()
         for side in s["side_data_list"] as? [[String: Any]] ?? [] {
             switch side["side_data_type"] as? String {
-            case "Display Matrix": rotation = double(side["rotation"]) ?? rotation
+            case "Display Matrix": rotation = double(side["rotation"]).flatMap(angle) ?? rotation
             case "Mastering display metadata": hdr.masteringDisplay = masteringDisplay(side)
             case "Content light level metadata": hdr.maxCLL = int(side["max_content"]); hdr.maxFALL = int(side["max_average"])
             default: break
             }
         }
         return Stream(index: index, kind: kind, codec: s["codec_name"] as? String ?? "none", profile: s["profile"] as? String,
-                      width: int(s["width"]), height: int(s["height"]), pixelFormat: s["pix_fmt"] as? String,
+                      width: dimension(s["width"]), height: dimension(s["height"]), pixelFormat: s["pix_fmt"] as? String,
                       bitsPerSample: int(s["bits_per_raw_sample"]) ?? int(s["bits_per_sample"]).flatMap { $0 > 0 ? $0 : nil },
                       frameRate: average ?? real, isVariableFrameRate: average != nil && real != nil && abs(average! - real!) > 0.01 * real!,
                       sampleRate: int(s["sample_rate"]), channels: int(s["channels"]), channelLayout: s["channel_layout"] as? String,
@@ -151,8 +151,9 @@ struct MediaProbe: Sendable, Equatable {
         func units(_ key: String, _ scale: Double) -> Int? {
             guard let text = side[key] as? String else { return nil }
             let parts = text.split(separator: "/").compactMap { Double($0) }
-            guard parts.count == 2, parts[1] != 0 else { return Double(text).map { Int(($0 * scale).rounded()) } }
-            return Int((parts[0] / parts[1] * scale).rounded())
+            let value = parts.count == 2 && parts[1] != 0 ? parts[0] / parts[1] : Double(text)
+            // The encoders take 32-bit values; anything else is not a mastering display.
+            return value.flatMap { Int32(exactly: ($0 * scale).rounded()) }.map(Int.init)
         }
         guard let gx = units("green_x", 50000), let gy = units("green_y", 50000), let bx = units("blue_x", 50000), let by = units("blue_y", 50000),
               let rx = units("red_x", 50000), let ry = units("red_y", 50000), let wx = units("white_point_x", 50000), let wy = units("white_point_y", 50000),
@@ -171,31 +172,40 @@ struct MediaProbe: Sendable, Equatable {
         return out
     }
 
+    /// A finite number; ffprobe prints "nan" and "inf" for values it couldn't work out.
     static func double(_ value: Any?) -> Double? {
-        if let d = value as? Double { return d }
-        if let i = value as? Int { return Double(i) }
-        if let s = value as? String { return Double(s) }
-        return nil
+        let d: Double?
+        if let v = value as? Double { d = v } else if let i = value as? Int { d = Double(i) } else if let s = value as? String { d = Double(s) } else { d = nil }
+        return d.flatMap { $0.isFinite ? $0 : nil }
     }
 
     static func int(_ value: Any?) -> Int? {
         if let i = value as? Int { return i }
         if let s = value as? String { return Int(s) }
-        if let d = value as? Double { return Int(d) }
+        if let d = value as? Double { return Int(exactly: d.rounded(.towardZero)) }
         return nil
     }
 
+    /// A frame width or height: FFmpeg's own limit is 16 bits a side in every codec that has one, so a larger value (or a
+    /// non-positive one) is a damaged header, and leaving it out keeps the size arithmetic downstream in range.
+    private static func dimension(_ value: Any?) -> Int? { int(value).flatMap { (1...65_535).contains($0) ? $0 : nil } }
+
+    /// A rotation in degrees, reduced to one turn.
+    private static func angle(_ degrees: Double) -> Double? { degrees.isFinite ? degrees.truncatingRemainder(dividingBy: 360) : nil }
+
+    /// A pixel aspect ratio; one beyond 1:1000 or 1000:1 is damage, not a picture.
     private static func ratio(_ value: Any?) -> Double? {
         guard let text = value as? String else { return nil }
         let parts = text.split(separator: ":").compactMap { Double($0) }
-        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0, (0.001...1000).contains(parts[0] / parts[1]) else { return nil }
         return parts[0] / parts[1]
     }
 
+    /// A frame rate; above a million frames a second it is a time base or damage, not a rate.
     private static func rate(_ value: Any?) -> Double? {
         guard let text = value as? String else { return nil }
         let parts = text.split(separator: "/").compactMap { Double($0) }
-        guard parts.count == 2, parts[1] > 0, parts[0] > 0 else { return nil }
+        guard parts.count == 2, parts[1] > 0, parts[0] > 0, parts[0] / parts[1] <= 1_000_000 else { return nil }
         return parts[0] / parts[1]
     }
 }
