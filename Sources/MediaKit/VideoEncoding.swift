@@ -10,6 +10,8 @@ struct VideoEncoding {
     var width: Int
     var height: Int
     var lossNotes: [LossNote] = []
+    /// HEVC HDR10: the prefix SEI with the source's mastering display and content light level, for MediaRun to add.
+    var hdrSEI: Data?
 
     /// Rates MPEG-2, DV, DVD and MXF accept.
     static let standardRates: [Double] = [24000.0 / 1001, 24, 25, 30000.0 / 1001, 30, 50, 60000.0 / 1001, 60]
@@ -81,9 +83,16 @@ struct VideoEncoding {
             e.lossNotes.append(LossNote(.hdrToSDR, detail: s.hdrToSDR ? "" : "\(target.format.pill) with \(codec.label) can’t carry HDR"))
         }
         if keepHDR && codec == .hevc {
-            // FFmpeg 7.1's VideoToolbox encoder takes PQ/HLG and 10 bits but not the frames' ST 2086 / CTA-861.3 metadata.
-            e.lossNotes.append(LossNote(.otherLoss, detail: "The Mac’s HEVC encoder doesn’t write the mastering display and light level metadata"))
-        } else if Self.isRGB(video.pixelFormat) {
+            // FFmpeg 7.1's VideoToolbox encoder takes PQ/HLG and 10 bits but not the frames' ST 2086 / CTA-861.3 metadata:
+            // MediaRun writes it into the bitstream afterwards (`HDRSEI`). FFmpeg has no AVI tag for HEVC, so it can't read the
+            // stream back out of AVI to do that.
+            if target.format == "avi" {
+                e.lossNotes.append(LossNote(.otherLoss, detail: "AVI can’t keep the mastering display and light level metadata"))
+            } else {
+                e.hdrSEI = HDRSEI.nal(video.hdr)
+            }
+        }
+        if Self.isRGB(video.pixelFormat) {
             // Pictures (GIF, PNG frames, slides, RGB video): one conversion into the output's matrix, limited range.
             e.filters.append("scale=\(scaleW):\(scaleH):flags=lanczos+accurate_rnd+full_chroma_int:out_color_matrix=\(Self.swsMatrix(out.matrix)):out_range=tv")
         } else if scaling || out.matrix != src.matrix {
@@ -137,7 +146,7 @@ struct VideoEncoding {
         case .av1:
             a += ["-crf", String(Self.vpCRF(s)), "-preset", String([MediaSettings.Speed.fast: 8, .medium: 6, .slow: 4][s.speed]!), "-g", String(gop)]
             var params = ["tune=0"]
-            if keepHDR, let md = video.hdr.masteringDisplay { params.append("mastering-display=\(Self.svtMastering(md))") }
+            if keepHDR, let md = Self.svtMastering(video.hdr) { params.append("mastering-display=\(md)") }
             if keepHDR, let cll = video.hdr.maxCLL { params.append("content-light=\(cll),\(video.hdr.maxFALL ?? 0)") }
             a += ["-svtav1-params", params.joined(separator: ":")]
         case .vp9:
@@ -235,17 +244,15 @@ struct VideoEncoding {
     /// display's maximum, else 1000 cd/m².
     static func peak(_ hdr: MediaProbe.HDRMetadata) -> Double {
         if let cll = hdr.maxCLL, cll > 0 { return Double(cll) / 100 }
-        if let md = hdr.masteringDisplay, let l = md.range(of: "L("), let comma = md[l.upperBound...].firstIndex(of: ","),
-           let max = Double(md[l.upperBound..<comma]), max > 0 { return max / 10000 / 100 }
+        if let max = hdr.masteringValues?[8], max > 0 { return Double(max) / 10000 / 100 }
         return 10
     }
 
     /// SVT-AV1 wants the mastering display as normalised numbers: G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min).
-    static func svtMastering(_ x265: String) -> String {
-        let numbers = x265.split(whereSeparator: { !"0123456789".contains($0) }).compactMap { Double($0) }
-        guard numbers.count == 10 else { return x265 }
-        func c(_ v: Double) -> String { String(format: "%.4f", v / 50000) }
-        func l(_ v: Double) -> String { String(format: "%.4f", v / 10000) }
+    static func svtMastering(_ hdr: MediaProbe.HDRMetadata) -> String? {
+        guard let numbers = hdr.masteringValues else { return hdr.masteringDisplay }
+        func c(_ v: Int) -> String { String(format: "%.4f", Double(v) / 50000) }
+        func l(_ v: Int) -> String { String(format: "%.4f", Double(v) / 10000) }
         return "G(\(c(numbers[0])),\(c(numbers[1])))B(\(c(numbers[2])),\(c(numbers[3])))R(\(c(numbers[4])),\(c(numbers[5])))WP(\(c(numbers[6])),\(c(numbers[7])))L(\(l(numbers[8])),\(l(numbers[9])))"
     }
 

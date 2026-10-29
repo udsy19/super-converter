@@ -88,11 +88,11 @@ enum MediaKitCases {
                 return [.deltaE("mean ΔE00", s.mean, atMost: 2.0), .info("p95 ΔE00", s.p95)]
             },
         ]),
-        // HDR kept on HEVC Main10 and AV1 with the same mastering display and content light level.
-        // FFmpeg 7.1's VideoToolbox HEVC encoder does not write ST 2086 / CTA-861.3 metadata: that case checks the signal and
-        // the loss note that says so; AV1 carries both.
-        hdrKept("hevc-mov", target: "mov", options: ["videoCodec": "hevc"], metadata: false),
-        hdrKept("av1-mkv", target: "mkv", options: ["videoCodec": "av1"], metadata: true),
+        // HDR kept on HEVC Main10 and AV1 with the same mastering display and content light level, in the container and in
+        // the video stream itself (HEVC SEI written after VideoToolbox, AV1 metadata OBUs).
+        hdrKept("hevc-mov", target: "mov", options: ["videoCodec": "hevc"], elementary: ["-bsf:v", "hevc_mp4toannexb", "-f", "hevc"]),
+        hdrKept("hevc-mkv", target: "mkv", options: ["videoCodec": "hevc"], elementary: ["-bsf:v", "hevc_mp4toannexb", "-f", "hevc"]),
+        hdrKept("av1-mkv", target: "mkv", options: ["videoCodec": "av1"], elementary: ["-f", "obu"]),
         // Tone map: PQ → H.264 SDR is tagged BT.709, says so, and clips almost nothing.
         BenchCase(id: "mediakit.tonemap", category: .video, fixture: "generated/media/hdr-pq.mkv", target: "mp4", checks: [
             Check(name: "BT.709 SDR") { ctx in
@@ -190,18 +190,24 @@ enum MediaKitCases {
         ])
     }
 
-    static func hdrKept(_ name: String, target: FormatID, options: [String: OptionValue], metadata: Bool) -> BenchCase {
+    /// `elementary`: the FFmpeg output options that copy the video out as a bare stream, so the metadata is read from the
+    /// bitstream and not from the container's own fields.
+    static func hdrKept(_ name: String, target: FormatID, options: [String: OptionValue], elementary: [String]) -> BenchCase {
         BenchCase(id: "mediakit.hdr-kept-\(name)", category: .video, fixture: "generated/media/hdr-pq.mkv", target: target, options: OptionValues(options), checks: [
-            Check(name: metadata ? "PQ, mastering display, MaxCLL" : "PQ, 10-bit, metadata gap noted") { ctx in
-                let source = try MediaBench.probe(ctx.source), p = try MediaBench.probe(try out(ctx))
+            Check(name: "PQ, mastering display, MaxCLL/MaxFALL on the first frame") { ctx in
+                let output = try out(ctx)
+                let source = try MediaBench.firstFrameHDR(ctx.source), p = try MediaBench.probe(output)
                 guard p.transfer == "smpte2084", p.primaries == "bt2020" else { throw CheckFailure("tagged \(p.transfer ?? "-") / \(p.primaries ?? "-")") }
-                guard metadata else {
-                    guard ctx.result.lossNotes.contains(where: { $0.detail.contains("mastering display") }) else { throw CheckFailure("the metadata gap isn't noted") }
-                    return [.count("bit depth", p.bitDepth, atLeast: 10)]
+                guard source.maxCLL != nil, source.masteringLuminance != nil, source.masteringPrimaries != nil else { throw CheckFailure("the fixture's HDR metadata isn't read") }
+                guard !ctx.result.lossNotes.contains(where: { $0.kind == .otherLoss || $0.kind == .hdrToSDR }) else { throw CheckFailure("a loss note says HDR was lost") }
+                let stream = ctx.work.appendingPathComponent("video-\(name).bin")
+                guard try MediaBench.ffmpeg(["-i", output.path, "-map", "0:v:0", "-c", "copy"] + elementary + ["-y", stream.path]).status == 0 else { throw CheckFailure("the video can't be copied out") }
+                for (label, url) in [("output", output), ("bitstream", stream)] {
+                    let f = try MediaBench.firstFrameHDR(url)
+                    guard f.masteringPrimaries == source.masteringPrimaries else { throw CheckFailure("\(label) primaries \(f.masteringPrimaries ?? "-") vs \(source.masteringPrimaries ?? "-")") }
+                    guard f.masteringLuminance == source.masteringLuminance else { throw CheckFailure("\(label) mastering \(f.masteringLuminance ?? "-") vs \(source.masteringLuminance ?? "-")") }
+                    guard f.maxCLL == source.maxCLL, f.maxFALL == source.maxFALL else { throw CheckFailure("\(label) MaxCLL \(f.maxCLL ?? -1)/\(f.maxFALL ?? -1) vs \(source.maxCLL ?? -1)/\(source.maxFALL ?? -1)") }
                 }
-                guard source.maxCLL != nil, source.masteringLuminance != nil else { throw CheckFailure("the fixture's HDR metadata isn't read") }
-                guard p.maxCLL == source.maxCLL, p.maxFALL == source.maxFALL else { throw CheckFailure("MaxCLL \(p.maxCLL ?? -1)/\(p.maxFALL ?? -1) vs \(source.maxCLL ?? -1)/\(source.maxFALL ?? -1)") }
-                guard p.masteringLuminance == source.masteringLuminance else { throw CheckFailure("mastering \(p.masteringLuminance ?? "-") vs \(source.masteringLuminance ?? "-")") }
                 return [.exact("MaxCLL", Double(p.maxCLL ?? 0), equals: Double(source.maxCLL ?? 0)), .count("bit depth", p.bitDepth, atLeast: 10)]
             },
         ])
@@ -273,13 +279,13 @@ enum MediaBench {
         var bitDepth = 8
         var maxCLL: Int?, maxFALL: Int?
         var masteringLuminance: String?
+        /// Red, green, blue and white point x/y, four decimals each.
+        var masteringPrimaries: String?
         var tags: [String: String] = [:]
         var chapters: [String] = []
     }
 
     static func probe(_ url: URL) throws -> Probe {
-        let out = Subprocess.run(try tool("ffprobe"), ["-v", "error", "-of", "json", "-show_format", "-show_streams", "-show_chapters", "-show_frames",
-                                                        "-read_intervals", "%+#1", "-select_streams", "v:0", url.path])
         let streams = Subprocess.run(try tool("ffprobe"), ["-v", "error", "-of", "json", "-show_format", "-show_streams", "-show_chapters", url.path])
         guard streams.status == 0, let root = try? JSONSerialization.jsonObject(with: streams.data) as? [String: Any] else { throw CheckFailure("ffprobe can't read \(url.lastPathComponent)") }
         var p = Probe()
@@ -314,9 +320,21 @@ enum MediaBench {
             }
         }
         // HDR metadata often sits on the frames rather than the stream (HEVC SEI, AV1 OBUs).
-        if p.maxCLL == nil || p.masteringLuminance == nil, out.status == 0, let frames = (try? JSONSerialization.jsonObject(with: out.data) as? [String: Any])?["frames"] as? [[String: Any]] {
-            for f in frames { sideData(f["side_data_list"], into: &p) }
+        if p.maxCLL == nil || p.masteringLuminance == nil, let frame = try? firstFrameHDR(url) {
+            p.maxCLL = p.maxCLL ?? frame.maxCLL; p.maxFALL = p.maxFALL ?? frame.maxFALL
+            p.masteringLuminance = p.masteringLuminance ?? frame.masteringLuminance; p.masteringPrimaries = p.masteringPrimaries ?? frame.masteringPrimaries
         }
+        return p
+    }
+
+    /// The HDR side data of the first video frame as FFmpeg decodes it (only the HDR fields are set).
+    static func firstFrameHDR(_ url: URL) throws -> Probe {
+        let out = Subprocess.run(try tool("ffprobe"), ["-v", "error", "-of", "json", "-show_frames", "-read_intervals", "%+#1", "-select_streams", "v:0", url.path])
+        guard out.status == 0, let frames = (try? JSONSerialization.jsonObject(with: out.data) as? [String: Any])?["frames"] as? [[String: Any]] else {
+            throw CheckFailure("ffprobe can't read the frames of \(url.lastPathComponent)")
+        }
+        var p = Probe()
+        for f in frames.prefix(1) { sideData(f["side_data_list"], into: &p) }
         return p
     }
 
@@ -327,6 +345,8 @@ enum MediaBench {
                 p.maxCLL = side["max_content"] as? Int ?? p.maxCLL; p.maxFALL = side["max_average"] as? Int ?? p.maxFALL
             case "Mastering display metadata":
                 if let max = side["max_luminance"] as? String, let min = side["min_luminance"] as? String { p.masteringLuminance = "\(fraction(max))/\(fraction(min))" }
+                let primaries = ["red_x", "red_y", "green_x", "green_y", "blue_x", "blue_y", "white_point_x", "white_point_y"].compactMap { side[$0] as? String }
+                if primaries.count == 8 { p.masteringPrimaries = primaries.map(fraction).joined(separator: " ") }
             default: break
             }
         }
