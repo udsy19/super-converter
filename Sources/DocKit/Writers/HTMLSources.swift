@@ -161,13 +161,15 @@ enum HTMLSources {
         }
         func node(_ n: VectorNode) -> String {
             switch n {
-            case .path(let segments, let fill, let stroke):
+            case .path(let segments, let fill, let stroke, let rule):
                 var attrs = " d=\"\(pathData(segments))\""
+                if rule == .evenOdd { attrs += " fill-rule=\"evenodd\"" }
                 if let fill { attrs += " fill=\"\(paint(fill))\""; if case .solid(let c) = fill, c.alpha < 1 { attrs += opacity(c) } } else { attrs += " fill=\"none\"" }
                 if let stroke {
                     attrs += " stroke=\"\(paint(stroke.paint))\" stroke-width=\"\(num(stroke.width))\""
                     if !stroke.dash.isEmpty { attrs += " stroke-dasharray=\"\(stroke.dash.map(num).joined(separator: " "))\"" }
-                    if stroke.round { attrs += " stroke-linecap=\"round\" stroke-linejoin=\"round\"" }
+                    if stroke.cap != .butt { attrs += " stroke-linecap=\"\(stroke.cap.rawValue)\"" }
+                    if stroke.join != .miter { attrs += " stroke-linejoin=\"\(stroke.join.rawValue)\"" }
                 }
                 return "<path\(attrs)/>"
             case .text(let run):

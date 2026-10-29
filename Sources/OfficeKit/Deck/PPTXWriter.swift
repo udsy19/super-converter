@@ -340,7 +340,7 @@ enum PPTXWriter {
         var out = ""
         for node in nodes {
             switch node {
-            case .path(let segments, let fill, let stroke):
+            case .path(let segments, let fill, let stroke, _):
                 out += pathShape(id: newID(), segments: segments, fill: fill, stroke: stroke, frame: frame, rotation: rotation)
             case .group(let children, _, _, _):
                 out += vectorShapes(children, frame: frame, rotation: rotation, newID: newID)
