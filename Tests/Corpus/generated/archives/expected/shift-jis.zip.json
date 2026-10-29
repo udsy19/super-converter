@@ -1,0 +1,16 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "日本語",
+   "kind": "directory"
+  },
+  {
+   "path": "日本語/ファイル.txt",
+   "kind": "file",
+   "size": 5,
+   "sha256": "88647baf42eec1a4db3514b25f67a2b72bae584b67212439aa7df4964d41e19a"
+  }
+ ]
+}

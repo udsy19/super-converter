@@ -19,7 +19,7 @@ import SuperConverterCore
 enum CaseRegistry {
     static var all: [BenchCase] {
         let cases = [
-            CADKitCases.all, DocKitCases.all, LayoutKitCases.all, OfficeKitCases.all, EbookKitCases.all, HelperKitCases.all, SampleCases.all,
+            ArchiveKitCases.all, CADKitCases.all, DocKitCases.all, LayoutKitCases.all, OfficeKitCases.all, EbookKitCases.all, HelperKitCases.all, SampleCases.all,
         ].flatMap { $0 }
         precondition(Set(cases.map(\.id)).count == cases.count, "duplicate bench case ids")
         return cases

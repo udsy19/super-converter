@@ -55,3 +55,40 @@ public protocol HelperManaging: AnyObject {
     /// Posts when any helper's status changes.
     var statusChanges: AsyncStream<HelperID> { get }
 }
+
+/// An executable that ships inside the app (formats §2.2: the LGPL `7zz`, `ffmpeg` and `ffprobe` in `Contents/Helpers/`,
+/// `Vendor/Tools/` in a checkout) or a macOS command an engine drives (`hdiutil`). Engines run these only through
+/// `Services.tools`, HelperKit's runner (ARCHITECTURE §7): never `Process` themselves.
+public enum BundledTool: String, CaseIterable, Sendable {
+    case sevenZip = "7zz", ffmpeg, ffprobe, hdiutil
+}
+
+/// One run of a bundled tool: the same scrubbed environment, private TMPDIR, `nice` and no-network profile as a helper.
+public struct ToolInvocation: Sendable {
+    public var tool: BundledTool
+    public var arguments: [String]
+    /// The working directory and a place the tool may write.
+    public var workFolder: URL
+    /// Other places the tool may write (an extraction folder, a mount point).
+    public var writable: [URL]
+    /// Written to the tool's standard input and closed (passwords go this way, never on the command line).
+    public var standardInput: Data?
+    public var timeLimit: TimeInterval?
+    /// How much of standard output is kept (a long listing needs more than the default).
+    public var outputLimit: Int
+
+    public init(tool: BundledTool, arguments: [String], workFolder: URL, writable: [URL] = [], standardInput: Data? = nil,
+                timeLimit: TimeInterval? = nil, outputLimit: Int = 256_000) {
+        self.tool = tool; self.arguments = arguments; self.workFolder = workFolder; self.writable = writable
+        self.standardInput = standardInput; self.timeLimit = timeLimit; self.outputLimit = outputLimit
+    }
+}
+
+/// HelperKit's runner for bundled tools (`Services.tools`). It is `Sendable` and not tied to the main actor, so converters
+/// keep it and use it from any task.
+public protocol ToolRunning: Sendable {
+    /// Where the tool is on this Mac, or nil when this build lacks it.
+    func location(of tool: BundledTool) -> URL?
+    /// Runs the tool to completion or its time limit; cancelling the calling task stops it.
+    func run(_ invocation: ToolInvocation) async throws -> HelperRunResult
+}

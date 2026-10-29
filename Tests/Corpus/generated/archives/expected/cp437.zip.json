@@ -1,0 +1,16 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "café",
+   "kind": "directory"
+  },
+  {
+   "path": "café/naïve.txt",
+   "kind": "file",
+   "size": 6,
+   "sha256": "3ea71547f8935df546daeb1bb045df0590c3f306eaa0395d45b3fe968e389f57"
+  }
+ ]
+}
