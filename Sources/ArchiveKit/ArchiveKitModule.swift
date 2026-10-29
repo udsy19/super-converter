@@ -20,6 +20,9 @@ public enum ArchiveKitModule {
             do {
                 _ = try await Archives.read(ArchiveReadRequest(source: archive, format: format, root: destination, tools: tools),
                                             engine: format == "chm" ? .sevenZip : .libarchive)
+            } catch ArchiveError.looksLikeBomb {
+                // A book has no archive options to say yes with, so a bomb inside one stops (quality §8 "Safety").
+                throw ConversionError.failed("This book’s \(format.pill) expands far more than a real one does (a decompression bomb), so it was stopped.")
             } catch let error as ArchiveError {
                 throw error.conversionError(for: format)
             }

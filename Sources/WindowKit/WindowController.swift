@@ -65,6 +65,11 @@ public final class MainWindowController: NSWindowController, NSWindowDelegate, W
         show()
     }
 
+    public func showProblem(_ url: URL, target: FormatID, options: OptionValues, problem: ConversionError) {
+        viewModel.showProblem(url, target: target, options: options, problem: problem)
+        show()
+    }
+
     public var hasWork: Bool { viewModel.hasWork }
 
     /// The quit check (ux §6.4): "Stop converting 3 files?". True when the app may quit; running jobs are stopped.

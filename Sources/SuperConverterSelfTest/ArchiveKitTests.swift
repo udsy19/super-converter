@@ -438,9 +438,21 @@ func registerArchiveKitTests() {
         // 40 MB of zeros deflates to ~40 KB: a small bomb. Lower caps catch it; defaults let a normal archive through.
         let tree = try akTree(dir, [("zeros.bin", Data(count: 40 << 20))])
         let url = try akWrite(tree, "zip", to: dir.appendingPathComponent("bomb.zip"), dir: dir)
+        // Over the ratio, the person is asked first (quality §8): the read stops with the question, and runs once they agree.
         var ratio = ExtractionLimits(); ratio.ratioFloor = 1 << 20; ratio.maxRatio = 100
-        akExpectError(.tooLarge("This archive expands far more than a real one does (a decompression bomb), so it was stopped."),
-                      { _ = try akRead(url, "zip", into: dir.appendingPathComponent("r1"), limits: ratio) }, "ratio")
+        akExpectError(.looksLikeBomb, { _ = try akRead(url, "zip", into: dir.appendingPathComponent("r1"), limits: ratio) }, "ratio")
+        guard case .needsConfirmation(let question, .extractAnyway, "extractAnyway") = ArchiveError.looksLikeBomb.conversionError(for: "zip") else {
+            check(false, "a bomb maps to a question with Extract Anyway"); return
+        }
+        check(question == "This archive unpacks to over 1,000 times its size — extract it anyway?", "the question (ux §7.2, one line): \(question)")
+        check(ExtractionLimits().ratioFloor == 10_000_000_000 && ExtractionLimits().maxRatio == 1000, "asks past 1000:1 and 10 GB (quality §8)")
+        check(!ExtractionLimits().looksLikeBomb(expanded: 9_999_999_999, archiveSize: 1) && ExtractionLimits().looksLikeBomb(expanded: 10_000_000_001, archiveSize: 10_000_000),
+              "both the size and the ratio must be over")
+        var agreed = ratio; agreed.extractAnyway = true
+        let (unpacked, _) = try akRead(url, "zip", into: dir.appendingPathComponent("r1b"), limits: agreed)
+        check(unpacked.totalSize == 40 << 20, "with the person's yes the bomb unpacks")
+        var agreedButCapped = agreed; agreedButCapped.maxTotalBytes = 1 << 20
+        do { _ = try akRead(url, "zip", into: dir.appendingPathComponent("r1c"), limits: agreedButCapped); check(false, "the total cap still stops") } catch ArchiveError.tooLarge {} catch { check(false, "total cap after yes: \(error)") }
         var total = ExtractionLimits(); total.maxTotalBytes = 1 << 20
         do { _ = try akRead(url, "zip", into: dir.appendingPathComponent("r2"), limits: total); check(false, "total cap") } catch ArchiveError.tooLarge {} catch { check(false, "total cap: \(error)") }
         check(((try? FileManager.default.contentsOfDirectory(atPath: dir.appendingPathComponent("r2").path)) ?? []).count <= 1, "the half-written file is removed")
@@ -879,6 +891,27 @@ func registerArchiveKitTests() {
         let damaged = complete { try await libarchive.run(Step(.libarchive, "zip", .archiveTree), input: .file(junk),
                                                          context: StepContext(workFolder: work, source: junk, sourceFormat: "zip", targetFormat: "7z")) }
         check({ if case .failure(let e)? = damaged, let c = e as? ConversionError, c == .damaged("zip") || { if case .failed = c { true } else { false } }() { true } else { false } }(), "junk is damaged: \(String(describing: damaged))")
+    }
+
+    akCase("converter.bombAsks") { dir in
+        // The engine stops with the question; the option the question names makes the same step unpack (quality §8).
+        let tree = try akTree(dir, [("zeros.bin", Data(count: 20 << 20))])
+        let zip = try akWrite(tree, "zip", to: dir.appendingPathComponent("bomb.zip"), dir: dir)
+        let work = dir.appendingPathComponent("work")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        var small = ExtractionLimits(); small.ratioFloor = 1 << 20; small.maxRatio = 100
+        let libarchive = ArchiveConverter(.libarchive, tools: akTools, limits: small)
+        @MainActor func run(_ options: OptionValues) -> Result<StepOutput, Error>? {
+            complete { try await libarchive.run(Step(.libarchive, "zip", .archiveTree), input: .file(zip),
+                                                context: StepContext(workFolder: work, source: zip, sourceFormat: "zip", targetFormat: "tar", options: options)) }
+        }
+        guard case .failure(let error)? = run(OptionValues()), case .needsConfirmation(_, .extractAnyway, let option) = error as? ConversionError else {
+            check(false, "a bomb throws needsConfirmation"); return
+        }
+        check(option == ExtractionLimits.extractAnywayOption && OptionProfiles.profile("O-ARCHIVE")?.definition(option)?.kind == .toggle,
+              "the option is O-ARCHIVE's toggle, so the card and sconv can set it")
+        guard case .success(let out)? = run(OptionValues([option: .bool(true)])), case .archive(let unpacked) = out.value else { check(false, "with the option it unpacks"); return }
+        check(unpacked.totalSize == 20 << 20, "the whole bomb, once agreed")
     }
 
     akCase("availability") { _ in

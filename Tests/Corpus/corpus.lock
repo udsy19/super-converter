@@ -3,7 +3,7 @@
 #
 #   <id>   <path under external/>   <sha256>   <url>   <licence>   [extract]
 #
-# `extract` unpacks a .tar.gz next to the file. To add a source: `scripts/fetch-corpus.sh --pin <url>` prints the line (with the
+# `extract` unpacks a .tar.gz next to the file; `uudecode` decodes a `name.uu` (libarchive's test files) into `name` beside it. To add a source: `scripts/fetch-corpus.sh --pin <url>` prints the line (with the
 # hash of what it downloaded) for review; commit it here. Planned sources, to be pinned as the kits that need them land:
 # raw.pixls.us (CC0, RAW files), Xiph media test collection (CC/public-domain clips), Google Fonts (OFL), LibreOffice public test
 # documents (MPL-2.0), Wikimedia Commons public-domain images.
@@ -36,3 +36,11 @@ kodak-21  photos/kodim21.png  ac958597c82073f6bb65129c68f72b651db5b9efd82e11547d
 kodak-22  photos/kodim22.png  1cee58eb1f2d9c7ebb254d208a03c783ce6cf2c4d8c2cf45e235dd23b4ce1b29  https://r0k.us/graphics/kodak/kodak/kodim22.png  Kodak-unrestricted
 kodak-23  photos/kodim23.png  e3111a2fd4da24af15d6459ef9eacfe54106b38e27b4a21821b75c3f5d2d5baf  https://r0k.us/graphics/kodak/kodak/kodim23.png  Kodak-unrestricted
 kodak-24  photos/kodim24.png  1071c68372cc5a01435c2c225a5cf7d4bb803846ec08bb6b3d6721b156d7cb96  https://r0k.us/graphics/kodak/kodak/kodim24.png  Kodak-unrestricted
+# Archives this Mac cannot make (no RAR encoder, no Quantum compressor). libarchive's own test files (BSD-2-Clause, its
+# COPYING): RAR5 and RAR4 with encrypted names; the password, "password", is not in libarchive's test (it cannot decrypt),
+# it was found by trying 7zz. libmspack's CAB with MSZIP, LZX and Quantum folders: no permissively licensed Quantum CAB
+# was found (libarchive, 7-Zip, rust-cab, Apache Tika, SabreTools, corkami, python-cabarchive, unblob and others checked),
+# so this one is LGPL-2.1 test data (libmspack/README, COPYING.LIB) — fetched, never committed, linked or ported.
+libarchive-rar5-enc  archives/test_read_format_rar5_encrypted_filenames.rar.uu  f113860fd2f06aa13b2f933150a1f80988038cdeef393fbb6a1a0d302c86148e  https://raw.githubusercontent.com/libarchive/libarchive/348e5a2e27503f5bf114e298e2bd9ddcd59ab48e/libarchive/test/test_read_format_rar5_encrypted_filenames.rar.uu  BSD-2-Clause  uudecode
+libarchive-rar4-enc  archives/test_read_format_rar4_encrypted_filenames.rar.uu  aa4d2a0235c7627bc6011c081d16b3b36b1986f315de0be5891315622213c383  https://raw.githubusercontent.com/libarchive/libarchive/348e5a2e27503f5bf114e298e2bd9ddcd59ab48e/libarchive/test/test_read_format_rar4_encrypted_filenames.rar.uu  BSD-2-Clause  uudecode
+libmspack-qtm-cab    archives/mszip_lzx_qtm.cab  0ce0b55fe705b744d41bb361170c0467db30da0c7f9bdd386d5dade71a78e171  https://raw.githubusercontent.com/kyz/libmspack/55d501976171397ccd5d5a7a1ca7da065b1d9a06/libmspack/test/test_files/cabd/mszip_lzx_qtm.cab  LGPL-2.1-test-data

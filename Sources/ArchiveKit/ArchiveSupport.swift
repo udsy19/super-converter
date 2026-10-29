@@ -11,8 +11,11 @@ public enum ArchiveError: Error, Equatable, Sendable {
     /// Encrypted in a way libarchive cannot read (ZIP AES, 7z AES, RAR, encrypted headers): 7zz must do it.
     case needsSevenZip
     case damaged(String)
-    /// Over a limit in `ExtractionLimits` (a decompression bomb, or simply too many files).
+    /// Over a hard limit in `ExtractionLimits` (too many files, too many bytes, too deeply nested).
     case tooLarge(String)
+    /// Expands like a decompression bomb (over `maxRatio` times its size and past `ratioFloor`): the person is asked first
+    /// (quality §8 "Safety"), and the read runs again with `ExtractionLimits.extractAnyway` set.
+    case looksLikeBomb
     case notEnoughSpace(needed: Int64)
     case unsupported(String)
     case toolMissing(String)
@@ -24,6 +27,9 @@ public enum ArchiveError: Error, Equatable, Sendable {
         case .passwordRequired, .needsSevenZip: .passwordRequired(format)
         case .damaged: .damaged(format)
         case .tooLarge(let why): .failed(why)
+        case .looksLikeBomb:
+            .needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?",
+                               proceed: .extractAnyway, option: ExtractionLimits.extractAnywayOption)
         case .notEnoughSpace(let needed): .notEnoughSpace(volume: "this Mac", needed: needed)
         case .unsupported(let why): .failed(why)
         case .toolMissing(let name): .failed("\(name) isn’t available in this build.")
@@ -33,21 +39,32 @@ public enum ArchiveError: Error, Equatable, Sendable {
     }
 }
 
-/// Caps that stop a hostile or runaway archive (quality §8 "Safety": a zip bomb expands more than 1000:1 and past 10 GB).
+/// Caps that stop a hostile or runaway archive. A zip bomb (more than 1000:1 and past 10 GB) asks first (quality §8
+/// "Safety"); the other caps always stop.
 public struct ExtractionLimits: Sendable, Equatable {
+    /// The O-ARCHIVE option that answers the bomb question with yes (`ConversionError.needsConfirmation`).
+    public static let extractAnywayOption = "extractAnyway"
+
     /// Bytes written for one archive.
     public var maxTotalBytes: Int64 = 64 << 30
     public var maxEntries = 1_000_000
     /// Expanded size over archive size. Counted only once `ratioFloor` bytes were written, so small archives and
     /// well-compressed text never trip it.
     public var maxRatio = 1000.0
-    public var ratioFloor: Int64 = 10 << 30
+    public var ratioFloor: Int64 = 10_000_000_000
+    /// The person agreed to unpack an archive that expands like a bomb; `maxTotalBytes` still applies.
+    public var extractAnyway = false
     /// Archives inside archives that are unwrapped on the way (tar.7z, DEB payload, …).
     public var maxNesting = 3
     /// Free space kept back when checking whether the volume can hold the contents.
     public var reserveBytes: Int64 = 256 << 20
 
     public init() {}
+
+    /// True when `expanded` bytes out of an archive of `archiveSize` bytes is a bomb the person has not agreed to.
+    func looksLikeBomb(expanded: Int64, archiveSize: Int64) -> Bool {
+        !extractAnyway && expanded > ratioFloor && archiveSize > 0 && Double(expanded) > maxRatio * Double(archiveSize)
+    }
 }
 
 /// The rules for a name inside an archive (zip-slip).
@@ -293,9 +310,7 @@ final class SafeExtractor {
         if totalBytes > limits.maxTotalBytes {
             throw ArchiveError.tooLarge("This archive unpacks to more than \(Formatting.bytes(limits.maxTotalBytes)), which is more than Super Converter will unpack.")
         }
-        if totalBytes > limits.ratioFloor, archiveSize > 0, Double(totalBytes) > limits.maxRatio * Double(archiveSize) {
-            throw ArchiveError.tooLarge("This archive expands far more than a real one does (a decompression bomb), so it was stopped.")
-        }
+        if limits.looksLikeBomb(expanded: totalBytes, archiveSize: archiveSize) { throw ArchiveError.looksLikeBomb }
         bytesSinceSpaceCheck += bytes
         if bytesSinceSpaceCheck >= 256 << 20 { bytesSinceSpaceCheck = 0; try checkSpace(for: 0) }
     }

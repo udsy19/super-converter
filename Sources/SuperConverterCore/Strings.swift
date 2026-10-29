@@ -130,6 +130,8 @@ public enum Strings {
             return (reason, nil)
         case .unsupportedPair(let from, let to):
             return ("\(from.pill) can’t become \(to.pill)", nil)
+        case .needsConfirmation(let question, let proceed, _):
+            return (question, proceed)
         case .cancelled:
             return ("Stopped", nil)
         case .failed(let message):

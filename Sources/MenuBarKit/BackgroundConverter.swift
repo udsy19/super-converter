@@ -36,7 +36,14 @@ final class BackgroundConverter {
             return RecentConversion(sourceName: item.name, sourceFormat: source, output: output, date: now)
         }
         if !finished.isEmpty { recents.add(finished); onRecentsChanged?() }
-        if notify, Defaults[.notifyWhenDone], summary.total > 0 {
+        // A question (a decompression bomb asks first, quality §8) is always passed on: nothing converts until it is
+        // answered, on the file's card in the window. It is not repeated in the "Done" notification.
+        let questions = summary.failures.compactMap { failure -> PendingProblem? in
+            guard case .needsConfirmation = failure.error, let target = failure.item.target else { return nil }
+            return PendingProblem(url: failure.item.url, target: target, options: failure.item.options, problem: failure.error)
+        }
+        for question in questions { notifier.ask(question) }
+        if notify, Defaults[.notifyWhenDone], summary.total > questions.count {
             notifier.post(title: summary.title, body: summary.detail, reveal: summary.firstOutput)
         }
         return summary

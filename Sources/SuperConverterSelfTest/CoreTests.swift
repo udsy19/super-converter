@@ -450,6 +450,8 @@ private func coreStrings() {
         .helperTimedOut(.libreoffice, seconds: 120), .notEnoughSpace(volume: "Macintosh HD", needed: 1_200_000_000),
         .folderNotWritable(name: "Shared"), .notReadableYet, .classicDWF, .impossiblePair(reason: "GIF pictures have no sound"),
         .unsupportedPair(from: "gif", to: "mp3"), .cancelled,
+        .needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?",
+                           proceed: .extractAnyway, option: "extractAnyway"),
     ]
     lines += errors.map { Strings.problem($0, libreOfficeInstalled: true).message }
     lines += LossNote.Kind.allCases.map { LossNote($0).headline }
@@ -463,6 +465,8 @@ private func coreStrings() {
     check(Strings.Picker.needsHelperHint(.calibre) == "Needs calibre — free, 160 MB", "picker hint (ux §5.4)")
     check(Strings.Helper.betterWithHelper(.libreoffice) == "Make it look like the original — Install LibreOffice", "optional helper line")
     check(Strings.problem(.passwordRequired("pdf")) == ("This PDF needs its password", .enterPassword), "password problem")
+    check(Strings.problem(.needsConfirmation(question: "Extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")) == ("Extract it anyway?", .extractAnyway)
+          && ConversionError.Fix.extractAnyway.rawValue == "Extract Anyway", "a question is the card's line, its proceed the button (quality §8)")
     check(Strings.problem(.helperTimedOut(.libreoffice, seconds: 120)).message == "LibreOffice took longer than 2 minutes and was stopped", "timeout problem")
     check(Strings.problem(.notEnoughSpace(volume: "Macintosh HD", needed: 1_200_000_000)).message == "There isn’t enough space on “Macintosh HD” — 1.2 GB more is needed",
           "space problem")

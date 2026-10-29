@@ -14,6 +14,10 @@ public enum ConversionError: Error, Equatable, Sendable {
     case classicDWF
     case impossiblePair(reason: String)
     case unsupportedPair(from: FormatID, to: FormatID)
+    /// The step stopped before doing something the person should agree to first (quality §8 "Safety": a decompression bomb
+    /// asks first). `question` is the card's line and `proceed` its button; the job runs again with the boolean option
+    /// `option` set to true to go ahead. Surfaces without a card pass the question on (a notification, `sconv`'s message).
+    case needsConfirmation(question: String, proceed: Fix, option: String)
     case cancelled
     /// Anything else, with the engine's own words (kept short, in the voice of ux §1.1).
     case failed(String)
@@ -27,5 +31,6 @@ public enum ConversionError: Error, Equatable, Sendable {
         case tryAgain = "Try Again"
         case showInFinder = "Show in Finder"
         case chooseAnotherFolder = "Choose Another Folder…"
+        case extractAnyway = "Extract Anyway"
     }
 }

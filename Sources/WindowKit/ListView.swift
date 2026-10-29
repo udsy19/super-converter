@@ -147,6 +147,7 @@ private struct ListRow: View {
                 if let fix = Strings.problem(error, libreOfficeInstalled: vm.libreOfficeReady).fix {
                     FixButton(title: fix.rawValue) { vm.perform(fix, for: card) }
                 }
+                if case .needsConfirmation = error { CircleIconButton(symbol: "xmark", label: "Cancel") { vm.remove([card]) } }
             default:
                 if card.isEditable { CircleIconButton(symbol: "slider.horizontal.3", label: "Options", filled: card.hasChangedOptions) { vm.openOptions(for: card) } }
                 CircleIconButton(symbol: "xmark", label: "Remove") { vm.remove([card]) }

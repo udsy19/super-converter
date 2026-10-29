@@ -316,6 +316,28 @@ private func pump(_ seconds: TimeInterval = 0.05) { RunLoop.main.run(until: Date
     check(f.queue.enqueued.last?.place == .folder(folder), "the job goes to the chosen folder")
     check(WindowViewModel.placeText(.folder(folder)) == "in “out”", "place text")
 
+    // A decompression bomb asks first (quality §8): the card shows the question with Extract Anyway; choosing it runs the
+    // same job again with the option the question names.
+    f.vm.add([f.file("Huge.zip", bytes: 10_000)])
+    let bomb = f.card("Huge.zip")
+    let question = ConversionError.needsConfirmation(question: "This archive unpacks to over 1,000 times its size — extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
+    bomb.state = .failed(question)
+    check(Strings.problem(question).fix == .extractAnyway && Strings.problem(question).message.hasSuffix("extract it anyway?"), "the card asks, with Extract Anyway")
+    let queued = f.queue.enqueued.count
+    f.vm.perform(.extractAnyway, for: bomb)
+    check(f.queue.enqueued.count == queued + 1 && f.queue.enqueued.last?.plan.request.options["extractAnyway"] == .bool(true), "Extract Anyway re-runs it with the option set")
+    check(bomb.state == .queued && bomb.options["extractAnyway"] == .bool(true), "the card runs again")
+    f.vm.perform(.extractAnyway, for: bomb)
+    check(f.queue.enqueued.count == queued + 1, "without a question there is nothing to agree to")
+    // A question from a background conversion (a notification's click) opens the card asking it, with that job's options.
+    let background = f.file("Backup.zip", bytes: 10_000)
+    f.vm.showProblem(background, target: "tar", options: OptionValues(["compression": "fast"]), problem: question)
+    let asked = f.card("Backup.zip")
+    check(asked.state == .failed(question) && asked.target == "tar" && asked.options["compression"] == "fast", "the card shows the question with the job's target and options")
+    f.vm.perform(.extractAnyway, for: asked)
+    check(f.queue.enqueued.last?.plan.request.source == background && f.queue.enqueued.last?.plan.request.options["extractAnyway"] == .bool(true), "and answers it")
+    f.vm.remove([bomb, asked])
+
     // Try with LibreOffice runs the helper route.
     let doc = f.card("Report.pages")
     doc.state = .failed(.damaged("pages"))
