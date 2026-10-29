@@ -1275,20 +1275,58 @@ private func dockitWebKit() {
     } else { check(false, "WebKit snapshot produced a JPEG") }
     // Nothing leaves the Mac unless the person turns it on for the file: a loopback server counts the requests.
     final class Counter: @unchecked Sendable { var connections = 0; var port: UInt16 = 0 }
-    let counter = Counter()
-    if let listener = try? NWListener(using: .tcp, on: .any) {
+    let counter = Counter(), datagrams = Counter()
+    if let listener = try? NWListener(using: .tcp, on: .any), let udp = try? NWListener(using: .udp, on: .any) {
         listener.newConnectionHandler = { connection in counter.connections += 1; connection.cancel() }
         listener.stateUpdateHandler = { if case .ready = $0 { counter.port = listener.port?.rawValue ?? 0 } }
         listener.start(queue: .main)
+        // WebRTC's STUN and TURN requests are datagrams, which no content rule sees.
+        udp.newConnectionHandler = { connection in datagrams.connections += 1; connection.cancel() }
+        udp.stateUpdateHandler = { if case .ready = $0 { datagrams.port = udp.port?.rawValue ?? 0 } }
+        udp.start(queue: .main)
         let deadline = Date().addingTimeInterval(5)
-        while counter.port == 0 && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-        if counter.port != 0 {
+        while (counter.port == 0 || datagrams.port == 0) && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        defer { udp.cancel() }
+        if counter.port != 0 && datagrams.port != 0 {
             let remote = folder.appendingPathComponent("remote.html")
-            try? Data("<html><body><p>remote test</p><img src=\"http://127.0.0.1:\(counter.port)/p.png\"><link rel=\"stylesheet\" href=\"http://127.0.0.1:\(counter.port)/s.css\"></body></html>".utf8).write(to: remote)
+            // Every way a page reaches out: pictures, styles and their @import, SVG pictures, frames, scripts' fetch, beacons,
+            // sockets and event streams, under any scheme the network takes (http, https, ws, wss, ftp, and upper case).
+            let host = "127.0.0.1:\(counter.port)"
+            let page = """
+                <html><head><style>@import url("http://\(host)/i.css"); body { background: url("HTTP://\(host)/b.png") }</style>
+                <link rel="stylesheet" href="http://\(host)/s.css"><link rel="prefetch" href="http://\(host)/f"></head>
+                <body><p>remote test</p><img src="http://\(host)/p.png"><iframe src="http://\(host)/frame.html"></iframe>
+                <svg width="10" height="10"><image href="http://\(host)/svg.png" width="10" height="10"/></svg>
+                <a ping="http://\(host)/ping" href="#">x</a><video src="http://\(host)/v.mp4" preload="auto"></video>
+                <script>
+                try { fetch("http://\(host)/fetch") } catch (e) {}
+                try { navigator.sendBeacon("http://\(host)/beacon", "x") } catch (e) {}
+                try { new WebSocket("ws://\(host)/ws") } catch (e) {}
+                try { new EventSource("http://\(host)/events") } catch (e) {}
+                try { var x = new XMLHttpRequest(); x.open("GET", "http://\(host)/xhr"); x.send() } catch (e) {}
+                try { fetch("ftp://\(host)/ftp") } catch (e) {}
+                try { new Image().src = "https://\(host)/tls.png" } catch (e) {}
+                try {
+                    var rtc = new RTCPeerConnection({ iceServers: [{ urls: "stun:127.0.0.1:\(datagrams.port)" },
+                                                                   { urls: "turn:127.0.0.1:\(datagrams.port)", username: "u", credential: "c" }] });
+                    rtc.createDataChannel("x");
+                    rtc.createOffer().then(function (o) { return rtc.setLocalDescription(o) });
+                } catch (e) {}
+                try {
+                    // A fresh frame is a fresh set of globals.
+                    var frame = document.createElement("iframe"); document.body.appendChild(frame);
+                    var fresh = new frame.contentWindow.RTCPeerConnection({ iceServers: [{ urls: "stun:127.0.0.1:\(datagrams.port)" }] });
+                    fresh.createDataChannel("y");
+                    fresh.createOffer().then(function (o) { return fresh.setLocalDescription(o) });
+                } catch (e) {}
+                </script></body></html>
+                """
+            try? Data(page.utf8).write(to: remote)
             _ = runStep(.webKitPrint, "html", "pdf", input: .file(remote), context: context(folder, source: "remote.html", from: "html", to: "pdf"))
             _ = runStep(.webKitSnapshot, "html", "png", input: .file(remote), context: context(folder, source: "remote.html", from: "html", to: "png"))
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
             check(counter.connections == 0, "no request leaves the page by default (\(counter.connections) connections)")
+            check(datagrams.connections == 0, "no WebRTC request either (\(datagrams.connections))")
             _ = runStep(.webKitPrint, "html", "pdf", input: .file(remote), context: context(folder, source: "remote.html", from: "html", to: "pdf", options: OptionValues(["loadWebResources": true])))
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
             check(counter.connections > 0, "\"Load web resources\" lets the page fetch (\(counter.connections) connections)")
