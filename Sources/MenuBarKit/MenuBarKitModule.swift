@@ -21,26 +21,36 @@ public enum MenuBarKitModule {
     }
 
     /// Runs a link from a Quick Action, a Service or `superconverter://`: `open` adds the files to the window, `convert`
-    /// converts them in the background and notifies.
-    @MainActor public static func handle(_ link: QuickActionLink) {
-        switch link.verb {
-        case .open:
+    /// converts them in the background and notifies — when the link comes from this app. A `convert` link from anywhere
+    /// else fills the window with the files and the target instead and waits for the person; such a link brings files
+    /// only, never folders, so a web page can't make the window read a whole folder.
+    @MainActor public static func handle(_ link: QuickActionLink, from origin: LinkOrigin) {
+        switch (link.verb, origin) {
+        case (.convert, .thisApp):
+            background.convert(link.files, target: link.target)
+        case (.open, .thisApp):
             Services.window?.add(link.files, target: nil)
             Services.window?.show()
-        case .convert:
-            background.convert(link.files, target: link.target)
+        case (_, .elsewhere):
+            let files = link.files.filter { url in
+                var isFolder: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) && !isFolder.boolValue
+            }
+            guard !files.isEmpty else { return }
+            Services.window?.add(files, target: link.verb == .convert ? link.target : nil)
+            Services.window?.show()
         }
     }
 
     /// Handles a `superconverter://open` or `superconverter://convert` URL; false for anything else.
-    @MainActor @discardableResult public static func handle(_ url: URL) -> Bool {
+    @MainActor @discardableResult public static func handle(_ url: URL, from origin: LinkOrigin) -> Bool {
         guard let link = QuickActionLink(url) else { return false }
-        handle(link)
+        handle(link, from: origin)
         return true
     }
 
     /// The object for `NSApp.servicesProvider` (the entries are `QuickAction.servicesEntries` in the app's Info.plist).
     @MainActor public static func servicesProvider() -> NSObject {
-        ServicesProvider(dispatch: { handle($0) })
+        ServicesProvider(dispatch: { handle($0, from: .thisApp) })
     }
 }

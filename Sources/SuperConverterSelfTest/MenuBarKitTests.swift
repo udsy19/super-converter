@@ -219,9 +219,39 @@ private struct MenuBarFixture {
     let fixture = MenuBarFixture(); defer { fixture.cleanUp() }
     let fakeWindow = FakeWindow()
     Services.window = fakeWindow
-    check(MenuBarKitModule.handle(QuickActionLink(.open, files: [a]).url), "the module handles an open link")
+    check(MenuBarKitModule.handle(QuickActionLink(.open, files: [a]).url, from: .thisApp), "the module handles an open link")
     check(fakeWindow.added.count == 1 && fakeWindow.added[0].urls == [a] && fakeWindow.shown == 1, "the window gets the files and comes forward")
-    check(!MenuBarKitModule.handle(URL(string: "superconverter://nothing")!), "the module declines other URLs")
+    check(!MenuBarKitModule.handle(URL(string: "superconverter://nothing")!, from: .thisApp), "the module declines other URLs")
+
+    // Any web page or app can open a link: one from anywhere else converts nothing. It fills the window with its files
+    // (never a folder) and its target, and waits for the person.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("menubarkit-links-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try? FileManager.default.createDirectory(at: dir.appendingPathComponent("Documents"), withIntermediateDirectories: true)
+    let real = dir.appendingPathComponent("photo.heic")
+    FileManager.default.createFile(atPath: real.path, contents: Data([1, 2, 3]))
+    let outside = FakeWindow()
+    Services.window = outside
+    let webLink = QuickActionLink(.convert, files: [real, dir.appendingPathComponent("Documents"), dir.appendingPathComponent("gone.heic")], target: "jpg")
+    check(MenuBarKitModule.handle(webLink.url, from: .elsewhere), "a convert link from elsewhere is handled")
+    RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+    check(fixture.queue.enqueued.isEmpty, "a convert link from elsewhere converts nothing")
+    check(outside.added.count == 1 && outside.added[0].urls == [real] && outside.added[0].target == "jpg" && outside.shown == 1,
+          "it fills the window with its files and target instead, without the folder or the missing file")
+    MenuBarKitModule.handle(QuickActionLink(.open, files: [dir.appendingPathComponent("Documents")]).url, from: .elsewhere)
+    check(outside.added.count == 1, "a link from elsewhere never brings a folder")
+
+    // Who sent a link: only running, intact code inside the app's PlugIns folder is the app's own (this process stands in
+    // for an extension; the system sets an event's sender, so the check is made on the sender it names).
+    let me: [CFString: Any] = [kSecGuestAttributePid: ProcessInfo.processInfo.processIdentifier]
+    let ownFolder = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+    check(LinkOrigin.of(sender: me, plugIns: ownFolder) == .thisApp, "a sender whose code is in the PlugIns folder is the app's own")
+    check(LinkOrigin.of(sender: me, plugIns: dir) == .elsewhere, "a sender anywhere else is not")
+    check(LinkOrigin.of(sender: [kSecGuestAttributePid: Int32.max], plugIns: ownFolder) == .elsewhere, "a sender that isn't running is not")
+    check(LinkOrigin.of(nil, plugIns: ownFolder) == .elsewhere, "a link with no event is from elsewhere")
+    let anonymous = NSAppleEventDescriptor(eventClass: AEEventClass(kInternetEventClass), eventID: AEEventID(kAEGetURL), targetDescriptor: nil,
+                                           returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
+    check(LinkOrigin.of(anonymous, plugIns: ownFolder) == .elsewhere, "a link whose sender isn't named is from elsewhere")
 }
 
 @MainActor private func menuBarServices() {
