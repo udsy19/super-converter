@@ -979,6 +979,145 @@ func imageKit() throws {
     }
 }
 
+// MARK: Media (MediaKit, quality §5.3)
+
+/// One small clip per audio/video input format of the matrix, made by the bundled LGPL FFmpeg in Vendor/Tools (never a system
+/// FFmpeg: Homebrew's is GPL) from its own test sources, with bit-exact software encoders so the bytes repeat. Skipped with a
+/// note when the tool is not there (`scripts/fetch-vendor.sh`).
+func media() throws {
+    let ffmpeg = root.appendingPathComponent("Vendor/Tools/ffmpeg")
+    guard FileManager.default.isExecutableFile(atPath: ffmpeg.path) else { print("Vendor/Tools/ffmpeg missing: media fixtures skipped"); return }
+    let folder = out.appendingPathComponent("media", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    func run(_ arguments: [String]) throws {
+        let p = Process()
+        p.executableURL = ffmpeg
+        p.currentDirectoryURL = folder
+        p.arguments = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-threads", "1"] + arguments
+        try p.run(); p.waitUntilExit()
+        guard p.terminationStatus == 0 else { throw NSError(domain: "ffmpeg \(arguments.last ?? "")", code: Int(p.terminationStatus)) }
+    }
+    let exact = ["-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact", "-map_metadata", "-1"]
+    func picture(_ size: String = "160x120", rate: String = "25", seconds: String = "1") -> [String] {
+        ["-f", "lavfi", "-i", "testsrc2=s=\(size):r=\(rate):d=\(seconds)"]
+    }
+    func sound(rate: Int = 48000, seconds: String = "1", channels: Int = 2) -> [String] {
+        ["-f", "lavfi", "-i", "sine=f=440:sample_rate=\(rate):d=\(seconds)", "-ac", String(channels)]
+    }
+    // Video: (name, picture, sound, codecs and muxer).
+    let videos: [(String, [String], [String], [String])] = [
+        ("mp4", picture(), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "96k", "-f", "mp4"]),
+        ("mov", picture(), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "96k", "-f", "mov"]),
+        ("m4v", picture(), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "96k", "-f", "ipod"]),
+        ("3gp", picture("176x144"), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "64k", "-f", "3gp"]),
+        ("3gpp", picture("176x144"), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "64k", "-f", "3gp"]),
+        ("3g2", picture("176x144"), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "64k", "-f", "3g2"]),
+        ("mkv", picture(), sound(), ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "libvorbis", "-q:a", "3", "-f", "matroska"]),
+        ("webm", picture(), sound(), ["-c:v", "libvpx", "-b:v", "200k", "-c:a", "libvorbis", "-q:a", "3", "-f", "webm"]),
+        ("avi", picture(), sound(rate: 44100), ["-c:v", "mpeg4", "-q:v", "4", "-tag:v", "XVID", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "avi"]),
+        ("flv", picture(), sound(rate: 44100), ["-c:v", "flv", "-q:v", "4", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "flv"]),
+        ("wmv", picture(), sound(rate: 44100), ["-c:v", "msmpeg4", "-q:v", "4", "-c:a", "wmav2", "-b:a", "128k", "-f", "asf"]),
+        ("mpeg", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "mp2", "-b:a", "192k", "-f", "mpeg"]),
+        ("mpg", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "mp2", "-b:a", "192k", "-f", "mpeg"]),
+        ("vob", picture("352x288"), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-f", "vob"]),
+        ("mod", picture("352x288"), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-f", "vob"]),
+        ("dvr", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "mp2", "-b:a", "192k", "-f", "asf"]),
+        ("wtv", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "mp2", "-b:a", "192k", "-f", "wtv"]),
+        ("ts", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "mp2", "-b:a", "192k", "-f", "mpegts"]),
+        ("m2ts", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-mpegts_m2ts_mode", "1", "-f", "mpegts"]),
+        ("mts", picture(), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-mpegts_m2ts_mode", "1", "-f", "mpegts"]),
+        ("mxf", picture("352x288"), sound(), ["-c:v", "mpeg2video", "-q:v", "4", "-c:a", "pcm_s16le", "-f", "mxf"]),
+        ("dv", picture("720x576", seconds: "0.4"), sound(seconds: "0.4"), ["-c:v", "dvvideo", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-f", "dv"]),
+        ("ogv", picture(), sound(), ["-c:v", "libtheora", "-q:v", "5", "-c:a", "libvorbis", "-q:a", "3", "-f", "ogg"]),
+        ("rm", picture(), sound(), ["-c:v", "rv20", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-f", "rm"]),
+        ("rmvb", picture(), sound(), ["-c:v", "rv20", "-q:v", "4", "-c:a", "ac3", "-b:a", "192k", "-f", "rm"]),
+        ("swf", picture(), sound(rate: 44100), ["-c:v", "flv", "-q:v", "4", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "swf"]),
+    ]
+    for (name, video, audio, codecs) in videos { try run(video + audio + exact + codecs + ["sample.\(name)"]) }
+    // Audio.
+    let audios: [(String, [String], [String])] = [
+        ("wav", sound(), ["-c:a", "pcm_s16le", "-f", "wav"]),
+        ("aiff", sound(), ["-c:a", "pcm_s16be", "-f", "aiff"]),
+        ("aif", sound(), ["-c:a", "pcm_s16be", "-f", "aiff"]),
+        ("aifc", sound(), ["-c:a", "pcm_f32be", "-f", "aiff"]),
+        ("au", sound(), ["-c:a", "pcm_s16be", "-f", "au"]),
+        ("voc", sound(rate: 22050, channels: 1), ["-c:a", "pcm_u8", "-f", "voc"]),
+        ("flac", sound(), ["-c:a", "flac", "-f", "flac"]),
+        ("caf", sound(), ["-c:a", "alac", "-f", "caf"]),
+        ("aac", sound(), ["-c:a", "aac", "-b:a", "128k", "-f", "adts"]),
+        ("m4a", sound(), ["-c:a", "aac", "-b:a", "128k", "-f", "ipod"]),
+        ("m4b", sound(), ["-c:a", "aac", "-b:a", "128k", "-f", "ipod"]),
+        ("mp3", sound(rate: 44100), ["-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3"]),
+        ("ac3", sound(), ["-c:a", "ac3", "-b:a", "192k", "-f", "ac3"]),
+        ("ogg", sound(), ["-c:a", "libvorbis", "-q:a", "3", "-f", "ogg"]),
+        ("oga", sound(), ["-c:a", "libvorbis", "-q:a", "3", "-f", "ogg"]),
+        ("opus", sound(), ["-c:a", "libopus", "-b:a", "96k", "-f", "opus"]),
+        ("weba", sound(), ["-c:a", "libopus", "-b:a", "96k", "-f", "webm"]),
+        ("wma", sound(rate: 44100), ["-c:a", "wmav2", "-b:a", "128k", "-f", "asf"]),
+        ("amr", sound(rate: 8000, channels: 1), ["-c:a", "libopencore_amrnb", "-b:a", "12.2k", "-f", "amr"]),
+    ]
+    for (name, audio, codecs) in audios { try run(audio + exact + codecs + ["sample.\(name)"]) }
+    // Quality §5.3 sources: interlaced SD fields, PQ HDR with mastering metadata, a flash-and-beep clip, BT.601 bars, a
+    // 24-bit tone for the resampling test.
+    try run(picture("720x576", rate: "50", seconds: "1") + exact + ["-vf", "scale=720:288,weave=first_field=top,setfield=tff", "-c:v", "mpeg2video",
+            "-flags:v", "+ilme+ildct+bitexact", "-q:v", "3", "-top", "1", "-an", "-f", "mpegts", "interlaced-576i.ts"])
+    try run(picture("640x360", seconds: "1") + exact + ["-vf", "format=gbrp,zscale=tin=bt709:pin=bt709:min=gbr:rin=full:t=smpte2084:m=bt2020nc:p=bt2020:r=limited:npl=100,format=yuv420p10le",
+            "-c:v", "libsvtav1", "-preset", "10", "-crf", "35",
+            "-svtav1-params", "mastering-display=G(0.265,0.690)B(0.150,0.060)R(0.680,0.320)WP(0.3127,0.3290)L(1000,0.0050):content-light=1000,400",
+            "-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-an", "-f", "matroska", "hdr-pq.mkv"])
+    try run(["-f", "lavfi", "-i", "color=c=black:s=160x120:r=25:d=3,drawbox=w=iw:h=ih:c=white:t=fill:enable='between(t,1,1.08)'",
+             "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*1000*t)*between(t,1,1.08)':s=48000:d=3"] + exact
+            + ["-c:v", "mpeg4", "-q:v", "2", "-c:a", "pcm_s16le", "-f", "mov", "flash-beep.mov"])
+    try run(["-loop", "1", "-i", out.appendingPathComponent("smpte-bars-640x360.png").path, "-t", "1", "-r", "25"] + exact
+            + ["-vf", "scale=out_color_matrix=bt601:out_range=tv,format=yuv420p", "-c:v", "mpeg4", "-q:v", "1",
+               "-color_primaries", "smpte170m", "-color_trc", "smpte170m", "-colorspace", "smpte170m", "-color_range", "tv", "-f", "mov", "bars-601.mov"])
+    try run(["-f", "lavfi", "-i", "sine=f=1000:sample_rate=44100:d=3"] + exact + ["-af", "volume=0.891", "-c:a", "pcm_s24le", "-f", "wav", "tone-1k-24bit-44k.wav"])
+    try soundFont(folder.appendingPathComponent("sample.sf2"))
+}
+
+/// A two-sample SoundFont (RIFF sfbk, SoundFont 2.04): a 440 Hz sine looped, a 660 Hz one, one preset whose instrument
+/// splits the keyboard at middle C.
+func soundFont(_ url: URL) throws {
+    func le16(_ v: Int, _ d: inout Data) { d.append(UInt8(v & 255)); d.append(UInt8(v >> 8 & 255)) }
+    func le32(_ v: Int, _ d: inout Data) { le16(v & 0xFFFF, &d); le16(v >> 16 & 0xFFFF, &d) }
+    func name(_ s: String, _ d: inout Data) { var b = Array(s.utf8.prefix(20)); b += Array(repeating: 0, count: 20 - b.count); d.append(contentsOf: b) }
+    func chunk(_ id: String, _ body: Data) -> Data { var d = Data(id.utf8); le32(body.count, &d); d.append(body); if body.count % 2 == 1 { d.append(0) }; return d }
+    func list(_ kind: String, _ chunks: [Data]) -> Data { chunk("LIST", Data(kind.utf8) + chunks.reduce(Data(), +)) }
+    let rate = 22050, length = 2205
+    var smpl = Data()
+    for f in [440.0, 660.0] {
+        for i in 0..<length { le16(Int(Int16((sin(2 * .pi * f * Double(i) / Double(rate)) * 16000).rounded())), &smpl) }
+        for _ in 0..<46 { le16(0, &smpl) }   // 46 zero samples after each sample (SoundFont 2.04 §6.1)
+    }
+    var info = Data()
+    info += chunk("ifil", { var d = Data(); le16(2, &d); le16(4, &d); return d }())
+    info += chunk("isng", Data("EMU8000\0".utf8))
+    info += chunk("INAM", Data("Super Converter test\0\0".utf8))
+    var phdr = Data(); name("Test Sine", &phdr); le16(0, &phdr); le16(0, &phdr); le16(0, &phdr); le32(0, &phdr); le32(0, &phdr); le32(0, &phdr)
+    name("EOP", &phdr); le16(0, &phdr); le16(0, &phdr); le16(1, &phdr); le32(0, &phdr); le32(0, &phdr); le32(0, &phdr)
+    var pbag = Data(); le16(0, &pbag); le16(0, &pbag); le16(1, &pbag); le16(0, &pbag)
+    var pmod = Data(); for _ in 0..<5 { le16(0, &pmod) }
+    var pgen = Data(); le16(41, &pgen); le16(0, &pgen); le16(0, &pgen); le16(0, &pgen)
+    var inst = Data(); name("Sine", &inst); le16(0, &inst); name("EOI", &inst); le16(2, &inst)
+    var ibag = Data(); le16(0, &ibag); le16(0, &ibag); le16(3, &ibag); le16(0, &ibag); le16(6, &ibag); le16(0, &ibag)
+    var imod = Data(); for _ in 0..<5 { le16(0, &imod) }
+    var igen = Data()
+    le16(43, &igen); le16(0 | 59 << 8, &igen); le16(54, &igen); le16(1, &igen); le16(53, &igen); le16(0, &igen)
+    le16(43, &igen); le16(60 | 127 << 8, &igen); le16(58, &igen); le16(76, &igen); le16(53, &igen); le16(1, &igen)
+    le16(0, &igen); le16(0, &igen)
+    var shdr = Data()
+    for (i, n) in ["Sine 440", "Sine 660"].enumerated() {
+        let start = i * (length + 46)
+        name(n, &shdr); le32(start, &shdr); le32(start + length, &shdr); le32(start + 100, &shdr); le32(start + 2105, &shdr)
+        le32(rate, &shdr); shdr.append(UInt8(i == 0 ? 69 : 76)); shdr.append(0); le16(0, &shdr); le16(1, &shdr)
+    }
+    name("EOS", &shdr); for _ in 0..<5 { le32(0, &shdr) }; le16(0, &shdr); le16(0, &shdr); le16(0, &shdr)
+    let body = Data("sfbk".utf8) + list("INFO", [info]) + list("sdta", [chunk("smpl", smpl)])
+        + list("pdta", [chunk("phdr", phdr), chunk("pbag", pbag), chunk("pmod", pmod), chunk("pgen", pgen), chunk("inst", inst),
+                        chunk("ibag", ibag), chunk("imod", imod), chunk("igen", igen), chunk("shdr", shdr)])
+    try chunk("RIFF", body).write(to: url)
+}
+
 try images()
 try audio()
 try documents()
@@ -990,4 +1129,5 @@ try pdf()
 try archives()
 try imageKit()
 try vector()
+try media()
 print("Fixtures written to \(out.path)")
