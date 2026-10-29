@@ -700,6 +700,11 @@ func registerHelperKitTests() {
         defer { Services.converters = before }
         HelperKitModule.install()
         check(Services.helpers is HelperService, "install() provides Services.helpers")
+        // The macOS commands run through the same runner as the bundled tools, from /usr/bin only.
+        for tool in [BundledTool.hdiutil, .pluginkit] {
+            check(Services.tools.location(of: tool)?.path == "/usr/bin/" + tool.rawValue, "Services.tools finds \(tool.rawValue) in /usr/bin")
+        }
+        check(BundledTools.name(of: .pluginkit) == "pluginkit", "a failed pluginkit run says “pluginkit”")
         let registered = Set(Services.converters.converters.map(\.id))
         let expected = Set(EngineID.allCases.filter { $0.info.module == .helperKit })
         check(registered == expected, "a converter for every engine HelperKit owns, and no other (\(registered.symmetricDifference(expected).map(\.rawValue)))")

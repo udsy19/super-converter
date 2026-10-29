@@ -2,7 +2,8 @@ import Foundation
 import SuperConverterCore
 
 /// `Services.tools`: finds the executables bundled with the app (ARCHITECTURE §7: `7zz`, `ffmpeg`, `ffprobe` in
-/// `Contents/Helpers/`, code-signed with the app) and `hdiutil`, and runs them through the same runner as the helpers.
+/// `Contents/Helpers/`, code-signed with the app) and the macOS commands `hdiutil` and `pluginkit` (in `/usr/bin`), and runs
+/// them through the same runner as the helpers.
 /// Bundled tools get no network arguments, and the no-network profile applies all the same (`hdiutil` attaches under it
 /// when the mount folder is among the writable places).
 public struct BundledTools: ToolRunning {
@@ -23,8 +24,8 @@ public struct BundledTools: ToolRunning {
     }
 
     public func location(of tool: BundledTool) -> URL? {
-        if tool == .hdiutil {
-            let url = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        if tool == .hdiutil || tool == .pluginkit {
+            let url = URL(fileURLWithPath: "/usr/bin/" + tool.rawValue)
             return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
         }
         return folders.map { $0.appendingPathComponent(tool.rawValue) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
@@ -48,6 +49,7 @@ public struct BundledTools: ToolRunning {
         case .ffmpeg: "FFmpeg"
         case .ffprobe: "FFprobe"
         case .hdiutil: "hdiutil"
+        case .pluginkit: "pluginkit"
         }
     }
 }
