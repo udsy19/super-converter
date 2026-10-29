@@ -22,7 +22,8 @@ func complete<T>(_ seconds: TimeInterval = 300, _ work: @escaping @MainActor () 
         do { result = .success(try await work()) } catch { result = .failure(error) }
     }
     let deadline = Date().addingTimeInterval(seconds)
-    while result == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    // One pass at a time (not `run(until:)`, which keeps running to its date), so this returns as soon as the work is done.
+    while result == nil && Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01)) }
     return result
 }
 
