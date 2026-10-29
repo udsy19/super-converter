@@ -25,6 +25,8 @@ final class PDFFont {
     private(set) var hasWidths = false
     /// The embedded program as a font at 1 pt (paths come out in em units).
     private(set) var embedded: CTFont?
+    /// The embedded program's bytes (an SFNT), carried on text runs that stay text.
+    private(set) var embeddedProgram: Data?
     private var cidToGID: [Int]?
     private var cidToGIDIdentity = true
     /// PostScript name of the system font that stands in when nothing is embedded or the program can't be used.
@@ -259,7 +261,7 @@ final class PDFFont {
         guard let descriptor else { return }
         for key in ["FontFile2", "FontFile3", "FontFile"] {
             guard let stream = PDFObj.stream(descriptor, key), let loaded = PDFObj.data(stream) else { continue }
-            if let font = PDFFont.coreTextFont(from: loaded.0) { embedded = font; return }
+            if let font = PDFFont.coreTextFont(from: loaded.0) { embedded = font; embeddedProgram = loaded.0; return }
             hadUnusableEmbedding = true
         }
     }
@@ -336,6 +338,30 @@ final class PDFFont {
     func outline(_ glyph: Glyph) -> [PathSegment]? {
         guard let font = embedded else { return nil }
         if let cached = glyphCache[glyph.code] { return cached }
+        let id = glyphID(glyph, in: font)
+        let path = id == 0 && glyph.isSpace ? CGMutablePath() : CTFontCreatePathForGlyph(font, id, nil)
+        let segments = path?.segments ?? []
+        glyphCache[glyph.code] = segments
+        return segments
+    }
+
+    /// Whether the embedded program's own character map gives exactly the glyphs the PDF shows for these characters, so
+    /// the text can stay text in that font (quality §6: text stays text) instead of becoming outlines.
+    func mapsAsText(_ glyphs: [Glyph]) -> Bool {
+        guard let font = embedded, embeddedProgram != nil else { return false }
+        for glyph in glyphs {
+            let units = Array(glyph.unicode.utf16)
+            guard !units.isEmpty else { return false }
+            if glyph.isSpace || glyph.unicode == " " { continue }
+            var mapped = [CGGlyph](repeating: 0, count: units.count)
+            guard units.count == 1, CTFontGetGlyphsForCharacters(font, units, &mapped, 1), mapped[0] == glyphID(glyph, in: font), mapped[0] != 0 else { return false }
+        }
+        return true
+    }
+
+    /// The program's glyph for a PDF glyph: CID → GID for Type 0 fonts; glyph name, Unicode, the symbolic (0xF000) range
+    /// or the code itself for simple fonts. 0 when there is none.
+    private func glyphID(_ glyph: Glyph, in font: CTFont) -> CGGlyph {
         var id: CGGlyph = 0
         if isType0 {
             let cid = glyph.code
@@ -347,9 +373,6 @@ final class PDFFont {
             if id == 0 { var u = UInt16(0xF000 + glyph.code); var g: CGGlyph = 0; if CTFontGetGlyphsForCharacters(font, &u, &g, 1) { id = g } }
             if id == 0, glyph.code < CTFontGetGlyphCount(font) { id = CGGlyph(glyph.code) }
         }
-        let path = id == 0 && glyph.isSpace ? CGMutablePath() : CTFontCreatePathForGlyph(font, id, nil)
-        let segments = path?.segments ?? []
-        glyphCache[glyph.code] = segments
-        return segments
+        return id
     }
 }

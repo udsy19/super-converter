@@ -3,8 +3,9 @@ import CoreText
 import Foundation
 import SuperConverterCore
 
-/// PDF → VectorDocument on `CGPDFScanner` (formats §3.1): paths, clips, text (embedded TrueType/OpenType programs as
-/// outlines, other fonts as text in a stand-in font), images with masks, axial/radial shadings and tiling patterns, form
+/// PDF → VectorDocument on `CGPDFScanner` (formats §3.1): paths, clips, text (in its embedded TrueType/OpenType program
+/// when the program's character map agrees with the PDF's glyphs, as outlines when it doesn't, other fonts as text in a
+/// stand-in font), images with masks, axial/radial shadings and tiling patterns, form
 /// XObjects. Soft masks, blend modes and mesh shadings are flagged in the loss notes, never silently dropped.
 public enum PDFReader {
     public static func read(_ url: URL, password: String? = nil) throws -> VectorReadResult {
@@ -309,8 +310,9 @@ final class PDFInterpreter {
         let space = stroke ? gs.strokeSpace : gs.fillSpace
         var pattern: String?
         if space.isPattern { pattern = popName(s) }
-        var values: [Double] = []
-        while let n = popNumber(s) { values.insert(n, at: 0) }
+        // Exactly the space's component count: popping past the operands makes CGPDFScanner log a stack underflow.
+        let count = space.isPattern ? (space.kind.patternBase?.initial.count ?? 0) : space.initial.count
+        let values = count > 0 ? popNumbers(s, count) ?? [] : []
         if stroke { if !values.isEmpty || pattern != nil { gs.strokeComps = values }; gs.strokePattern = pattern }
         else { if !values.isEmpty || pattern != nil { gs.fillComps = values }; gs.fillPattern = pattern }
     }
@@ -671,6 +673,14 @@ final class PDFInterpreter {
         let fillPaint: VectorPaint? = gs.fillSpace.isPattern ? patternFirstColour() : .solid(colour(space: gs.fillSpace, comps: gs.fillComps, alpha: gs.fillAlpha))
         let drawFill = gs.renderMode == 0 || gs.renderMode == 2 || gs.renderMode == 4 || gs.renderMode == 6
         let drawStroke = gs.renderMode == 1 || gs.renderMode == 2 || gs.renderMode == 5 || gs.renderMode == 6
+        // Filled text whose embedded program maps its characters itself stays text in that program.
+        if gs.renderMode == 0, let program = font.embeddedProgram, let ct = font.embedded, let fill = fillPaint, font.mapsAsText(placed.map(\.glyph)) {
+            // The subset tag ("ABCDEF+Helvetica") goes, so a target that can't embed the program still finds the font by name.
+            var name = CTFontCopyPostScriptName(ct) as String
+            if let plus = name.firstIndex(of: "+"), name.distance(from: name.startIndex, to: plus) == 6 { name = String(name[name.index(after: plus)...]) }
+            emitRuns(placed, fontName: name, program: program, metrics: ct, fill: fill)
+            return
+        }
         if font.embedded != nil {
             var outline: [PathSegment] = []
             for item in placed {
@@ -689,7 +699,7 @@ final class PDFInterpreter {
             return
         }
         guard let fill = fillPaint else { return }
-        emitRuns(placed, font: font, fill: fill)
+        emitRuns(placed, fontName: font.substitute, program: nil, metrics: font.substituteCTFont, fill: fill)
     }
 
     func patternFirstColour() -> VectorPaint? {
@@ -697,9 +707,9 @@ final class PDFInterpreter {
         return .solid(.black)
     }
 
-    /// Text in a stand-in font: one run when the stand-in's advances match the PDF's, else one run per word at the PDF's positions.
-    func emitRuns(_ placed: [PlacedGlyph], font: PDFFont, fill: VectorPaint) {
-        let ct = font.substituteCTFont
+    /// Text in `fontName` (the embedded `program`, or a stand-in when nil): one run when the font's advances match the PDF's,
+    /// else one run per word at the PDF's positions.
+    func emitRuns(_ placed: [PlacedGlyph], fontName: String, program: Data?, metrics ct: CTFont, fill: VectorPaint) {
         func text(of glyphs: [PlacedGlyph]) -> String { glyphs.map(\.glyph.unicode).joined() }
         let whole = text(of: placed)
         if whole.isEmpty { note(.otherLoss, "Text without a character mapping was dropped"); return }
@@ -726,10 +736,10 @@ final class PDFInterpreter {
             guard s > 1e-6 else { continue }
             let isFlat = abs(trm.b) < 1e-9 * s && abs(trm.c) < 1e-9 * s && abs(trm.a / s - 1) < 1e-6 && trm.d > 0
             if isFlat {
-                emit(.text(VectorTextRun(text: t, fontName: font.substitute, size: s, origin: VectorPoint(trm.tx, trm.ty), fill: fill)))
+                emit(.text(VectorTextRun(text: t, fontName: fontName, size: s, origin: VectorPoint(trm.tx, trm.ty), fill: fill, fontData: program)))
             } else {
                 let local = VectorTransform(a: trm.a / s, b: trm.b / s, c: trm.c / s, d: trm.d / s, tx: trm.tx, ty: trm.ty)
-                emit(.group([.text(VectorTextRun(text: t, fontName: font.substitute, size: s, origin: VectorPoint(0, 0), fill: fill))], transform: local, clip: nil, opacity: 1))
+                emit(.group([.text(VectorTextRun(text: t, fontName: fontName, size: s, origin: VectorPoint(0, 0), fill: fill, fontData: program))], transform: local, clip: nil, opacity: 1))
             }
         }
     }

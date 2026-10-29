@@ -122,6 +122,10 @@ func registerVectorKitPDFTests() {
         svtSave(VectorDrawing.render(last.document.pages[0], scale: 4.0 / 3.0), "svg-pdf-svg")
         check(a.meanDifference(b) < 1.5, "svg → pdf → svg difference \(a.meanDifference(b))")
         check(a.mismatch(b) < 0.02, "svg → pdf → svg mismatch \(a.mismatch(b))")
+        // quality §6 "Text kept": the embedded subset font maps its own characters, so the words stay text, in that program.
+        let runs = mid.document.pages[0].nodes.compactMap { if case .text(let run) = $0 { run } else { nil } }
+        check(runs.map(\.text).joined() == "Hello" && runs.allSatisfy { $0.fontData != nil && !$0.fontName.contains("+") }, "text stays text in its embedded font: \(runs.map(\.fontName))")
+        check(!mid.lossNotes.contains { $0.kind == .textAsOutlines }, "no outlines note")
     }))
 
     SelfTest.cases.append(("VectorKit.pdf.robustness", {

@@ -341,12 +341,257 @@ func pdf() throws {
     text("Text on the second page, so page counts and page order can be checked.", size: 12, at: CGPoint(x: 72, y: 670))
     ctx.endPDFPage()
     ctx.closePDF()
-    // CoreGraphics stamps the creation/modification date and derives the trailer /ID from it. Overwrite them in place with
-    // same-length constants (xref offsets stay valid) so the bytes repeat.
-    var text = String(data: data as Data, encoding: .isoLatin1)!
+    try write("sample.pdf", pinned(data as Data))
+}
+
+/// CoreGraphics stamps the creation/modification date and derives the trailer /ID from it. Overwrite them in place with
+/// same-length constants (xref offsets stay valid) so the bytes repeat.
+func pinned(_ pdf: Data) -> Data {
+    var text = String(data: pdf, encoding: .isoLatin1)!
     text = text.replacingOccurrences(of: "D:[0-9]{14}Z00'00'", with: "D:20240101000000Z00'00'", options: .regularExpression)
     text = text.replacingOccurrences(of: "<[0-9a-f]{32}>", with: "<00000000000000000000000000000000>", options: .regularExpression)
-    try write("sample.pdf", text.data(using: .isoLatin1)!)
+    return text.data(using: .isoLatin1)!
+}
+
+// MARK: Vector (VectorKit, XPSKit)
+
+/// One drawing in every vector format VectorKit and XPSKit read, 400 × 300 px (300 × 225 pt): a stroked red rectangle,
+/// a teal circle, a yellow-to-red gradient band, a dashed curve and the words "SUPER CONVERTER". SVG/SVGZ, a CoreGraphics
+/// PDF (also as an Illustrator 9+ `.ai`, which is a PDF), EMF and WMF built record by record (MS-EMF, MS-WMF), Skencil
+/// and sK1 text files, and an XPS package (no text: XPS glyphs need an embedded font).
+func vector() throws {
+    let svg = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+      <defs><linearGradient id="band" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffcc00"/><stop offset="1" stop-color="#cc3300"/></linearGradient></defs>
+      <rect x="20" y="20" width="160" height="100" fill="#d62828" stroke="#003049" stroke-width="6" stroke-linejoin="round"/>
+      <circle cx="290" cy="80" r="55" fill="#2a9d8f"/>
+      <rect x="20" y="150" width="360" height="40" fill="url(#band)"/>
+      <path d="M30 270 C 100 210, 160 290, 230 240 S 340 220, 370 270" fill="none" stroke="#264653" stroke-width="5" stroke-dasharray="14 6" stroke-linecap="round"/>
+      <text x="40" y="228" font-family="Helvetica" font-size="24" fill="#000000">SUPER CONVERTER</text>
+    </svg>
+
+    """
+    try write("sample.svg", svg)
+    let gzip = Process()
+    gzip.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
+    gzip.arguments = ["-n", "-9", "-c", out.appendingPathComponent("sample.svg").path]
+    let pipe = Pipe()
+    gzip.standardOutput = pipe
+    try gzip.run()
+    let compressed = pipe.fileHandleForReading.readDataToEndOfFile()
+    gzip.waitUntilExit()
+    try write("sample.svgz", compressed)
+
+    // The same drawing through CoreGraphics (y up: SVG y → 225 − y × 0.75).
+    let data = NSMutableData()
+    var box = CGRect(x: 0, y: 0, width: 300, height: 225)
+    let ctx = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, [kCGPDFContextTitle: "Super Converter drawing", kCGPDFContextCreator: "make-fixtures"] as CFDictionary)!
+    ctx.beginPDFPage(nil)
+    ctx.scaleBy(x: 0.75, y: -0.75); ctx.translateBy(x: 0, y: -300)
+    ctx.setFillColor(rgb(0xd6, 0x28, 0x28)); ctx.fill(CGRect(x: 20, y: 20, width: 160, height: 100))
+    ctx.setStrokeColor(rgb(0x00, 0x30, 0x49)); ctx.setLineWidth(6); ctx.setLineJoin(.round); ctx.stroke(CGRect(x: 20, y: 20, width: 160, height: 100))
+    ctx.setFillColor(rgb(0x2a, 0x9d, 0x8f)); ctx.fillEllipse(in: CGRect(x: 235, y: 25, width: 110, height: 110))
+    ctx.saveGState(); ctx.clip(to: CGRect(x: 20, y: 150, width: 360, height: 40))
+    let band = CGGradient(colorsSpace: sRGB, colors: [rgb(0xff, 0xcc, 0x00), rgb(0xcc, 0x33, 0x00)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(band, start: CGPoint(x: 20, y: 0), end: CGPoint(x: 380, y: 0), options: [])
+    ctx.restoreGState()
+    ctx.move(to: CGPoint(x: 30, y: 270)); ctx.addCurve(to: CGPoint(x: 230, y: 240), control1: CGPoint(x: 100, y: 210), control2: CGPoint(x: 160, y: 290))
+    ctx.addCurve(to: CGPoint(x: 370, y: 270), control1: CGPoint(x: 300, y: 190), control2: CGPoint(x: 340, y: 220))
+    ctx.setStrokeColor(rgb(0x26, 0x46, 0x53)); ctx.setLineWidth(5); ctx.setLineCap(.round); ctx.setLineDash(phase: 0, lengths: [14, 6]); ctx.strokePath()
+    ctx.setLineDash(phase: 0, lengths: [])
+    ctx.saveGState(); ctx.translateBy(x: 40, y: 228); ctx.scaleBy(x: 1, y: -1)
+    let font = CTFontCreateWithName("Helvetica" as CFString, 24, nil)
+    let words = NSAttributedString(string: "SUPER CONVERTER", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font, NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true])
+    ctx.setFillColor(rgb(0, 0, 0)); ctx.textPosition = .zero; CTLineDraw(CTLineCreateWithAttributedString(words), ctx)
+    ctx.restoreGState()
+    ctx.endPDFPage(); ctx.closePDF()
+    try write("sample-drawing.pdf", pinned(data as Data))
+    try write("sample.ai", pinned(data as Data))
+
+    try write("sample.emf", emf())
+    try write("sample.wmf", wmf())
+
+    // Skencil: unit-square rectangles and unit-circle ellipses under transforms, points in pt with y up.
+    let sk = """
+    ##Sketch 1 2
+    document()
+    layout((300,225),0)
+    layer('Layer 1',1,1,0,0,(0,0,0))
+    fp((0.839,0.157,0.157))
+    lp((0,0.188,0.286))
+    lw(4.5)
+    lj(1)
+    r(120,0,0,75,15,135)
+    fp((0.165,0.616,0.561))
+    le()
+    e(41.25,0,0,41.25,217.5,165)
+    gl([(0,(1,0.8,0)),(1,(0.8,0.2,0))])
+    pgl(-1,0,0)
+    le()
+    r(270,0,0,30,15,82.5)
+    fe()
+    lp((0.149,0.275,0.325))
+    lw(3.75)
+    lc(2)
+    ld((2.8,1.2))
+    b()
+    bs(22.5,22.5,0)
+    bc(75,67.5,120,7.5,172.5,45,0)
+    bc(225,82.5,255,60,277.5,22.5,0)
+    Fn('Helvetica')
+    Fs(18)
+    fp((0,0,0))
+    txt('SUPER CONVERTER',(1,0,0,1,30,54))
+
+    """
+    try write("sample.sk", sk)
+    let sk1 = sk.replacingOccurrences(of: "##Sketch 1 2", with: "##sK1 1 2")
+        .replacingOccurrences(of: "fp((0.839,0.157,0.157))", with: "fp([\"CMYK\",[0.0,0.81,0.81,0.16],1.0,\"\"])")
+        .replacingOccurrences(of: "lp((0,0.188,0.286))", with: "lp([\"RGB\",[0.0,0.188,0.286],1.0,\"\"])")
+    try write("sample.sk1", sk1)
+
+    // XPS: one FixedPage with the drawing's shapes (Path Data mini-language, sRGB #RRGGBB brushes).
+    let page = """
+    <FixedPage xmlns="http://schemas.microsoft.com/xps/2005/06" Width="400" Height="300" xml:lang="en-US">
+      <Path Data="M 20,20 L 180,20 180,120 20,120 Z" Fill="#FFD62828" Stroke="#FF003049" StrokeThickness="6" StrokeLineJoin="Round"/>
+      <Path Data="M 345,80 A 55,55 0 1 1 235,80 A 55,55 0 1 1 345,80 Z" Fill="#FF2A9D8F"/>
+      <Path Data="M 20,150 L 380,150 380,190 20,190 Z">
+        <Path.Fill><LinearGradientBrush MappingMode="Absolute" StartPoint="20,0" EndPoint="380,0"><LinearGradientBrush.GradientStops>
+          <GradientStop Color="#FFFFCC00" Offset="0"/><GradientStop Color="#FFCC3300" Offset="1"/>
+        </LinearGradientBrush.GradientStops></LinearGradientBrush></Path.Fill>
+      </Path>
+      <Path Data="M 30,270 C 100,210 160,290 230,240 C 300,190 340,220 370,270" Stroke="#FF264653" StrokeThickness="5" StrokeDashArray="2.8 1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+    </FixedPage>
+    """
+    try zip("sample.xps", files: [
+        ("[Content_Types].xml", Data("""
+        <?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="fdseq" ContentType="application/vnd.ms-package.xps-fixeddocumentsequence+xml"/><Default Extension="fdoc" ContentType="application/vnd.ms-package.xps-fixeddocument+xml"/><Default Extension="fpage" ContentType="application/vnd.ms-package.xps-fixedpage+xml"/></Types>
+        """.utf8)),
+        ("_rels/.rels", Data("""
+        <?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="R0" Type="http://schemas.microsoft.com/xps/2005/06/fixedrepresentation" Target="/FixedDocumentSequence.fdseq"/></Relationships>
+        """.utf8)),
+        ("FixedDocumentSequence.fdseq", Data("<FixedDocumentSequence xmlns=\"http://schemas.microsoft.com/xps/2005/06\"><DocumentReference Source=\"/Documents/1/FixedDocument.fdoc\"/></FixedDocumentSequence>".utf8)),
+        ("Documents/1/FixedDocument.fdoc", Data("<FixedDocument xmlns=\"http://schemas.microsoft.com/xps/2005/06\"><PageContent Source=\"/Documents/1/Pages/1.fpage\"/></FixedDocument>".utf8)),
+        ("Documents/1/Pages/1.fpage", Data(page.utf8)),
+    ])
+}
+
+/// Little-endian record bytes for the metafiles.
+struct LE {
+    var bytes: [UInt8] = []
+    mutating func u16(_ v: Int) { bytes += [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)] }
+    mutating func u32(_ v: Int) { for s in stride(from: 0, to: 32, by: 8) { bytes.append(UInt8(v >> s & 0xFF)) } }
+    mutating func i32(_ v: Int) { u32(Int(UInt32(bitPattern: Int32(v)))) }
+    mutating func i16(_ v: Int) { u16(Int(UInt16(bitPattern: Int16(v)))) }
+    mutating func f32(_ v: Float) { u32(Int(v.bitPattern)) }
+}
+
+func colorref(_ r: Int, _ g: Int, _ b: Int) -> Int { r | g << 8 | b << 16 }
+
+/// EMF (MS-EMF 2.3): logical units are pixels at 96 dpi; the frame is 400 × 300 px in 0.01 mm.
+func emf() -> Data {
+    var records: [[UInt8]] = []
+    func record(_ type: Int, _ body: (inout LE) -> Void) {
+        var r = LE(); body(&r)
+        var head = LE(); head.u32(type); head.u32(r.bytes.count + 8)
+        records.append(head.bytes + r.bytes)
+    }
+    func rect(_ r: inout LE, _ l: Int, _ t: Int, _ rt: Int, _ b: Int) { r.i32(l); r.i32(t); r.i32(rt); r.i32(b) }
+    record(18) { $0.u32(1) }                                                        // SETBKMODE transparent
+    record(39) { $0.u32(1); $0.u32(0); $0.u32(colorref(0xd6, 0x28, 0x28)); $0.u32(0) }  // CREATEBRUSHINDIRECT
+    record(37) { $0.u32(1) }                                                        // SELECTOBJECT
+    record(38) { $0.u32(2); $0.u32(0); $0.i32(6); $0.i32(0); $0.u32(colorref(0x00, 0x30, 0x49)) }   // CREATEPEN
+    record(37) { $0.u32(2) }
+    record(43) { rect(&$0, 20, 20, 180, 120) }                                      // RECTANGLE
+    record(39) { $0.u32(3); $0.u32(0); $0.u32(colorref(0x2a, 0x9d, 0x8f)); $0.u32(0) }
+    record(37) { $0.u32(3) }
+    record(37) { $0.u32(0x80000008) }                                               // NULL_PEN stock object
+    record(42) { rect(&$0, 235, 25, 345, 135) }                                     // ELLIPSE
+    record(39) { $0.u32(4); $0.u32(0); $0.u32(colorref(0xe6, 0x80, 0x00)); $0.u32(0) }
+    record(37) { $0.u32(4) }
+    record(86) { r in rect(&r, 20, 150, 380, 190); r.u32(4); for (x, y) in [(20, 150), (380, 150), (380, 190), (20, 190)] { r.i16(x); r.i16(y) } }   // POLYGON16
+    record(38) { $0.u32(5); $0.u32(0); $0.i32(5); $0.i32(0); $0.u32(colorref(0x26, 0x46, 0x53)) }
+    record(37) { $0.u32(5) }
+    record(27) { $0.i32(30); $0.i32(270) }                                          // MOVETOEX
+    record(88) { r in rect(&r, 30, 190, 370, 290); r.u32(6)                         // POLYBEZIERTO16
+        for (x, y) in [(100, 210), (160, 290), (230, 240), (300, 190), (340, 220), (370, 270)] { r.i16(x); r.i16(y) } }
+    record(82) { r in r.u32(6); r.i32(-24); r.i32(0); r.i32(0); r.i32(0); r.i32(400); r.bytes += [0, 0, 0, 0, 0, 0, 0, 0]   // EXTCREATEFONTINDIRECTW
+        let face = Array("Helvetica".utf16); for i in 0..<32 { r.u16(i < face.count ? Int(face[i]) : 0) } }
+    record(37) { $0.u32(6) }
+    record(24) { $0.u32(colorref(0, 0, 0)) }                                        // SETTEXTCOLOR
+    record(22) { $0.u32(24) }                                                       // SETTEXTALIGN TA_BASELINE
+    let text = Array("SUPER CONVERTER".utf16)
+    record(84) { r in rect(&r, 40, 200, 260, 235); r.u32(1); r.f32(0); r.f32(0)    // EXTTEXTOUTW
+        r.i32(40); r.i32(228); r.u32(text.count); r.u32(76); r.u32(0); rect(&r, 0, 0, -1, -1); r.u32(76 + (text.count * 2 + 3) / 4 * 4)
+        for c in text { r.u16(Int(c)) }; while r.bytes.count % 4 != 0 { r.bytes.append(0) }
+        for c in text { r.u32(c == 32 ? 7 : 16) } }
+    record(14) { $0.u32(0); $0.u32(16); $0.u32(20) }                                // EOF
+    let total = 108 + records.reduce(0) { $0 + $1.count }
+    var h = LE()
+    h.u32(1); h.u32(108); rect(&h, 0, 0, 399, 299); rect(&h, 0, 0, 10583, 7938)
+    h.u32(0x464D4520); h.u32(0x10000); h.u32(total); h.u32(records.count + 1); h.u16(7); h.u16(0)
+    h.u32(0); h.u32(0); h.u32(0); h.i32(400); h.i32(300); h.i32(106); h.i32(79); h.u32(0); h.u32(0); h.u32(0); h.i32(105833); h.i32(79375)
+    return Data(h.bytes + records.joined())
+}
+
+/// WMF (MS-WMF 2.3) with a placeable header: 400 × 300 logical units at 96 units per inch.
+func wmf() -> Data {
+    var records: [[UInt8]] = []
+    var largest = 0
+    func record(_ function: Int, _ body: (inout LE) -> Void) {
+        var r = LE(); body(&r)
+        var head = LE(); head.u32(3 + r.bytes.count / 2); head.u16(function)
+        largest = max(largest, 3 + r.bytes.count / 2)
+        records.append(head.bytes + r.bytes)
+    }
+    record(0x020B) { $0.i16(0); $0.i16(0) }                                         // SETWINDOWORG
+    record(0x020C) { $0.i16(300); $0.i16(400) }                                     // SETWINDOWEXT
+    record(0x0102) { $0.u16(1) }                                                    // SETBKMODE transparent
+    record(0x02FC) { $0.u16(0); $0.u32(colorref(0xd6, 0x28, 0x28)); $0.u16(0) }    // CREATEBRUSHINDIRECT → 0
+    record(0x012D) { $0.u16(0) }
+    record(0x02FA) { $0.u16(0); $0.i16(6); $0.i16(0); $0.u32(colorref(0x00, 0x30, 0x49)) }   // CREATEPENINDIRECT → 1
+    record(0x012D) { $0.u16(1) }
+    record(0x041B) { $0.i16(120); $0.i16(180); $0.i16(20); $0.i16(20) }             // RECTANGLE (bottom, right, top, left)
+    record(0x02FC) { $0.u16(0); $0.u32(colorref(0x2a, 0x9d, 0x8f)); $0.u16(0) }    // → 2
+    record(0x012D) { $0.u16(2) }
+    record(0x02FA) { $0.u16(5); $0.i16(0); $0.i16(0); $0.u32(0) }                   // PS_NULL pen → 3
+    record(0x012D) { $0.u16(3) }
+    record(0x0418) { $0.i16(135); $0.i16(345); $0.i16(25); $0.i16(235) }            // ELLIPSE
+    record(0x02FC) { $0.u16(0); $0.u32(colorref(0xe6, 0x80, 0x00)); $0.u16(0) }    // → 4
+    record(0x012D) { $0.u16(4) }
+    record(0x0324) { r in r.u16(4); for (x, y) in [(20, 150), (380, 150), (380, 190), (20, 190)] { r.i16(x); r.i16(y) } }   // POLYGON
+    record(0x02FA) { $0.u16(0); $0.i16(5); $0.i16(0); $0.u32(colorref(0x26, 0x46, 0x53)) }   // → 5
+    record(0x012D) { $0.u16(5) }
+    record(0x0325) { r in                                                          // POLYLINE: the curve, flattened
+        let p0 = (30.0, 270.0), c = [((100.0, 210.0), (160.0, 290.0), (230.0, 240.0)), ((300.0, 190.0), (340.0, 220.0), (370.0, 270.0))]
+        var pts: [(Int, Int)] = [(30, 270)]
+        var start = p0
+        for (a, b, e) in c {
+            for i in 1...16 {
+                let t = Double(i) / 16, u = 1 - t
+                pts.append((Int((u * u * u * start.0 + 3 * u * u * t * a.0 + 3 * u * t * t * b.0 + t * t * t * e.0).rounded()),
+                            Int((u * u * u * start.1 + 3 * u * u * t * a.1 + 3 * u * t * t * b.1 + t * t * t * e.1).rounded())))
+            }
+            start = e
+        }
+        r.u16(pts.count); for (x, y) in pts { r.i16(x); r.i16(y) } }
+    record(0x02FB) { r in r.i16(-24); r.i16(0); r.i16(0); r.i16(0); r.i16(400); r.bytes += [0, 0, 0, 0, 0, 0, 0, 0]   // CREATEFONTINDIRECT → 6
+        let face = Array("Helvetica".utf8); for i in 0..<32 { r.bytes.append(i < face.count ? face[i] : 0) } }
+    record(0x012D) { $0.u16(6) }
+    record(0x0209) { $0.u32(colorref(0, 0, 0)) }                                    // SETTEXTCOLOR
+    record(0x012E) { $0.u16(24) }                                                   // SETTEXTALIGN TA_BASELINE
+    record(0x0521) { r in let s = Array("SUPER CONVERTER".utf8); r.u16(s.count); r.bytes += s; if s.count % 2 == 1 { r.bytes.append(0) }; r.i16(228); r.i16(40) }   // TEXTOUT
+    record(0x0000) { _ in }                                                         // EOF
+    let words = 9 + records.reduce(0) { $0 + $1.count / 2 }
+    var p = LE()
+    p.u32(0x9AC6CDD7); p.u16(0); p.i16(0); p.i16(0); p.i16(400); p.i16(300); p.u16(96); p.u32(0)
+    var sum = 0
+    for i in stride(from: 0, to: 20, by: 2) { sum ^= Int(p.bytes[i]) | Int(p.bytes[i + 1]) << 8 }
+    p.u16(sum)
+    var h = LE()
+    h.u16(1); h.u16(9); h.u16(0x0300); h.u32(words); h.u16(7); h.u32(largest); h.u16(0)
+    return Data(p.bytes + h.bytes + records.joined())
 }
 
 try images()
@@ -356,4 +601,5 @@ try spreadsheet()
 try ebooks()
 try cad()
 try pdf()
+try vector()
 print("Fixtures written to \(out.path)")
