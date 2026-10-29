@@ -199,6 +199,7 @@ enum MediaKitCases {
                     guard ctx.result.lossNotes.contains(where: { $0.detail.contains("mastering display") }) else { throw CheckFailure("the metadata gap isn't noted") }
                     return [.count("bit depth", p.bitDepth, atLeast: 10)]
                 }
+                guard source.maxCLL != nil, source.masteringLuminance != nil else { throw CheckFailure("the fixture's HDR metadata isn't read") }
                 guard p.maxCLL == source.maxCLL, p.maxFALL == source.maxFALL else { throw CheckFailure("MaxCLL \(p.maxCLL ?? -1)/\(p.maxFALL ?? -1) vs \(source.maxCLL ?? -1)/\(source.maxFALL ?? -1)") }
                 guard p.masteringLuminance == source.masteringLuminance else { throw CheckFailure("mastering \(p.masteringLuminance ?? "-") vs \(source.masteringLuminance ?? "-")") }
                 return [.exact("MaxCLL", Double(p.maxCLL ?? 0), equals: Double(source.maxCLL ?? 0)), .count("bit depth", p.bitDepth, atLeast: 10)]
@@ -278,7 +279,7 @@ enum MediaBench {
 
     static func probe(_ url: URL) throws -> Probe {
         let out = Subprocess.run(try tool("ffprobe"), ["-v", "error", "-of", "json", "-show_format", "-show_streams", "-show_chapters", "-show_frames",
-                                                        "-read_intervals", "%+#1", "-select_streams", "v:0?", url.path])
+                                                        "-read_intervals", "%+#1", "-select_streams", "v:0", url.path])
         let streams = Subprocess.run(try tool("ffprobe"), ["-v", "error", "-of", "json", "-show_format", "-show_streams", "-show_chapters", url.path])
         guard streams.status == 0, let root = try? JSONSerialization.jsonObject(with: streams.data) as? [String: Any] else { throw CheckFailure("ffprobe can't read \(url.lastPathComponent)") }
         var p = Probe()
