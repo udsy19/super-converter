@@ -1,0 +1,30 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "a.txt",
+   "kind": "file",
+   "size": 18,
+   "sha256": "02dc86d8b326a1cd07526f75b66bb7207c43376b21d9ac2c20bfedf510898861"
+  },
+  {
+   "path": "b.txt",
+   "kind": "file",
+   "size": 18,
+   "sha256": "7ff61dd11ab812fc7f28f4f3b2e2ddf482148942a10ee079ac19295076ff741e"
+  },
+  {
+   "path": "c.txt",
+   "kind": "file",
+   "size": 18,
+   "sha256": "0b8a3f12dc4e493b99fb5e0699c96006b51b05c0461c2e048f25d86a50a58eb8"
+  },
+  {
+   "path": "d.txt",
+   "kind": "file",
+   "size": 18,
+   "sha256": "7e57320eb71e376207695ee851ed2f339cb2000fa3359a19de4c494b472699e1"
+  }
+ ]
+}

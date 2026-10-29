@@ -42,6 +42,8 @@ fetch() {
     mv "$part" "$target"
     if [[ "$extract" == "extract" ]]; then
         tar -xzf "$target" -C "$(dirname "$target")"
+    elif [[ "$extract" == "uudecode" ]]; then
+        uudecode -o "${target%.uu}" "$target"
     fi
     echo "ok       $id"
 }
