@@ -15,6 +15,7 @@ func registerTypesetKitTests() {
     SelfTest.cases.append(("TypesetKit.fonts", { typesetFonts() }))
     SelfTest.cases.append(("TypesetKit.geometry", { typesetGeometry() }))
     SelfTest.cases.append(("TypesetKit.lineBreaking", { typesetLineBreaking() }))
+    SelfTest.cases.append(("TypesetKit.hyphenation", { typesetHyphenation() }))
     SelfTest.cases.append(("TypesetKit.prose", { typesetGolden("prose", TypesetSamples.prose) }))
     SelfTest.cases.append(("TypesetKit.math", { typesetGolden("math", TypesetSamples.math) }))
     SelfTest.cases.append(("TypesetKit.tables", { typesetGolden("tables", TypesetSamples.tables) }))
@@ -42,6 +43,30 @@ private func letter(_ o: TypesetOptions = TypesetOptions()) -> TypesetOptions {
     var o = o
     if o.paper == "auto" { o.paper = "letter" }
     return o
+}
+
+// MARK: - Hyphenation
+
+/// TeX's Liang patterns give TeX's breaks (quality §3.3): the classic words from The TeXbook and hyph-utf8's tests.
+private func typesetHyphenation() {
+    func hyphenated(_ word: String, _ language: String) -> String {
+        guard let h = Hyphenator(language: language) else { check(false, "\(language) hyphenates"); return word }
+        var out = "", last = 0
+        let units = Array(word.utf16)
+        for p in h.points(in: word) { out += String(utf16CodeUnits: Array(units[last..<p]), count: p - last) + "-"; last = p }
+        return out + String(utf16CodeUnits: Array(units[last...]), count: units.count - last)
+    }
+    for (word, expected) in [("hyphenation", "hy-phen-ation"), ("typesetting", "type-set-ting"), ("mathematics", "math-e-mat-ics"),
+                             ("paragraph", "para-graph"), ("associate", "as-so-ciate"), ("Knuth", "Knuth"), ("table", "ta-ble"), ("cat", "cat"),
+                             ("NASA", "NASA"), ("abc123def", "abc123def")] {
+        check(hyphenated(word, "en_US") == expected, "en: \(word) → \(hyphenated(word, "en_US")) (TeX: \(expected))")
+    }
+    check(Hyphenator(language: "en_US")?.usesTeXPatterns == true && Hyphenator(language: "de-DE")?.usesTeXPatterns == true,
+          "English and German use TeX's patterns")
+    check(hyphenated("Silbentrennung", "de_DE") == "Sil-ben-tren-nung", "de: \(hyphenated("Silbentrennung", "de_DE"))")
+    check(hyphenated("Silbentrennung", "de_DE") != "Silbentrennung" && hyphenated("anticonstitutionnellement", "fr_FR").contains("-"),
+          "German and French words break")
+    if let it = Hyphenator(language: "it_IT") { check(!it.usesTeXPatterns, "Italian (LPPL patterns) falls back to Apple's dictionary") }
 }
 
 // MARK: - Fonts and licences
