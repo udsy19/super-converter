@@ -27,7 +27,7 @@ private func set(_ m: MathJax, _ tex: String, display: Bool = false) -> MathRend
 /// Every path point of a rendering, to check where ink is.
 private func points(_ r: MathRendering) -> [VectorPoint] {
     r.nodes.flatMap { node -> [VectorPoint] in
-        guard case .path(let segments, _, _) = node else { return [] }
+        guard case .path(let segments, _, _, _) = node else { return [] }
         return segments.compactMap {
             switch $0 {
             case .move(let p), .line(let p): p
@@ -59,7 +59,7 @@ private func mathLayout() {
 
     let textFrac = set(m, "\\frac{a}{b}"), displayFrac = set(m, "\\frac{a}{b}", display: true)
     let bar = textFrac.nodes.compactMap { node -> Double? in
-        guard case .path(let s, _, _) = node, s.count == 5, case .move(let p) = s[0] else { return nil }
+        guard case .path(let s, _, _, _) = node, s.count == 5, case .move(let p) = s[0] else { return nil }
         return p.y
     }
     check(bar.contains { abs($0 - 2.3) < 0.4 }, "the fraction rule sits on the math axis (2.5 pt at 10 pt): \(bar)")
@@ -78,12 +78,12 @@ private func mathLayout() {
 
     let unknown = set(m, "x + \\frobnicate{y}")
     check(unknown.problems == ["\\frobnicate"], "undefined macros are reported: \(unknown.problems)")
-    check(unknown.nodes.contains { if case .path(_, .solid(let c)?, _) = $0 { return c.red > 0.9 && c.green < 0.1 }; return false },
+    check(unknown.nodes.contains { if case .path(_, .solid(let c)?, _, _) = $0 { return c.red > 0.9 && c.green < 0.1 }; return false },
           "undefined macros are set in red")
     let broken = set(m, "\\frac{a}{b")
     check(broken.problems.first?.hasPrefix("Missing close brace") == true, "parse errors are reported: \(broken.problems)")
     check(broken.width > 10 && broken.nodes.count == 1, "a formula that does not parse shows its source")
-    check(set(m, "\\color{blue}{x}").nodes.contains { if case .path(_, .solid(let c)?, _) = $0 { return c.blue == 1 && c.red == 0 }; return false },
+    check(set(m, "\\color{blue}{x}").nodes.contains { if case .path(_, .solid(let c)?, _, _) = $0 { return c.blue == 1 && c.red == 0 }; return false },
           "\\color reaches the paths")
 }
 
