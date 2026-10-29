@@ -123,7 +123,7 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
 - **Engines** (`*Kit` under "engine") depend only on `SuperConverterCore` and their vendor libraries; they never
   import each other except the documented engine-to-engine edges: TypesetKit → MathKit, VectorKit; DocKit → LayoutKit
   (PDF input); EbookKit → DocKit, TypesetKit; CADKit → VectorKit; XPSKit → VectorKit; ImageKit → RenderKit;
-  OfficeKit → TypesetKit (tables), RenderKit. No cycles (the self-test checks the import graph).
+  RenderKit → VectorKit (VectorKit's `VectorDrawing` draws a VectorDocument into any CGContext); OfficeKit → TypesetKit (tables), RenderKit. No cycles (the self-test checks the import graph).
 - **Feature modules** (ConvertKit, WindowKit, MenuBarKit, SettingsKit) depend on Core and talk through the `Services`
   registry; only ConvertKit imports engines (it registers their converters).
 - **Intermediate models live in Core** as plain data (`Sendable` structs), so any engine can read what another

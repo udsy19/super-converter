@@ -35,6 +35,7 @@ public enum ModuleGraph {
         .cadKit: [.vectorKit],
         .xpsKit: [.vectorKit],
         .imageKit: [.renderKit],
+        .renderKit: [.vectorKit],
         .officeKit: [.typesetKit, .renderKit],
     ]
 

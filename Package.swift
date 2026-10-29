@@ -46,6 +46,7 @@ let engineEdges: [String: [String]] = [
     "CADKit": ["VectorKit"],
     "XPSKit": ["VectorKit"],
     "ImageKit": ["RenderKit"],
+    "RenderKit": ["VectorKit"],
     "OfficeKit": ["TypesetKit", "RenderKit"],
 ]
 
