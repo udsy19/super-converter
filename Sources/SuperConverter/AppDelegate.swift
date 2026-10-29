@@ -88,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Registers the document types (Open With for every input format), the URL scheme and the Quick Action
             // extensions in Contents/PlugIns, so Finder finds them without a Spotlight pass.
             LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
+            MenuBarKitModule.electQuickActionsAtFirstLaunch()
         }
         Services.menuBar.install()
 

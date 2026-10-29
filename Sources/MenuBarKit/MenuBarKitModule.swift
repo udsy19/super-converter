@@ -20,6 +20,14 @@ public enum MenuBarKitModule {
         }
     }
 
+    /// Switches the Quick Actions as ux §5.10 has them at first launch (JPG, PNG and PDF on; MP4 and MP3 off), once,
+    /// leaving any the person already chose. The app calls it after registering its bundle with LaunchServices, and never
+    /// from a test build: the switches are the Mac's, not the build's.
+    @MainActor public static func electQuickActionsAtFirstLaunch() {
+        guard let switches = QuickActionSwitches.current else { return }
+        Task { await switches.electAtFirstLaunch() }
+    }
+
     /// Runs a link from a Quick Action, a Service or `superconverter://`: `open` adds the files to the window, `convert`
     /// converts them in the background and notifies.
     @MainActor public static func handle(_ link: QuickActionLink) {

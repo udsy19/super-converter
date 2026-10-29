@@ -37,15 +37,24 @@ public enum QuickAction: String, CaseIterable, Sendable {
         }
     }
 
-    /// The Settings › Quick Actions switch for a one-step action (the first three start on, ux §5.10).
-    public var enabledKey: Defaults.Key<Bool>? {
+    /// Which files it shows for, as Settings › Quick Actions says it (ux §5.10).
+    public var takes: String {
+        switch self {
+        case .convertWith: "Any file"
+        case .toJPG, .toPNG: "Images"
+        case .toPDF: "Documents, images, slides, sheets and e-books"
+        case .toMP4: "Videos"
+        case .toMP3: "Audio and videos"
+        }
+    }
+
+    /// Switched on at first launch: the first three one-step actions; MP4 and MP3 wait for Settings (ux §5.10).
+    /// "Convert with Super Converter…" is left as macOS has it.
+    var startsOn: Bool? {
         switch self {
         case .convertWith: nil
-        case .toJPG: Defaults.Keys.quickActionConvertToJPG
-        case .toPNG: Defaults.Keys.quickActionConvertToPNG
-        case .toPDF: Defaults.Keys.quickActionConvertToPDF
-        case .toMP4: Defaults.Keys.quickActionConvertToMP4
-        case .toMP3: Defaults.Keys.quickActionConvertToMP3
+        case .toJPG, .toPNG, .toPDF: true
+        case .toMP4, .toMP3: false
         }
     }
 

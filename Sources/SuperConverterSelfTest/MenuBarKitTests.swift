@@ -6,10 +6,11 @@ import UniformTypeIdentifiers
 @testable import MenuBarKit
 
 // MenuBarKit's checks (WP-B): the Quick Actions' activation rules per UTType, the extension plists, links handed to the app
-// through a fake opener, the Services entries, background conversions against a scripted queue, the panel's model, and an
-// offscreen render of the panel. Nothing opens an app or a URL, posts a notification, registers a Service or extension, or
-// touches the real settings or recent list (a temporary Defaults suite and recent.json). SUPERCONVERTER_RENDER_DIR writes the
-// panel renders; SUPERCONVERTER_WRITE_PLISTS=1 rewrites Sources/SuperConverterQuickActions/Plists from `QuickAction.infoPlist`.
+// through a fake opener, the Services entries, the Quick Action switches against a fake pluginkit, background conversions
+// against a scripted queue, the panel's model, and an offscreen render of the panel. Nothing opens an app or a URL, posts a
+// notification, registers a Service or extension, switches an extension, or touches the real settings or recent list (a
+// temporary Defaults suite and recent.json). SUPERCONVERTER_RENDER_DIR writes the panel renders; SUPERCONVERTER_WRITE_PLISTS=1
+// rewrites Sources/SuperConverterQuickActions/Plists from `QuickAction.infoPlist`.
 func registerMenuBarKitTests() {
     let cases: [(String, @MainActor () -> Void)] = [
         ("MenuBarKit.installs", menuBarInstalls),
@@ -18,6 +19,8 @@ func registerMenuBarKitTests() {
         ("MenuBarKit.extensionPlists", menuBarExtensionPlists),
         ("MenuBarKit.quickActionsHandOff", menuBarHandOff),
         ("MenuBarKit.services", menuBarServices),
+        ("MenuBarKit.quickActionSwitches", menuBarSwitches),
+        ("MenuBarKit.quickActionsFirstLaunch", menuBarFirstLaunch),
         ("MenuBarKit.backgroundConversion", menuBarBackground),
         ("MenuBarKit.recentList", menuBarRecents),
         ("MenuBarKit.panelModel", menuBarPanelModel),
@@ -27,6 +30,49 @@ func registerMenuBarKitTests() {
 }
 
 // MARK: - Test doubles
+
+/// pluginkit as macOS answers it, for the Quick Action extensions only: `-m -i <id>` lists the extension with its election,
+/// `-e use|ignore -i <id>` changes it. Every run is recorded; nothing reaches the real pluginkit.
+private final class FakePluginKit: ToolRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    /// "+" use, "-" ignore, " " no election; an id missing here isn't listed.
+    private var elections: [String: Character]
+    private var runs: [[String]] = []
+    /// Runs of `-e` that fail (macOS refusing the change).
+    var electionsFail = false
+
+    init(_ elections: [QuickAction: Character]) {
+        self.elections = Dictionary(uniqueKeysWithValues: elections.map { ($0.bundleID, $1) })
+    }
+
+    subscript(action: QuickAction) -> Character? {
+        get { lock.withLock { elections[action.bundleID] } }
+        set { lock.withLock { elections[action.bundleID] = newValue } }
+    }
+
+    /// The arguments of every run since the last call, and forgets them.
+    func takeRuns() -> [[String]] { lock.withLock { defer { runs = [] }; return runs } }
+
+    func location(of tool: BundledTool) -> URL? { tool == .pluginkit ? URL(fileURLWithPath: "/usr/bin/pluginkit") : nil }
+
+    func run(_ invocation: ToolInvocation) async throws -> HelperRunResult {
+        guard invocation.tool == .pluginkit else { throw ConversionError.failed("only pluginkit here") }
+        return lock.withLock {
+            runs.append(invocation.arguments)
+            switch invocation.arguments {
+            case let a where a.count == 3 && a[0] == "-m" && a[1] == "-i":
+                guard let election = elections[a[2]] else { return HelperRunResult(exitCode: 0) }
+                return HelperRunResult(exitCode: 0, standardOutput: "\(election)    \(a[2])(1.0.0)\n")
+            case let a where a.count == 4 && a[0] == "-e" && a[2] == "-i" && ["use", "ignore"].contains(a[1]):
+                if electionsFail { return HelperRunResult(exitCode: 1, standardError: "match: no matches") }
+                if elections[a[3]] != nil { elections[a[3]] = a[1] == "use" ? "+" : "-" }
+                return HelperRunResult(exitCode: 0)
+            default:
+                return HelperRunResult(exitCode: 64, standardError: "usage")
+            }
+        }
+    }
+}
 
 private final class FakeOpener: URLOpening {
     private(set) var opened: [URL] = []
@@ -185,8 +231,7 @@ private struct MenuBarFixture {
     check(Set(QuickAction.allCases.map(\.bundleID)).count == 6, "six distinct bundle ids")
     check(QuickAction(bundleInfo: nil) == nil && QuickAction(bundleInfo: ["SuperConverterQuickAction": "nope"]) == nil, "an unknown plist names no action")
     // The first three are on at first launch (ux §5.10).
-    Defaults.store = UserDefaults(suiteName: "superconverter-menubarkit-\(UUID().uuidString)")!
-    let on = QuickAction.allCases.compactMap { action in action.enabledKey.map { (action, Defaults[$0]) } }
+    let on = QuickAction.allCases.compactMap { action in action.startsOn.map { (action, $0) } }
     check(on.map(\.0) == [.toJPG, .toPNG, .toPDF, .toMP4, .toMP3] && on.map(\.1) == [true, true, true, false, false], "JPG, PNG and PDF start on; MP4 and MP3 off")
 }
 
@@ -449,6 +494,76 @@ private func isNear(_ c: NSColor, _ hex: String, tolerance: CGFloat = 0.04) -> B
             try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name + ".png"))
         }
     }
+}
+
+/// ux §5.10–§5.11: the Settings switches are pluginkit elections, read every time (System Settings changes them too).
+@MainActor private func menuBarSwitches() {
+    let jpg = QuickAction.toJPG.bundleID, mp4 = QuickAction.toMP4.bundleID
+    check(QuickActionSwitches.election(of: jpg, in: "+    \(jpg)(1.0.0)\n") == .use, "“+” is use")
+    check(QuickActionSwitches.election(of: jpg, in: "-    \(jpg)(1.0.0)\n") == .ignore, "“-” is ignore")
+    check(QuickActionSwitches.election(of: jpg, in: "     \(jpg)(1.0.0)\n") == .undecided, "a space is no election yet")
+    check(QuickActionSwitches.election(of: jpg, in: "+    \(jpg)X(1.0.0)\n") == nil && QuickActionSwitches.election(of: jpg, in: "") == nil,
+          "another extension, or none listed, is not this one")
+    check(QuickActionSwitches.election(of: jpg, in: "+    \(mp4)(1.0.0)\n-    \(jpg)(1.0.0)\t3914A373\t2026-10-29\t/A.app\n") == .ignore,
+          "the line for this id, verbose columns and all")
+
+    let fixture = MenuBarFixture(); defer { fixture.cleanUp() }
+    let previousTools = Services.tools
+    defer { Services.tools = previousTools }
+    let pluginkit = FakePluginKit([.convertWith: "+", .toJPG: "+", .toPNG: "+", .toPDF: "-", .toMP4: " ", .toMP3: "-"])
+    Services.tools = pluginkit
+    MenuBarKitModule.install()
+    let menuBar: MenuBarPresenting = Services.menuBar
+    func rows() -> [QuickActionSwitch] { (try? complete(10) { await menuBar.quickActionSwitches() }?.get()) ?? [] }
+    func set(_ target: FormatID, _ on: Bool) -> QuickActionSwitch? { (try? complete(10) { await menuBar.setQuickAction(target, on: on) }?.get()) ?? nil }
+
+    let first = rows()
+    check(first.map(\.target) == ["jpg", "png", "pdf", "mp4", "mp3"], "the five one-step actions, in menu order: \(first.map(\.target))")
+    check(first.map(\.isOn) == [true, true, false, false, false], "each as pluginkit has it: \(first.map(\.isOn))")
+    check(first.map(\.title) == ["Convert to JPG", "Convert to PNG", "Convert to PDF", "Convert to MP4", "Convert to MP3"], "titled as in Finder")
+    check(first.map(\.takes) == ["Images", "Images", "Documents, images, slides, sheets and e-books", "Videos", "Audio and videos"], "and what each takes (ux §5.10)")
+    let oneStep: [QuickAction] = [.toJPG, .toPNG, .toPDF, .toMP4, .toMP3]
+    check(pluginkit.takeRuns() == oneStep.map { ["-m", "-i", $0.bundleID] }, "one `pluginkit -m -i <id>` per action, nothing else")
+
+    check(set("mp4", true)?.isOn == true, "switching MP4 on answers on")
+    check(pluginkit.takeRuns() == [["-e", "use", "-i", mp4], ["-m", "-i", mp4]], "`pluginkit -e use -i <id>`, then a read back")
+    check(pluginkit[.toMP4] == "+", "and macOS has it on")
+    check(set("jpg", false)?.isOn == false && pluginkit.takeRuns() == [["-e", "ignore", "-i", jpg], ["-m", "-i", jpg]] && pluginkit[.toJPG] == "-",
+          "switching JPG off is `pluginkit -e ignore -i <id>`")
+
+    // Switched off in System Settings › Extensions behind the app's back: the next read says so.
+    pluginkit[.toPNG] = "-"
+    check(rows().first { $0.target == "png" }?.isOn == false, "PNG turned off in System Settings reads as off")
+    pluginkit[.toMP3] = nil
+    check(rows().first { $0.target == "mp3" }.map { $0.isOn == nil } == true, "an extension macOS doesn’t list has no state")
+    _ = pluginkit.takeRuns()
+
+    pluginkit.electionsFail = true
+    check(set("pdf", true)?.isOn == false && pluginkit[.toPDF] == "-", "a switch macOS refuses answers what macOS still has")
+    pluginkit.electionsFail = false
+    _ = pluginkit.takeRuns()
+    check(set("gif", true) == nil && pluginkit.takeRuns().isEmpty, "no action makes GIF: nothing runs")
+    check(pluginkit[.convertWith] == "+", "“Convert with Super Converter…” is never switched")
+}
+
+/// ux §5.10: at first launch JPG, PNG and PDF are switched on and MP4 and MP3 off, once, keeping the person's own choices.
+@MainActor private func menuBarFirstLaunch() {
+    let fixture = MenuBarFixture(); defer { fixture.cleanUp() }
+    let unlisted = FakePluginKit([.toJPG: " ", .toPNG: " ", .toPDF: " ", .toMP4: " "])
+    let notYet = (try? complete(10) { await QuickActionSwitches(tools: unlisted).electAtFirstLaunch() }?.get()) ?? true
+    check(!notYet && !Defaults[.quickActionsElected], "with an extension not listed yet, nothing is decided")
+    check(!unlisted.takeRuns().contains { $0.first == "-e" } && unlisted[.toJPG] == " ", "and nothing is switched")
+
+    let pluginkit = FakePluginKit([.convertWith: " ", .toJPG: " ", .toPNG: "-", .toPDF: " ", .toMP4: " ", .toMP3: "+"])
+    let done = (try? complete(10) { await QuickActionSwitches(tools: pluginkit).electAtFirstLaunch() }?.get()) ?? false
+    check(done && Defaults[.quickActionsElected], "the elections are made once every extension is listed")
+    let elections = pluginkit.takeRuns().filter { $0.first == "-e" }
+    check(elections == [["-e", "use", "-i", QuickAction.toJPG.bundleID], ["-e", "use", "-i", QuickAction.toPDF.bundleID],
+                        ["-e", "ignore", "-i", QuickAction.toMP4.bundleID]], "JPG and PDF on, MP4 off: \(elections)")
+    check(pluginkit[.toPNG] == "-" && pluginkit[.toMP3] == "+", "PNG and MP3, already chosen in System Settings, are left alone")
+    check(pluginkit[.convertWith] == " ", "“Convert with Super Converter…” is left as macOS has it")
+    _ = complete(10) { await QuickActionSwitches(tools: pluginkit).electAtFirstLaunch() }
+    check(pluginkit.takeRuns().isEmpty, "the second launch runs nothing")
 }
 #else
 func registerMenuBarKitTests() {}

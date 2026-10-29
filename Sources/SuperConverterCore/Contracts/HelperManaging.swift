@@ -57,10 +57,11 @@ public protocol HelperManaging: AnyObject {
 }
 
 /// An executable that ships inside the app (formats §2.2: the LGPL `7zz`, `ffmpeg` and `ffprobe` in `Contents/Helpers/`,
-/// `Vendor/Tools/` in a checkout) or a macOS command an engine drives (`hdiutil`). Engines run these only through
-/// `Services.tools`, HelperKit's runner (ARCHITECTURE §7): never `Process` themselves.
+/// `Vendor/Tools/` in a checkout) or a macOS command a module drives (`hdiutil` for disk images, `pluginkit` for the
+/// Quick Action switches). Modules run these only through `Services.tools`, HelperKit's runner (ARCHITECTURE §7): never
+/// `Process` themselves.
 public enum BundledTool: String, CaseIterable, Sendable {
-    case sevenZip = "7zz", ffmpeg, ffprobe, hdiutil
+    case sevenZip = "7zz", ffmpeg, ffprobe, hdiutil, pluginkit
 }
 
 /// One run of a bundled tool: the same scrubbed environment, private TMPDIR, `nice` and no-network profile as a helper.

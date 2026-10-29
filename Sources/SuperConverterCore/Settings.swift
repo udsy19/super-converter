@@ -24,13 +24,7 @@ public extension Defaults.Keys {
     static let checkForUpdates = Key<Bool>("general.checkForUpdates", default: true)
     static let viewMode = Key<ViewMode>("window.viewMode", default: .grid)
 
-    // MARK: Quick Actions (ux §5.10): the first three are on at first launch
-
-    static let quickActionConvertToJPG = Key<Bool>("quickActions.jpg", default: true)
-    static let quickActionConvertToPNG = Key<Bool>("quickActions.png", default: true)
-    static let quickActionConvertToPDF = Key<Bool>("quickActions.pdf", default: true)
-    static let quickActionConvertToMP4 = Key<Bool>("quickActions.mp4", default: false)
-    static let quickActionConvertToMP3 = Key<Bool>("quickActions.mp3", default: false)
+    // Quick Actions (ux §5.10) have no keys: their switches are macOS's own, per user (`Services.menuBar.quickActionSwitches()`).
 
     // MARK: Per-format keys
 

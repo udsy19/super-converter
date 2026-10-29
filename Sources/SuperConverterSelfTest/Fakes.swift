@@ -156,6 +156,18 @@ final class FakeMenuBar: MenuBarPresenting {
     func install() {}
     func setVisible(_ visible: Bool) { self.visible = visible }
     func showPanel(with urls: [URL]) { panels.append(urls) }
+    /// What macOS "has": the test edits it to play System Settings switching an extension behind the app's back.
+    var quickActions: [QuickActionSwitch] = []
+    /// When false, a switch doesn't take (macOS keeps what it had).
+    var switchesTake = true
+    private(set) var switched: [(FormatID, Bool)] = []
+    func quickActionSwitches() async -> [QuickActionSwitch] { quickActions }
+    func setQuickAction(_ target: FormatID, on: Bool) async -> QuickActionSwitch? {
+        switched.append((target, on))
+        guard let index = quickActions.firstIndex(where: { $0.target == target }) else { return nil }
+        if switchesTake { quickActions[index].isOn = on }
+        return quickActions[index]
+    }
 }
 
 @MainActor
