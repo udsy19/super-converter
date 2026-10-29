@@ -1,0 +1,22 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "outside",
+   "kind": "directory"
+  },
+  {
+   "path": "outside/passwd",
+   "kind": "file",
+   "size": 4,
+   "sha256": "b5c1fb2efc6d6b4674c2fdcc48ce01b43a3b7c03763c0c3355de0099ee0f8c73"
+  },
+  {
+   "path": "safe.txt",
+   "kind": "file",
+   "size": 5,
+   "sha256": "93d868f3b59590f611d7646894ce8def1cea5ad63a9af0d9ccc56e9bc6968c11"
+  }
+ ]
+}

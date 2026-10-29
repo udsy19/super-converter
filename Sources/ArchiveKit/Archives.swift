@@ -72,6 +72,12 @@ public enum Archives {
         switch request.format.rawValue {
         case "deb" where request.unpackPayload: return try await readDebPayload(request)
         case "tar.7z": return try await readWrapped(request, container: "7z")
+        case "iso":
+            // A UDF-only disc carries an empty ISO 9660 bridge that libarchive reads as nothing: 7zz reads the UDF.
+            let tree = try await readWithFallback(request)
+            guard tree.entries.isEmpty, SevenZip.isAvailable(request.tools) else { return tree }
+            try? FileManager.default.removeItem(at: request.root)
+            return try await SevenZip.read(request)
         default: return try await readWithFallback(request)
         }
     }

@@ -1,0 +1,12 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "HELLO.TXT",
+   "kind": "file",
+   "size": 1120,
+   "sha256": "c89c7437c834b084cf8272bdf597571be7282ede70313cfa575569278d41519b"
+  }
+ ]
+}

@@ -1,0 +1,26 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "ok",
+   "kind": "directory"
+  },
+  {
+   "path": "ok/fine.txt",
+   "kind": "file",
+   "size": 5,
+   "sha256": "8ecc5f94c57b05d6c5e0ee316bee4875427e1845bbeef3ead59df29c72aab36e"
+  },
+  {
+   "path": "tmp",
+   "kind": "directory"
+  },
+  {
+   "path": "tmp/absolute.txt",
+   "kind": "file",
+   "size": 4,
+   "sha256": "dae00478f0c0251654a6fddfaebb26c12136cb630a9811d07cfe2e0f144e18c7"
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+{
+ "modes": false,
+ "times": false,
+ "entries": [
+  {
+   "path": "noise.bin",
+   "kind": "file",
+   "size": 32768,
+   "sha256": "9f811908215b33cff33930e8b643c7745f6ff25d8685e06785a6749553863325"
+  },
+  {
+   "path": "readme.md",
+   "kind": "file",
+   "size": 66,
+   "sha256": "dd30ac095030c192bdf88633eca85dd86b5260aac09c7055c7e72dcddf7c3452"
+  }
+ ]
+}

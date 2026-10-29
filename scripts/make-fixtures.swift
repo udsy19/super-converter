@@ -349,6 +349,18 @@ func pdf() throws {
     try write("sample.pdf", text.data(using: .isoLatin1)!)
 }
 
+// MARK: Archives
+
+/// The archive corpus (quality §8): one fixture per archive format with its expected manifest, written by
+/// scripts/make-archive-fixtures.py (Python's standard library, macOS's hdiutil and compress, and the bundled 7zz).
+func archives() throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    p.arguments = ["-I", root.appendingPathComponent("scripts/make-archive-fixtures.py").path, "--corpus", out.appendingPathComponent("archives").path]
+    try p.run(); p.waitUntilExit()
+    guard p.terminationStatus == 0 else { throw NSError(domain: "make-archive-fixtures", code: Int(p.terminationStatus)) }
+}
+
 try images()
 try audio()
 try documents()
@@ -356,4 +368,5 @@ try spreadsheet()
 try ebooks()
 try cad()
 try pdf()
+try archives()
 print("Fixtures written to \(out.path)")

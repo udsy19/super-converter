@@ -1,0 +1,78 @@
+{
+ "modes": true,
+ "times": true,
+ "entries": [
+  {
+   "path": "META-INF",
+   "kind": "directory"
+  },
+  {
+   "path": "META-INF/MANIFEST.MF",
+   "kind": "file",
+   "size": 25,
+   "sha256": "566ad1a80220026d05099562645ce968ff0e7c36cde22634332605bb34cc3eff",
+   "permissions": 420,
+   "modified": 1700000000
+  },
+  {
+   "path": "café",
+   "kind": "directory"
+  },
+  {
+   "path": "café/naïve résumé.txt",
+   "kind": "file",
+   "size": 48,
+   "sha256": "3eb6dd0c68de67a9436465732bbf492fb391c404aabdcddfdc51e07e8a22c86e",
+   "permissions": 420,
+   "modified": 1700000000
+  },
+  {
+   "path": "data",
+   "kind": "directory"
+  },
+  {
+   "path": "data/noise.bin",
+   "kind": "file",
+   "size": 32768,
+   "sha256": "9f811908215b33cff33930e8b643c7745f6ff25d8685e06785a6749553863325",
+   "permissions": 420,
+   "modified": 1700000000
+  },
+  {
+   "path": "docs",
+   "kind": "directory"
+  },
+  {
+   "path": "docs/empty",
+   "kind": "directory"
+  },
+  {
+   "path": "docs/readme.md",
+   "kind": "file",
+   "size": 66,
+   "sha256": "dd30ac095030c192bdf88633eca85dd86b5260aac09c7055c7e72dcddf7c3452",
+   "permissions": 420,
+   "modified": 1700000000
+  },
+  {
+   "path": "hello.txt",
+   "kind": "file",
+   "size": 1120,
+   "sha256": "c89c7437c834b084cf8272bdf597571be7282ede70313cfa575569278d41519b",
+   "permissions": 420,
+   "modified": 1700000000
+  },
+  {
+   "path": "tools",
+   "kind": "directory"
+  },
+  {
+   "path": "tools/run.sh",
+   "kind": "file",
+   "size": 19,
+   "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35",
+   "permissions": 493,
+   "modified": 1700000000
+  }
+ ]
+}

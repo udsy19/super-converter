@@ -33,15 +33,15 @@ public enum ArchiveError: Error, Equatable, Sendable {
     }
 }
 
-/// Caps that stop a hostile or runaway archive (formats §3.3 safety; ARCHITECTURE §11 WP-A "bombs").
+/// Caps that stop a hostile or runaway archive (quality §8 "Safety": a zip bomb expands more than 1000:1 and past 10 GB).
 public struct ExtractionLimits: Sendable, Equatable {
     /// Bytes written for one archive.
     public var maxTotalBytes: Int64 = 64 << 30
     public var maxEntries = 1_000_000
-    /// Expanded size over archive size. Counted only once `ratioFloor` bytes were written, so small test archives and
-    /// well-compressed text do not trip it.
+    /// Expanded size over archive size. Counted only once `ratioFloor` bytes were written, so small archives and
+    /// well-compressed text never trip it.
     public var maxRatio = 1000.0
-    public var ratioFloor: Int64 = 1 << 30
+    public var ratioFloor: Int64 = 10 << 30
     /// Archives inside archives that are unwrapped on the way (tar.7z, DEB payload, …).
     public var maxNesting = 3
     /// Free space kept back when checking whether the volume can hold the contents.
