@@ -37,6 +37,8 @@ private final class FakeOpener: URLOpening {
 private final class RecordingNotifier: BatchNotifying {
     private(set) var posted: [(title: String, body: String, reveal: URL?)] = []
     func post(title: String, body: String, reveal: URL?) { posted.append((title, body, reveal)) }
+    private(set) var asked: [PendingProblem] = []
+    func ask(_ question: PendingProblem) { asked.append(question) }
 }
 
 /// A queue that runs every job at once: started, half way, then the outcome the test chose for its plan.
@@ -286,6 +288,28 @@ private struct MenuBarFixture {
     f.queue.outcome = { _ in .failure(.passwordRequired("docx")) }
     _ = complete(10) { await f.converter.convert([doc], target: "pdf").value }
     check(f.notifier.posted.last?.title == "Didn’t convert" && f.notifier.posted.last?.body == "“Report.docx”: This DOCX needs its password", "a failed run names the file and the problem: \(f.notifier.posted.last?.body ?? "")")
+
+    // A question (a decompression bomb asks first, quality §8) is passed on as its own notification, not as a failure; its
+    // click opens the file's card in the window, which asks it.
+    let zip = f.file("Huge.zip")
+    let question = ConversionError.needsConfirmation(question: "This archive expands over 1,000 times, past 10 GB, as a decompression bomb does. Extract it anyway?", proceed: .extractAnyway, option: "extractAnyway")
+    f.queue.outcome = { _ in .failure(question) }
+    let posted = f.notifier.posted.count
+    _ = complete(10) { await f.converter.convert([zip], target: "tar").value }
+    check(f.notifier.asked.count == 1 && f.notifier.posted.count == posted, "one question, no Done notification")
+    if let asked = f.notifier.asked.first {
+        check(asked.title == "“Huge.zip”" && asked.body.hasSuffix("Extract it anyway?") && asked.target == "tar", "it names the file and asks: \(asked.body)")
+        let window = FakeWindow()
+        Services.window = window
+        asked.open()
+        check(window.problems.count == 1 && window.problems[0].url == zip && window.problems[0].problem == question && window.shown == 1,
+              "clicking it opens the card in the window")
+    }
+    f.queue.outcome = { plan in
+        plan.request.source == zip ? .failure(question) : .success(ConversionResult(outputs: [plan.request.source], inputBytes: 1, outputBytes: 1))
+    }
+    _ = complete(10) { await f.converter.convert([zip, heic], target: "tar").value }
+    check(f.notifier.asked.count == 2 && f.notifier.posted.count == posted + 1, "with other files, the Done notification still comes")
 
     // "Notify when done" off: nothing is posted.
     Defaults[.notifyWhenDone] = false
