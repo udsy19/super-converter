@@ -7318,6 +7318,36 @@ Marek Ryćko; MIT), `hyph-pt.tex` (Pedro J. de Rezende, J. Joao Dias Almeida, Le
 BSD 3-clause), `hyph-uk.tex` (Maksym Polyakov; MIT), `hyph-da.tex` (Frank Jensen; MIT), `hyph-el-monoton.tex`
 (Dimitrios Filippou; MIT). The MIT and BSD texts are in each file's header.
 
+## VectorizeKit (port of vtracer)
+
+`Sources/VectorizeKit/` is a Swift port of VTracer and of the parts of visioncortex it uses (colour clustering, binary
+clusters, path walking, staircase removal, 4-point subdivision smoothing, spline fitting), with the Bézier fitter of
+flo_curves that visioncortex calls. Each ported file names its upstream file and commit (formats §2.6).
+
+- **VTracer** 0.6.15, commit `fd9cdb08e622f237eb05be553a020ddc9e4c47a1`, https://github.com/visioncortex/vtracer —
+  `cmdapp/src/{config,converter,svg}.rs`. MIT licence. Copyright (c) 2024 TSANG, Hao Fung.
+- **visioncortex** 0.8.8, commit `63d21c5b77489daa266304fdacf302b4c2d3a53e`, https://github.com/visioncortex/visioncortex —
+  `src/color_clusters/*`, `src/clusters.rs`, `src/bound.rs`, `src/color.rs`, `src/shape/geometry.rs`, `src/path/*`.
+  Dual-licensed MIT OR Apache-2.0; used under MIT. Copyright (c) 2022 Tsang Hao Fung.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+- **flo_curves** 0.3.1, commit `fccd933942532562557be2a61a706ebc0a1f1888`, https://github.com/Logicalshift/flo_curves —
+  `src/bezier/fit.rs` (Schneider's curve fitting), ported in `Sources/VectorizeKit/CurveFit.swift`. Apache License,
+  Version 2.0 (the full text appears above in this file). Copyright (c) Andrew Hunter. Changes: rewritten in Swift; a
+  zero-length tangent or chord stays zero instead of becoming NaN; the split point is kept inside the run.
+
 ## The app
 
 The app target, the Finder Quick Actions, the build and release scripts and the app icon contain no third-party code or

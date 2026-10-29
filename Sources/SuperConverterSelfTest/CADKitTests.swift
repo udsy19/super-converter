@@ -155,7 +155,7 @@ private func groupCount(_ nodes: [VectorNode], clipped: Bool) -> Int {
 private func strokes(_ nodes: [VectorNode]) -> [VectorStroke] {
     nodes.flatMap { node -> [VectorStroke] in
         switch node {
-        case .path(_, _, let s): s.map { [$0] } ?? []
+        case .path(_, _, let s, _): s.map { [$0] } ?? []
         case .group(let children, _, _, _): strokes(children)
         default: []
         }
@@ -256,7 +256,7 @@ func registerCADKitTests() {
             .line(.init(0, 0), .init(0, 0), layer: "0"), .line(.init(100, 60), .init(100, 60), layer: "0")])
         let plotted = CADPlotter.plot(probe, options: plotOptions())
         var points: [VectorPoint] = []
-        for case .path(let segs, _, _) in plotted.document.pages[0].nodes { for case .move(let p) in segs { points.append(p) }; for case .line(let p) in segs { points.append(p) } }
+        for case .path(let segs, _, _, _) in plotted.document.pages[0].nodes { for case .move(let p) in segs { points.append(p) }; for case .line(let p) in segs { points.append(p) } }
         let m = 20.0, k = (plotted.document.pages[0].size.width - 2 * m) / 100
         let base = VectorPoint(m + 10 * k, m + 20 * k), end = VectorPoint(m + 10 * k, m + 24 * k)
         check(points.contains { abs($0.x - base.x) < 0.01 && abs($0.y - base.y) < 0.01 }, "insert base lands on the insertion point")
