@@ -17,7 +17,8 @@
 # LIB is one of: webp avif archive xls woff2 unalz libraw.
 #
 #   webp     WebP.xcframework     libwebp (+ demux, mux, sharpyuv)                          BSD-3-Clause
-#   avif     AVIF.xcframework     libavif + SVT-AV1 (encode) + dav1d (decode)               BSD-2-Clause, BSD-3-Clause-Clear, BSD-2-Clause
+#   avif     AVIF.xcframework     libavif + SVT-AV1 (lossy encode) + libaom (lossless and 4:4:4 encode) + dav1d (decode)
+#                                                                                          BSD-2-Clause, BSD-3-Clause-Clear, BSD-2-Clause, BSD-2-Clause
 #   archive  Archive.xcframework  libarchive + liblzma + zstd + lz4 (zlib, bzip2, iconv from the SDK)   BSD-2-Clause, 0BSD, BSD-3-Clause, BSD-2-Clause
 #   xls      XLS.xcframework      libxls                                                    BSD-2-Clause
 #   woff2    WOFF2.xcframework    google/woff2 + Brotli + a C shim (scripts/vendor/shims)   MIT
@@ -31,7 +32,8 @@
 #     back-deployment libraries for arm64 only; see Super PDF's scripts/build-app.sh).
 #   - libarchive converts entry names through the C locale: call setlocale(LC_ALL, "en_US.UTF-8") before using names
 #     that are not ASCII.
-#   - AVIF encoding through SVT-AV1 is 4:2:0 only; libavif is built without libyuv (its own, slower, conversions).
+#   - AVIF: SVT-AV1 encodes 4:2:0 only, so lossless and 4:4:4 go through libaom (encoder only; dav1d decodes);
+#     libavif is built without libyuv (its own, slower, conversions).
 #   - LibRaw is dynamic: scripts/build-app.sh copies libraw_r.dylib into Contents/Frameworks and signs it with the app's
 #     identity (its install name is @rpath/libraw_r.dylib). JPEG-compressed (lossy) DNG is not decoded by it.
 #   - WOFF2 and UnALZ export small C interfaces (scripts/vendor/shims/*.h) instead of their C++ classes.
@@ -60,6 +62,7 @@ COMPONENTS=(
 "libwebp|BSD-3-Clause|COPYING:PATENTS|webp"
 "libavif|BSD-2-Clause|LICENSE|avif"
 "svtav1|BSD-3-Clause-Clear|LICENSE.md:PATENTS.md|avif"
+"libaom|BSD-2-Clause|LICENSE:PATENTS:third_party/fastfeat/LICENSE:third_party/vector/LICENSE:third_party/x86inc/LICENSE|avif"
 "dav1d|BSD-2-Clause|COPYING|avif"
 "libarchive|BSD-2-Clause|COPYING|archive"
 "xz|0BSD|COPYING.0BSD|archive"
@@ -120,7 +123,7 @@ setup_env() {
     export JOBS
 }
 
-# nasm (x86_64 assembly for dav1d and SVT-AV1) and meson + ninja (dav1d), shared with scripts/build-ffmpeg.sh.
+# nasm (x86_64 assembly for dav1d, SVT-AV1 and libaom) and meson + ninja (dav1d), shared with scripts/build-ffmpeg.sh.
 ensure_host_tools() { [[ -x "$WORK/host/bin/nasm" ]] || build_host_tools; }
 
 arch_env() { # arch -> PREFIX, ARCH_FLAGS, HOST_TRIPLE for this slice
@@ -189,7 +192,7 @@ copy_licences() { # lib kind dest-dir  (check, then copy every component's licen
     for id in $(components_of "$lib"); do
         check_licence "$id" "$kind"
         for f in $(comp_field "$id" 3 | tr ':' ' '); do
-            cp "$(srcdir "$id")/$f" "$dest/$id-$(basename "$f")"
+            cp "$(srcdir "$id")/$f" "$dest/$id-${f//\//-}"   # third_party/x86inc/LICENSE -> libaom-third_party-x86inc-LICENSE
         done
         lock_source "$id"
         printf '%s %s  %s  %s  sha256:%s\n' "$id" "$SRC_VERSION" "$(comp_field "$id" 2)" "$SRC_URL" "$SRC_SHA" >> "$dest/COMPONENTS.txt"
@@ -343,13 +346,22 @@ build_avif() {
         log "SVT-AV1 $(ver svtav1) ($arch)"
         cmake_lib svtav1 "$(srcdir svtav1)" -DBUILD_APPS=OFF -DBUILD_DEC=OFF -DSVT_AV1_LTO=OFF
 
+        # libaom's encoder only (dav1d decodes): no libyuv, WebM, tools or tests, so only its fastfeat, vector and
+        # x86inc third-party code is compiled in. nasm assembles the x86_64 parts. AOM_TARGET_CPU is named because CMake
+        # resets CMAKE_SYSTEM_PROCESSOR to the host's when it is not cross-compiling (NEON code in an x86_64 slice).
+        log "libaom $(ver libaom) ($arch)"
+        cmake_lib aom "$(srcdir libaom)" -DAOM_TARGET_CPU="$arch" -DCONFIG_AV1_DECODER=0 -DCONFIG_LIBYUV=0 -DCONFIG_WEBM_IO=0 -DCONFIG_PIC=1 \
+            -DENABLE_DOCS=0 -DENABLE_EXAMPLES=0 -DENABLE_TESTDATA=0 -DENABLE_TESTS=0 -DENABLE_TOOLS=0 -DENABLE_NASM=1
+
         log "libavif $(ver libavif) ($arch)"
         cmake_lib avif "$(srcdir libavif)" \
-            -DAVIF_CODEC_AOM=OFF -DAVIF_CODEC_RAV1E=OFF -DAVIF_CODEC_LIBGAV1=OFF -DAVIF_CODEC_AVM=OFF \
+            -DAVIF_CODEC_AOM=SYSTEM -DAVIF_CODEC_AOM_ENCODE=ON -DAVIF_CODEC_AOM_DECODE=OFF \
+            -DAVIF_CODEC_RAV1E=OFF -DAVIF_CODEC_LIBGAV1=OFF -DAVIF_CODEC_AVM=OFF \
             -DAVIF_CODEC_DAV1D=SYSTEM -DAVIF_CODEC_SVT=SYSTEM -DAVIF_LIBYUV=OFF -DAVIF_LIBSHARPYUV=OFF \
             -DAVIF_JPEG=OFF -DAVIF_ZLIBPNG=OFF -DAVIF_BUILD_APPS=OFF -DAVIF_BUILD_TESTS=OFF \
             -DAVIF_BUILD_EXAMPLES=OFF -DAVIF_ENABLE_WERROR=OFF
-        merge_static "$stage/$arch/libAVIF.a" "$PREFIX/lib/libavif.a" "$PREFIX/lib/libdav1d.a" "$PREFIX/lib/libSvtAv1Enc.a"
+        merge_static "$stage/$arch/libAVIF.a" "$PREFIX/lib/libavif.a" "$PREFIX/lib/libdav1d.a" "$PREFIX/lib/libSvtAv1Enc.a" \
+            "$PREFIX/lib/libaom.a"
     done
     mkdir -p "$stage/Headers"
     cp -R "$WORK/arm64/prefix/include/avif" "$stage/Headers/avif"
@@ -672,8 +684,9 @@ notices_section() { # needs the built or fetched Vendor/*.xcframework (their Lic
     echo "Notes: unalz includes a modified copy of bzip2 1.0.5 (its symbols are renamed so it cannot clash with the system"
     echo "libbz2); its licence is the bzip2 licence. zstd is dual-licensed BSD-3-Clause / GPL-2.0 and we use it under"
     echo "BSD-3-Clause. LibRaw is dual-licensed LGPL-2.1 / CDDL-1.0 and we use it under LGPL-2.1. libarchive includes BLAKE2"
-    echo "reference code covered by its COPYING. libavif is built without libyuv and libsharpyuv. nasm, meson and ninja are"
-    echo "build tools and are not shipped."
+    echo "reference code covered by its COPYING. libavif is built without libyuv and libsharpyuv. libaom is built as an"
+    echo "encoder only; of its third-party code it compiles in fastfeat (BSD-3-Clause), vector (MIT) and x86inc (ISC), whose"
+    echo "licences are reproduced below. nasm, meson and ninja are build tools and are not shipped."
     for lib in "${LIBS[@]}"; do
         name="$(xcf_name "$lib")"; xcf="$VENDOR/$name.xcframework"
         [[ -d "$xcf/Licenses" ]] || die "$xcf missing: build or fetch it before generating the notices"
