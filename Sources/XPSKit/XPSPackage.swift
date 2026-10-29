@@ -1,5 +1,6 @@
 import Foundation
 import SuperConverterCore
+import VectorKit
 
 /// The OPC layer of an XPS, OpenXPS or DWFx file: the package, its relationships and the fixed-page parts in reading order.
 struct XPSPackage {
@@ -16,7 +17,7 @@ struct XPSPackage {
         let dir = (part as NSString).deletingLastPathComponent
         let name = (part as NSString).lastPathComponent
         let relsName = part.isEmpty ? "/_rels/.rels" : (dir.hasPrefix("/") ? dir : "/" + dir) + "/_rels/" + name + ".rels"
-        guard let data = try? zip.read(relsName), data.count < 8 << 20, let root = try? XMLTree.parse(data) else { return [] }
+        guard let data = try? zip.read(relsName), data.count < 8 << 20, let root = try? XMLTree.parse(data, format: "xps") else { return [] }
         return root.children.filter { $0.name == "Relationship" }.compactMap { r in
             guard let type = r.attr("Type"), let target = r.attr("Target") else { return nil }
             let external = r.attr("TargetMode") == "External"
@@ -38,7 +39,7 @@ struct XPSPackage {
         var seen = Set<String>()
         func visit(_ part: String, depth: Int) {
             guard depth < 6, !seen.contains(part.lowercased()), pages.count < 5000, zip.has(part), let data = try? zip.read(part), data.count < 64 << 20,
-                  let root = try? XMLTree.parse(data) else { return }
+                  let root = try? XMLTree.parse(data, format: "xps") else { return }
             seen.insert(part.lowercased())
             switch root.name {
             case "FixedDocumentSequence":

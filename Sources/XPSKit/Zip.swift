@@ -1,6 +1,7 @@
 import Compression
 import Foundation
 import SuperConverterCore
+import VectorKit
 
 /// A ZIP package (the OPC container of XPS): reading with the central directory and bomb limits, writing with CRC-32.
 enum Zip {
@@ -107,14 +108,7 @@ struct ZipWriter {
         let crc = Int(Zip.crc32(data))
         var method = 0
         var payload = data
-        if data.count > 64 {
-            let capacity = data.count + data.count / 16 + 64
-            var buffer = [UInt8](repeating: 0, count: capacity)
-            let n = data.withUnsafeBytes { src -> Int in
-                compression_encode_buffer(&buffer, capacity, src.bindMemory(to: UInt8.self).baseAddress!, data.count, nil, COMPRESSION_ZLIB)
-            }
-            if n > 0, n < data.count { method = 8; payload = Data(buffer[0..<n]) }
-        }
+        if data.count > 64, let deflated = Deflate.raw(data) { method = 8; payload = deflated }
         let nameBytes = Array(name.utf8)
         let offset = body.count
         var local: [UInt8] = Self.le32(0x0403_4b50) + Self.le16(20) + Self.le16(0x0800) + Self.le16(method) + Self.le16(0) + Self.le16(0x21)

@@ -1,5 +1,4 @@
 import CoreGraphics
-import Compression
 import Foundation
 import ImageIO
 
@@ -32,7 +31,7 @@ enum PSImages {
             filters = "/ASCII85Decode filter /DCTDecode filter"; data = bytes
         } else {
             guard let rgb = rgbBytes(image, space: space) else { return nil }
-            if level >= 3 { filters = "/ASCII85Decode filter /FlateDecode filter"; data = zlib(rgb) }
+            if level >= 3 { filters = "/ASCII85Decode filter /FlateDecode filter"; data = Deflate.zlib(rgb) }
             else { filters = "/ASCII85Decode filter /RunLengthDecode filter"; data = runLength(rgb) }
         }
         out += "<< /ImageType 1 /Width \(w) /Height \(h) /BitsPerComponent 8 /Decode [0 1 0 1 0 1] /ImageMatrix [\(w) 0 0 -\(h) 0 \(h)]\n"
@@ -85,26 +84,6 @@ enum PSImages {
     }
 
     // MARK: Filters
-
-    /// RFC 1950 zlib stream (what FlateDecode reads): Compression's `COMPRESSION_ZLIB` writes the raw deflate body, so
-    /// the two-byte header and the Adler-32 trailer are added here.
-    static func zlib(_ data: Data) -> Data {
-        var out = Data([0x78, 0x9C])
-        let capacity = data.count + data.count / 8 + 1024
-        var buffer = [UInt8](repeating: 0, count: capacity)
-        let n = data.withUnsafeBytes { src in
-            compression_encode_buffer(&buffer, capacity, src.bindMemory(to: UInt8.self).baseAddress!, data.count, nil, COMPRESSION_ZLIB)
-        }
-        out.append(contentsOf: buffer[0..<n])
-        var a: UInt32 = 1, b: UInt32 = 0
-        for chunk in stride(from: 0, to: data.count, by: 5552) {
-            for byte in data[data.startIndex + chunk..<data.startIndex + min(chunk + 5552, data.count)] { a += UInt32(byte); b += a }
-            a %= 65521; b %= 65521
-        }
-        let adler = b << 16 | a
-        out.append(contentsOf: [UInt8(adler >> 24), UInt8(adler >> 16 & 0xFF), UInt8(adler >> 8 & 0xFF), UInt8(adler & 0xFF)])
-        return out
-    }
 
     /// PackBits-style run-length encoding as RunLengthDecode reads it (PLRM 3.13.3), ending with the EOD byte 128.
     static func runLength(_ data: Data) -> Data {

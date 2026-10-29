@@ -18,7 +18,7 @@ public enum XPSReader {
         let shared = XPSShared(zip: package.zip)
         var pages: [VectorPage] = []
         for part in try package.pageParts() {
-            guard let bytes = try? package.zip.read(part), bytes.count < 128 << 20, let root = try? XMLTree.parse(bytes), root.name == "FixedPage" else { continue }
+            guard let bytes = try? package.zip.read(part), bytes.count < 128 << 20, let root = try? XMLTree.parse(bytes, format: "xps"), root.name == "FixedPage" else { continue }
             pages.append(XPSPageReader(part: part, shared: shared).page(root))
         }
         guard !pages.isEmpty else { throw ConversionError.damaged("xps") }
@@ -115,7 +115,7 @@ final class XPSPageReader {
             }
             if level < 3, let source = d.attr("Source") {
                 let name = XPSSyntax.resolve(source, base: part)
-                if let data = try? shared.zip.read(name), data.count < 8 << 20, let root = try? XMLTree.parse(data) { collect(root, level: level + 1) }
+                if let data = try? shared.zip.read(name), data.count < 8 << 20, let root = try? XMLTree.parse(data, format: "xps") { collect(root, level: level + 1) }
             }
         }
         for d in holder.children where d.name == "ResourceDictionary" { collect(d, level: 0) }
