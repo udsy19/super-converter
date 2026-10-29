@@ -135,6 +135,8 @@ enum LibArchiveReader {
                 if status == ARCHIVE_EOF { break }
                 if status < ARCHIVE_WARN { throw LibArchive.classify(a, hasPassword: hasPassword) }
                 if offset > written {   // a sparse hole
+                    // A hole past the entry's own size is a damaged sparse map, not gigabytes of zeros to write.
+                    if let size, offset > size { throw ArchiveError.damaged("A sparse file in this archive points past its own end.") }
                     var gap = offset - written
                     if buffer.count < 1 << 16 { buffer = [UInt8](repeating: 0, count: 1 << 16) }
                     while gap > 0 {
