@@ -171,21 +171,23 @@ enum ODFNumberStyles {
     private static func numberCode(_ node: XMLNode) -> String? {
         var code = ""
         var found = false
+        /// A digit count, held to what a format can show: a damaged "99999999999" would otherwise be a string that size.
+        func digits(_ child: XMLNode, _ name: String, _ fallback: Int) -> Int { min(max(child.attr(name).flatMap(Int.init) ?? fallback, 0), 64) }
         for child in node.children {
             switch child.name {
             case "text": code += literal(child.allText)
             case "currency-symbol": code += literal(child.allText)
             case "number":
                 found = true
-                let decimals = child.attr("decimal-places").flatMap(Int.init) ?? 0
-                let minimum = max(child.attr("min-integer-digits").flatMap(Int.init) ?? 1, 0)
+                let decimals = digits(child, "decimal-places", 0)
+                let minimum = digits(child, "min-integer-digits", 1)
                 let grouped = child.attr("grouping") == "true"
                 code += (grouped ? "#,##" + String(repeating: "0", count: max(minimum, 1)) : String(repeating: "0", count: minimum))
                 if decimals > 0 { code += "." + String(repeating: "0", count: decimals) }
             case "scientific-number":
                 found = true
-                let decimals = child.attr("decimal-places").flatMap(Int.init) ?? 0
-                let exponent = child.attr("min-exponent-digits").flatMap(Int.init) ?? 2
+                let decimals = digits(child, "decimal-places", 0)
+                let exponent = digits(child, "min-exponent-digits", 2)
                 code += "0" + (decimals > 0 ? "." + String(repeating: "0", count: decimals) : "") + "E+" + String(repeating: "0", count: max(exponent, 1))
             default: break
             }
