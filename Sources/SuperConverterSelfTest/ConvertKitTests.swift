@@ -566,6 +566,24 @@ func registerConvertKitTests() {
         let placed = try? rules.place([result], for: source, into: target!)
         check(placed == [folder.appendingPathComponent("Photo.jpg")] && (try? String(contentsOf: placed![0])) == "new", "replace swaps the earlier result")
         check((try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.sorted() == ["Photo.jpg", "Photo.png"], "no stray partial files")
+
+        // The same file under another spelling is still the source: "Scan.JPG" that is really a PNG becomes "Scan.jpg",
+        // which on a case-insensitive volume is the source itself (an iPhone's "IMG_0001.JPG" is often a HEIC); a second
+        // name for the same file (a hard link) is the source too.
+        let other = tempFolder("replace-case")
+        let scan = write("original", to: other, "Scan.JPG")
+        if FileManager.default.fileExists(atPath: other.appendingPathComponent("scan.jpg").path) {
+            let wanted = try? rules.target(for: scan, format: "jpg", place: .nextToOriginal, multipleFiles: false)
+            check(wanted?.url == other.appendingPathComponent("Scan 2.jpg"), "replace never takes the source’s name in another case (\(wanted?.url.lastPathComponent ?? "nil"))")
+            let converted = write("converted", to: work, "Scan.jpg")
+            let placedScan = try? rules.place([converted], for: scan, into: OutputTarget(url: other.appendingPathComponent("Scan.jpg"), isFolder: false, fellBackToDownloads: false))
+            check((try? String(contentsOf: scan)) == "original" && placedScan?.first?.lastPathComponent == "Scan 2.jpg", "and placing never replaces it")
+        }
+        let linked = tempFolder("replace-link")
+        let photo = write("original", to: linked, "Photo.heic")
+        try? FileManager.default.linkItem(at: photo, to: linked.appendingPathComponent("Photo.jpg"))
+        let throughHardLink = try? rules.target(for: photo, format: "jpg", place: .nextToOriginal, multipleFiles: false)
+        check(throughHardLink?.url == linked.appendingPathComponent("Photo 2.jpg"), "a hard link to the source is the source")
     }
 
     add("output.neverOverwritesWhenTheNameIsTakenMeanwhile") {

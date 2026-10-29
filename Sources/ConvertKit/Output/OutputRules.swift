@@ -92,6 +92,16 @@ public final class OutputRules: OutputPolicy {
 
     private static func sameFolder(_ a: URL, _ b: URL) -> Bool { a.standardizedFileURL.path == b.standardizedFileURL.path }
 
+    /// True when `url` names the source file: the same path, or another name for the same file on disk ("Scan.jpg" for
+    /// "Scan.JPG" on a case-insensitive volume, a hard link).
+    private static func isSource(_ url: URL, _ source: URL) -> Bool {
+        if sameFolder(url, source) { return true }
+        let key: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+        guard let a = try? URL(fileURLWithPath: url.path).resourceValues(forKeys: key).fileResourceIdentifier,
+              let b = try? URL(fileURLWithPath: source.path).resourceValues(forKeys: key).fileResourceIdentifier else { return false }
+        return a.isEqual(b)
+    }
+
     /// "Report 2.pdf", "Report 3.pdf" (Finder's style); "Report (PDF) 2" for folders.
     private static func numbered(_ url: URL, _ n: Int, isFolder: Bool) -> URL {
         let ext = isFolder ? "" : url.pathExtension
@@ -102,7 +112,7 @@ public final class OutputRules: OutputPolicy {
 
     /// The first name that is free, or (policy "Replace") the wanted name unless it is the source itself.
     private func available(_ wanted: URL, isFolder: Bool, source: URL) -> URL {
-        let isSource = { (url: URL) in Self.sameFolder(url, source) }
+        let isSource = { (url: URL) in Self.isSource(url, source) }
         if collisionPolicy() == .replace, !isSource(wanted) { return wanted }
         var candidate = wanted
         var n = 2
@@ -128,14 +138,14 @@ public final class OutputRules: OutputPolicy {
     /// "Add a number" tries the next one; "Replace" swaps the earlier result atomically.
     private func publish(_ hidden: URL, as wanted: URL, source: URL) throws -> URL {
         let isFolder = (try? hidden.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-        if collisionPolicy() == .replace, !Self.sameFolder(wanted, source), fileManager.fileExists(atPath: wanted.path) {
+        if collisionPolicy() == .replace, !Self.isSource(wanted, source), fileManager.fileExists(atPath: wanted.path) {
             _ = try fileManager.replaceItemAt(wanted, withItemAt: hidden)
             return wanted
         }
         var candidate = wanted
         var n = 2
         while true {
-            if !Self.sameFolder(candidate, source) {
+            if !Self.isSource(candidate, source) {
                 if renamex_np(hidden.path, candidate.path, UInt32(RENAME_EXCL)) == 0 { return candidate }
                 if errno != EEXIST { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
             }
