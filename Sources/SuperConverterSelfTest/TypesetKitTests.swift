@@ -181,11 +181,8 @@ private func typesetLineBreaking() {
 private func typesetGolden(_ name: String, _ doc: DocModel, options: TypesetOptions = TypesetOptions(), minPages: Int = 1) -> TypesetResult? {
     guard let library = fontLibrary() else { return nil }
     let url = typesetRenders.appendingPathComponent("\(name).pdf")
-    let started = Date()
-    guard let result = try? Typesetter(fonts: library).typeset(doc, options: letter(options), to: url) else {
-        check(false, "\(name) typesets"); return nil
-    }
-    let seconds = Date().timeIntervalSince(started)
+    let (typeset, seconds) = threadCPUSeconds { try? Typesetter(fonts: library).typeset(doc, options: letter(options), to: url) }
+    guard let result = typeset else { check(false, "\(name) typesets"); return nil }
     check(seconds < 20, "\(name) typesets in \(String(format: "%.1f", seconds)) s")
     check(result.pageCount >= minPages, "\(name): \(result.pageCount) page(s)")
     let lint = TypographicLint.check(result.log)

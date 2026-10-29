@@ -26,6 +26,14 @@ func complete<T>(_ seconds: TimeInterval = 300, _ work: @escaping @MainActor () 
     return result
 }
 
+/// The CPU seconds the calling thread spends in `work`. Performance budgets measure this rather than wall time, so a
+/// loaded machine or a slower CI runner doesn't fail them while the code itself is as fast as it should be.
+func threadCPUSeconds<T>(_ work: () throws -> T) rethrows -> (T, Double) {
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    let value = try work()
+    return (value, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e9)
+}
+
 let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("superconverter-selftest-\(UUID().uuidString)")
 SuperConverterPaths.base = scratch.appendingPathComponent("Application Support")
 SuperConverterPaths.cacheBase = scratch.appendingPathComponent("Caches")

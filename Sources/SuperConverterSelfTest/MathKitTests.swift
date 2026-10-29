@@ -40,10 +40,9 @@ private func points(_ r: MathRendering) -> [VectorPoint] {
 
 private func mathLoads() {
     guard let script = MathJax.bundledScript() else { check(false, "the MathJax script is bundled"); return }
-    let started = Date()
-    check((try? MathJax(script: script)) != nil, "MathJax evaluates in JavaScriptCore")
-    let seconds = Date().timeIntervalSince(started)
-    print("  MathJax load: \(String(format: "%.2f", seconds)) s")
+    let (loaded, seconds) = threadCPUSeconds { try? MathJax(script: script) }
+    check(loaded != nil, "MathJax evaluates in JavaScriptCore")
+    print("  MathJax load: \(String(format: "%.2f", seconds)) s of CPU")
     check(seconds < 3, "MathJax loads in \(String(format: "%.2f", seconds)) s")
     let missing = URL(fileURLWithPath: "/nonexistent/mathjax.js")
     check((try? MathJax(script: missing)) == nil, "a missing script is an error, not a crash")
@@ -120,11 +119,11 @@ private func mathSource() {
 /// ARCHITECTURE §12.6: 200 formulas in under two seconds (JavaScriptCore; the app has no JIT entitlement).
 private func mathSpeed() {
     guard let m = mathJax() else { return }
-    let started = Date()
-    for i in 0..<200 {
-        _ = set(m, "\\sum_{k=1}^{\(i)} \\frac{k^2 + \\alpha_k}{\\sqrt{k + \(i)}} = \\left( \\int_0^1 x^{\(i)}\\,dx \\right)", display: i % 2 == 0)
+    let (_, seconds) = threadCPUSeconds {
+        for i in 0..<200 {
+            _ = set(m, "\\sum_{k=1}^{\(i)} \\frac{k^2 + \\alpha_k}{\\sqrt{k + \(i)}} = \\left( \\int_0^1 x^{\(i)}\\,dx \\right)", display: i % 2 == 0)
+        }
     }
-    let seconds = Date().timeIntervalSince(started)
-    print("  200 formulas: \(String(format: "%.2f", seconds)) s")
+    print("  200 formulas: \(String(format: "%.2f", seconds)) s of CPU")
     check(seconds < 2, "200 formulas set in \(String(format: "%.2f", seconds)) s")
 }
