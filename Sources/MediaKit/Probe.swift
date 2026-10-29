@@ -87,14 +87,6 @@ struct MediaProbe: Sendable, Equatable {
     var coverArt: [Stream] { streams.filter { $0.kind == .video && $0.isAttachedPicture } }
     var mainVideo: Stream? { video.first(where: \.isDefault) ?? video.first }
 
-    /// The plan's view of the streams (Core's `MediaPlan`, the hand-off between planning and running).
-    var planStreams: [MediaPlan.Stream] {
-        streams.map { s in
-            MediaPlan.Stream(index: s.index, kind: s.kind, codec: s.codec, bitrate: s.bitRate, width: s.width, height: s.height,
-                             frameRate: s.frameRate, sampleRate: s.sampleRate, channels: s.channels, isHDR: s.colour.isHDR, language: s.language)
-        }
-    }
-
     // MARK: Parsing
 
     init(formatName: String, duration: Double?, bitRate: Int?, streams: [Stream], chapters: [Chapter], tags: [String: String]) {

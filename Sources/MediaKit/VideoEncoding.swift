@@ -79,6 +79,10 @@ struct VideoEncoding {
             e.filters.append("tonemap=tonemap=mobius:desat=0:peak=\(String(format: "%.2f", peak))")
             e.filters.append("zscale=w=\(scaleW):h=\(scaleH):f=lanczos:t=bt709:m=bt709:r=limited:d=error_diffusion")
             e.lossNotes.append(LossNote(.hdrToSDR, detail: s.hdrToSDR ? "" : "\(target.format.pill) with \(codec.label) can’t carry HDR"))
+        }
+        if keepHDR && codec == .hevc {
+            // FFmpeg 7.1's VideoToolbox encoder takes PQ/HLG and 10 bits but not the frames' ST 2086 / CTA-861.3 metadata.
+            e.lossNotes.append(LossNote(.otherLoss, detail: "The Mac’s HEVC encoder doesn’t write the mastering display and light level metadata"))
         } else if Self.isRGB(video.pixelFormat) {
             // Pictures (GIF, PNG frames, slides, RGB video): one conversion into the output's matrix, limited range.
             e.filters.append("scale=\(scaleW):\(scaleH):flags=lanczos+accurate_rnd+full_chroma_int:out_color_matrix=\(Self.swsMatrix(out.matrix)):out_range=tv")
@@ -104,7 +108,7 @@ struct VideoEncoding {
 
         // Encoder.
         let gop = s.keyframeInterval ?? max(Int((outRate * 2).rounded()), 1)
-        var a: [String] = ["-c:v", codec.encoder(hardware: s.hardware)]
+        var a: [String] = ["-c:v", codec.encoder]
         switch codec {
         case .h264, .hevc:
             let hevc = codec == .hevc
@@ -168,6 +172,10 @@ struct VideoEncoding {
         }
         if let r = rate { a += ["-r", Self.rational(r)] }
         a += ["-color_primaries", out.primaries, "-color_trc", out.transfer, "-colorspace", out.matrix, "-color_range", out.range]
+        if codec == .h264 || codec == .hevc, let vui = Self.vui(out) {
+            // VideoToolbox writes only the BT.709/2020 family into the VUI; the bitstream filter writes every tag (never untagged).
+            a += ["-bsf:v", "\(codec == .h264 ? "h264" : "hevc")_metadata=\(vui)"]
+        }
         if let tune = s.tune, !tune.isEmpty, codec.isVideoToolbox {
             e.lossNotes.append(LossNote(.otherLoss, detail: "The Mac’s encoder has no “\(tune)” tune; it was ignored"))
         }
@@ -176,6 +184,16 @@ struct VideoEncoding {
     }
 
     // MARK: Helpers
+
+    /// The tags as H.264/HEVC VUI codes (ITU-T H.273); nil when one of them has no code here.
+    static func vui(_ c: ColourTags) -> String? {
+        let primaries = ["bt709": 1, "bt470bg": 5, "smpte170m": 6, "smpte240m": 7, "bt2020": 9, "smpte432": 12][c.primaries]
+        let transfer = ["bt709": 1, "bt470bg": 5, "smpte170m": 6, "smpte240m": 7, "linear": 8, "iec61966-2-1": 13, "bt2020-10": 14,
+                        "smpte2084": 16, "arib-std-b67": 18][c.transfer]
+        let matrix = ["gbr": 0, "bt709": 1, "bt470bg": 5, "smpte170m": 6, "smpte240m": 7, "bt2020nc": 9, "bt2020c": 10][c.matrix]
+        guard let primaries, let transfer, let matrix else { return nil }
+        return "colour_primaries=\(primaries):transfer_characteristics=\(transfer):matrix_coefficients=\(matrix):video_full_range_flag=\(c.range == "pc" ? 1 : 0)"
+    }
 
     static func aspect(_ text: String) -> Double? {
         let parts = text.split(whereSeparator: { $0 == ":" || $0 == "/" }).compactMap { Double($0) }

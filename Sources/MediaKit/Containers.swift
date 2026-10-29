@@ -22,7 +22,7 @@ enum VideoCodec: String, CaseIterable, Sendable {
     }
 
     /// The FFmpeg encoder.
-    func encoder(hardware: Bool) -> String {
+    var encoder: String {
         switch self {
         case .h264: "h264_videotoolbox"
         case .hevc: "hevc_videotoolbox"
@@ -93,7 +93,6 @@ enum AudioCodec: String, CaseIterable, Sendable {
         }
     }
 
-    var isLossless: Bool { [.alac, .flac, .pcm16, .pcm24, .pcm32, .float32].contains(self) }
     var isPCM: Bool { [.pcm16, .pcm24, .pcm32, .float32, .pcm8].contains(self) }
 
     /// Bits per sample of a PCM or lossless codec (nil when it follows the source).

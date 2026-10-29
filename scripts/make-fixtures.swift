@@ -1071,7 +1071,31 @@ func media() throws {
     try run(["-loop", "1", "-i", out.appendingPathComponent("smpte-bars-640x360.png").path, "-t", "1", "-r", "25"] + exact
             + ["-vf", "scale=out_color_matrix=bt601:out_range=tv,format=yuv420p", "-c:v", "mpeg4", "-q:v", "1",
                "-color_primaries", "smpte170m", "-color_trc", "smpte170m", "-colorspace", "smpte170m", "-color_range", "tv", "-f", "mov", "bars-601.mov"])
-    try run(["-f", "lavfi", "-i", "sine=f=1000:sample_rate=44100:d=3"] + exact + ["-af", "volume=0.891", "-c:a", "pcm_s24le", "-f", "wav", "tone-1k-24bit-44k.wav"])
+    // Computed here, not by FFmpeg's `sine` source (a table oscillator, about −80 dB THD+N): 1 kHz at −3 dBFS, 24-bit.
+    var tone = Data()
+    func le(_ v: UInt32, _ bytes: Int) { for i in 0..<bytes { tone.append(UInt8(v >> (8 * UInt32(i)) & 255)) } }
+    let frames = 44100 * 3
+    tone.append(contentsOf: Array("RIFF".utf8)); le(UInt32(36 + frames * 3), 4); tone.append(contentsOf: Array("WAVEfmt ".utf8))
+    le(16, 4); le(1, 2); le(1, 2); le(44100, 4); le(44100 * 3, 4); le(3, 2); le(24, 2)
+    tone.append(contentsOf: Array("data".utf8)); le(UInt32(frames * 3), 4)
+    for i in 0..<frames {
+        let v = Int32((pow(10, -3.0 / 20) * sin(2 * .pi * 1000 * Double(i) / 44100) * 8_388_607).rounded())
+        le(UInt32(bitPattern: v), 3)
+    }
+    try tone.write(to: folder.appendingPathComponent("tone-1k-24bit-44k.wav"))
+    // A near-lossless 640×360 clip with detail and motion for the video-defaults metrics, a tagged MP3 with cover art and an
+    // audiobook with chapters for the metadata test.
+    try run(picture("640x360", rate: "30", seconds: "2") + exact + ["-c:v", "mpeg4", "-q:v", "1", "-an", "-f", "mov", "detail-640x360.mov"])
+    try run(sound(rate: 44100, seconds: "2") + ["-i", out.appendingPathComponent("logo-alpha-128.png").path] + exact
+            + ["-map", "0:a", "-map", "1:v", "-c:a", "libmp3lame", "-b:a", "128k", "-c:v", "png", "-disposition:v", "attached_pic",
+               "-metadata", "title=Test tone", "-metadata", "artist=Super Converter", "-metadata", "album=Fixtures", "-metadata", "date=2026",
+               "-id3v2_version", "4", "-f", "mp3", "tagged.mp3"])
+    let chapters = folder.appendingPathComponent("chapters.txt")
+    try ";FFMETADATA1\ntitle=Test book\nartist=Super Converter\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1000\ntitle=One\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=1000\nEND=2000\ntitle=Two\n"
+        .write(to: chapters, atomically: true, encoding: .utf8)
+    try run(sound(seconds: "2") + ["-i", chapters.path] + ["-fflags", "+bitexact", "-flags:a", "+bitexact", "-map", "0:a", "-map_metadata", "1",
+            "-map_chapters", "1", "-c:a", "aac", "-b:a", "96k", "-f", "ipod", "chapters.m4b"])
+    try FileManager.default.removeItem(at: chapters)
     try soundFont(folder.appendingPathComponent("sample.sf2"))
 }
 

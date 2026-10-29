@@ -183,7 +183,7 @@ func registerMediaKitTests() {
         // A quality change encodes with VideoToolbox through AVFoundation, colour tags written.
         if case .success(let encoded) = convert(Step(.avFoundation, "mov", "mp4"), mov, options: OptionValues(["quality": 23])), let out = outputFile(encoded),
            let v = probe(out)?.mainVideo {
-            check(v.codec == "h264" && v.colour.matrix != nil && v.colour.primaries != nil, "AVFoundation encodes H.264 with colour tags (\(v.codec), \(v.colour))")
+            check(v.codec == "h264" && v.colour.matrix != nil && v.colour.primaries != nil, "a quality change encodes H.264 with colour tags (\(v.codec), \(v.colour))")
         } else { check(false, "MOV → MP4 at quality 23 converts") }
         // Lossless chains are bit-exact (quality §5.2): WAV → AIFF → WAV.
         let wav = media.appendingPathComponent("sample.wav")
@@ -350,15 +350,7 @@ func registerMediaKitTests() {
     }))
 
     SelfTest.cases.append(("MediaKit.progressAndCancel", {
-        // Progress arrives while FFmpeg works; a cancel stops it and leaves no partial file.
-        let source = media.appendingPathComponent("hdr-pq.mkv")
-        let seen = Box()
-        let folder = work("progress")
-        let ctx = context(folder, source: source, from: "mkv", to: "webm", options: OptionValues(["quality": 10, "speed": "slow"]),
-                          report: { p in if p.fraction != nil { seen.add() } })
-        let ok = complete(300) { try await converter(.ffmpeg).run(Step(.ffmpeg, "mkv", "webm"), input: .file(source), context: ctx) }
-        if case .success = ok { check(seen.count > 0, "progress was reported (\(seen.count))") } else { check(false, "the encode finished: \(String(describing: ok))") }
-
+        // Progress arrives while FFmpeg works ("0:01 of 0:04"); a cancel stops it and leaves no partial file.
         let cancelFolder = work("cancel")
         let long = cancelFolder.appendingPathComponent("long.mkv")
         let made: Void? = try? complete(120) {
@@ -366,6 +358,12 @@ func registerMediaKitTests() {
                                 workFolder: cancelFolder)
         }?.get()
         check(made != nil, "the long clip is made")
+        let seen = Box()
+        let ctx = context(work("progress"), source: long, from: "mkv", to: "webm", options: OptionValues(["trimEnd": "4"]),
+                          report: { p in if let f = p.fraction, f > 0, f < 1, p.unit?.hasSuffix("of 0:04") == true { seen.add() } })
+        let ok = complete(300) { try await converter(.ffmpeg).run(Step(.ffmpeg, "mkv", "webm"), input: .file(long), context: ctx) }
+        if case .success = ok { check(seen.count > 0, "progress was reported while encoding (\(seen.count))") }
+        else { check(false, "the encode finished: \(String(describing: ok))") }
         let start = Date()
         let flag = Box()
         let cctx = context(cancelFolder, source: long, from: "mkv", to: "mkv", options: OptionValues(["videoCodec": "av1", "speed": "slow", "quality": 5]),

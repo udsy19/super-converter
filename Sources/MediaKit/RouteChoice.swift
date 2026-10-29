@@ -148,6 +148,9 @@ enum RouteChoice {
                 return .ffmpeg("\(codec.label) is encoded by FFmpeg")
             }
             if ["3gp", "3gpp"].contains(target.format.rawValue), !copy, codec != .h264 { return .ffmpeg("3GP holds H.264 only") }
+            // AVAssetReader hands 4:2:0 buffers over untouched only from H.264 and HEVC; other decoders (MPEG-4 Part 2, ProRes,
+            // DV) give 4:2:2 or RGB that it subsamples coarsely (measured: chroma SSIM 0.977 against FFmpeg's 0.994).
+            if !copy, let codec = source?.codec, !["h264", "hevc"].contains(codec) { return .ffmpeg("\(codec) is decoded by FFmpeg") }
             var size: (Int, Int)?
             if s.width != nil || s.height != nil {
                 let g = Geometry.fit(source: (shown.width, shown.height), box: (s.width, s.height), fit: s.fit)

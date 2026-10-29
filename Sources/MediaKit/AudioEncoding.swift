@@ -78,7 +78,8 @@ struct AudioEncoding {
             if dropsBits, let f = sampleFormat(bits: outBits ?? 16, codec: codec) { r += ":osf=\(f):dither_method=triangular" }
             filters.append(r)
         }
-        if s.loudness == nil, s.volume != 1 || resample, let peak = facts.truePeak, peak + 20 * log10(max(s.volume, 1e-6)) > limiterCeiling {
+        // Only when the result would clip (above 0 dBTP in an integer or lossy format; float never clips), limited to −1 dBTP.
+        if s.loudness == nil, s.volume != 1 || resample, codec != .float32, let peak = facts.truePeak, peak + 20 * log10(max(s.volume, 1e-6)) > 0 {
             filters.append("alimiter=limit=\(String(format: "%.4f", pow(10, limiterCeiling / 20))):attack=5:release=50:level=0")
             e.lossNotes.append(LossNote(.otherLoss, detail: "A limiter kept the peaks below −1 dBTP"))
         }

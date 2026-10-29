@@ -78,17 +78,18 @@ enum FFmpegPlanner {
                 job.lossNotes += encode.lossNotes
                 var chain = encode.filters
                 var label = "[0:\(video.index)]"
-                // Hard subtitles burn in after scaling, so the text keeps its size relative to the new picture.
+                // Hard subtitles burn in after scaling (the text keeps its size relative to the new picture), before the final
+                // pixel format.
                 if s.subtitles == .hard {
                     if let file = externalSubtitles {
-                        chain.append("subtitles=filename=\(FilterText.escape(file.path))")
+                        chain.insert("subtitles=filename=\(FilterText.escape(file.path))", at: chain.count - 1)
                     } else if let sub = probe.subtitles.first {
                         if sub.isTextSubtitle {
                             let ordinal = probe.subtitles.firstIndex(of: sub)!
-                            chain.append("subtitles=filename=\(FilterText.escape(source.path)):si=\(ordinal)")
+                            chain.insert("subtitles=filename=\(FilterText.escape(source.path)):si=\(ordinal)", at: chain.count - 1)
                         } else {
                             filterComplex.append("\(label)\(chain.isEmpty ? "null" : chain.joined(separator: ","))[vpre]")
-                            filterComplex.append("[vpre][0:\(sub.index)]overlay=eof_action=pass[vsub]")
+                            filterComplex.append("[vpre][0:\(sub.index)]overlay=eof_action=pass:format=auto,format=\(encode.pixelFormat)[vsub]")
                             label = "[vsub]"; chain = []
                         }
                     }

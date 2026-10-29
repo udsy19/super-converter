@@ -16,21 +16,21 @@ import Foundation
 ///      mean over the clips, rounded to 0.01, made monotonic and limited to the range VideoToolbox accepts.
 /// The bench case re-measures the curve and fails when a shipped value drifts by more than 0.05 (an encoder change in a
 /// new macOS). The measuring code is the bench case; it does not ship.
-enum VideoToolboxCalibration {
-    /// Quality for crf 0…51 (index = crf), H.264.
-    static let h264: [Double] = table(anchors: [
-        14: 0.74, 17: 0.68, 20: 0.62, 23: 0.55, 26: 0.48, 29: 0.41, 32: 0.34, 35: 0.27,
+public enum VideoToolboxCalibration {
+    /// Quality for crf 0…51 (index = crf), H.264. Measured 2026-10-29 on an Apple Silicon Mac, macOS 26.
+    public static let h264: [Double] = table(anchors: [
+        14: 0.78, 17: 0.72, 20: 0.64, 23: 0.57, 26: 0.50, 29: 0.43, 32: 0.37, 35: 0.31,
     ])
-    /// Quality for crf 0…51, HEVC (its quantiser runs on the same QP scale; the encoder needs slightly more quality for
-    /// the same PSNR at low rates).
-    static let hevc: [Double] = table(anchors: [
-        14: 0.75, 17: 0.69, 20: 0.63, 23: 0.56, 26: 0.49, 29: 0.42, 32: 0.35, 35: 0.28,
+    /// Quality for crf 0…51, HEVC (its quantiser runs on the same QP scale; it needs slightly more quality than H.264 for the
+    /// same PSNR in the middle of the range).
+    public static let hevc: [Double] = table(anchors: [
+        14: 0.79, 17: 0.72, 20: 0.65, 23: 0.59, 26: 0.51, 29: 0.45, 32: 0.39, 35: 0.31,
     ])
 
     /// The measured crf values (quality §5.1: N = 14…35, every third step).
-    static let measuredCRFs = [14, 17, 20, 23, 26, 29, 32, 35]
+    public static let measuredCRFs = [14, 17, 20, 23, 26, 29, 32, 35]
 
-    static func quality(crf: Int, hevc: Bool) -> Double {
+    public static func quality(crf: Int, hevc: Bool) -> Double {
         let values = hevc ? Self.hevc : Self.h264
         return values[min(max(crf, 0), 51)]
     }

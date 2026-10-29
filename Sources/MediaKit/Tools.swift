@@ -67,6 +67,7 @@ struct MediaTools: Sendable {
             try? fm.removeItem(at: partial)
             throw ConversionError.folderNotWritable(name: context.workFolder.lastPathComponent)
         }
+        context.report(StepProgress(fraction: 1, unit: unit))
     }
 
     /// An analysis pass (`idet`, `loudnorm`, `ebur128`): FFmpeg decodes to the null muxer and its log is returned.
