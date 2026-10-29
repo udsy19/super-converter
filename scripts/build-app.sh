@@ -60,10 +60,11 @@ cp "$LIBRAW" "$APP/Contents/Frameworks/"
 cp -R "$ROOT/Vendor/Tools/Licenses" "$APP/Contents/Resources/Licenses/Tools"
 cp -R "$ROOT/Vendor/LibRaw.xcframework/Licenses" "$APP/Contents/Resources/Licenses/LibRaw"
 
-# Licences and notices (Settings › About reads THIRD_PARTY_NOTICES.md from here), TypesetKit's fonts
-# (Contents/Resources/Fonts, with their own licences) and any SwiftPM resource bundles where Bundle.module looks.
+# Licences and notices (Settings › About reads THIRD_PARTY_NOTICES.md from here), TypesetKit's fonts and hyphenation
+# patterns and MathKit's MathJax (Contents/Resources/{Fonts,Hyphenation,MathJax}, each with its own licences) and any
+# SwiftPM resource bundles where Bundle.module looks.
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
-cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"
+for dir in Fonts Hyphenation MathJax; do cp -R "$ROOT/Resources/$dir" "$APP/Contents/Resources/$dir"; done
 find "$RES_BIN" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP/Contents/Resources/" \;
 
 # The Quick Actions: one bundle per action around the shared executable, its version the app's.
@@ -189,7 +190,7 @@ if grep -qE -- '--enable-(gpl|nonfree)' <<< "$("$APP/Contents/Helpers/ffmpeg" -h
 fi
 # Resources the app expects at run time.
 for res in Resources/AppIcon.icns Resources/LICENSE Resources/THIRD_PARTY_NOTICES.md Resources/Fonts/LatinModern \
-           Resources/Fonts/LatinModernMath Resources/Licenses/Tools Resources/Licenses/LibRaw PkgInfo; do
+           Resources/Fonts/LatinModernMath Resources/Hyphenation Resources/MathJax Resources/Licenses/Tools Resources/Licenses/LibRaw PkgInfo; do
   [ -e "$APP/Contents/$res" ] || fail "missing $res in the bundle"
 done
 echo "Static launch checks passed: signatures, entitlements, rpaths, dependencies, entry points, Quick Actions, helpers, resources, Info.plist"
