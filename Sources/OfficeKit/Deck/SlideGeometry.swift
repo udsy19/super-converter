@@ -205,12 +205,14 @@ enum SlideGeometry {
                     path.addQuadCurve(to: points[1], control: points[0]); current = points[1]
                 case "arcTo":
                     guard let wr = Double(command.attr("wR") ?? ""), let hr = Double(command.attr("hR") ?? ""),
-                          let start = Double(command.attr("stAng") ?? ""), let sweep = Double(command.attr("swAng") ?? "") else { return nil }
+                          let start = Double(command.attr("stAng") ?? ""), let sweep = Double(command.attr("swAng") ?? ""),
+                          [wr, hr, start, sweep].allSatisfy(\.isFinite) else { return nil }
                     let rx = wr * sx, ry = hr * sy
                     let a0 = start / 60_000 * .pi / 180, a1 = (start + sweep) / 60_000 * .pi / 180
                     let center = CGPoint(x: current.x - rx * cos(a0), y: current.y - ry * sin(a0))
                     if !started { path.move(to: current); started = true }
-                    let steps = max(Int(abs(sweep) / 60_000 / 10), 2)
+                    // A step per 10°, for at most ten turns: a damaged sweep would otherwise trap or never end.
+                    let steps = max(Int(min(abs(sweep), 216_000_000) / 60_000 / 10), 2)
                     for step in 1...steps {
                         let a = a0 + (a1 - a0) * Double(step) / Double(steps)
                         current = CGPoint(x: center.x + rx * cos(a), y: center.y + ry * sin(a))

@@ -121,7 +121,8 @@ struct SlideParagraphProps {
         } else if let char = node.child("buChar")?.attr("char"), !char.isEmpty {
             bullet = .character(char)
         } else if let number = node.child("buAutoNum") {
-            bullet = .number(scheme: number.attr("type") ?? "arabicPeriod", start: max(Int(number.attr("startAt") ?? "") ?? 1, 0))
+            // ECMA-376 allows 1 to 32767; a damaged start near Int.max would overflow the paragraphs' count after it.
+            bullet = .number(scheme: number.attr("type") ?? "arabicPeriod", start: min(max(Int(number.attr("startAt") ?? "") ?? 1, 0), 32_767))
         }
         if let clr = node.child("buClr") { bulletColor = colors.color(clr) }
         if let pct = node.child("buSzPct")?.attr("val").flatMap(Double.init), pct.isFinite { bulletSizePercent = min(max(pct / 100_000, 0.1), 4) }
