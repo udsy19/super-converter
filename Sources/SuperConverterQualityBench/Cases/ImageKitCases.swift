@@ -145,10 +145,16 @@ enum ImageKitCases {
 
     // MARK: Photo lossy defaults
 
-    static let lossy: [BenchCase] = ["jpg", "webp", "avif", "heic"].map { (target: FormatID) in
-        BenchCase(id: "imagekit.photo-\(target)", category: .image, fixture: "generated/photo-p3-320.tiff", target: target, checks: [
-            .producesFormat(target), .imageMatches(reference: { $0.source }, ssimAtLeast: 0.985, meanDeltaEAtMost: 1.5),
-        ])
+    /// The 24 Kodak photographs (Tests/Corpus/corpus.lock, `scripts/fetch-corpus.sh`) at each lossy default. They are PNGs, a
+    /// graphics source that WebP would write losslessly (formats §5), so `lossless` is turned off to get the photo defaults.
+    static let lossy: [BenchCase] = ["jpg", "webp", "avif", "heic"].flatMap { (target: FormatID) in
+        (1...24).map { n in
+            let photo = String(format: "kodim%02d", n)
+            return BenchCase(id: "imagekit.photo-\(target)-\(photo)", category: .image, tier: .full, fixture: "external/photos/\(photo).png",
+                             target: target, options: OptionValues(["lossless": false]), checks: [
+                .producesFormat(target), .imageMatches(reference: { $0.source }, ssimAtLeast: 0.985, meanDeltaEAtMost: 1.5),
+            ])
+        }
     }
 
     // MARK: RAW
