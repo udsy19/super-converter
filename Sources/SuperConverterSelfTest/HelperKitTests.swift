@@ -497,6 +497,19 @@ func registerHelperKitTests() {
             check(url.lastPathComponent == "book.epub" && FileManager.default.fileExists(atPath: url.path), "calibre writes <name>.<target>")
             check(((try? String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("env"), encoding: .utf8)) ?? "").contains("/.calibre/config"), "calibre's config stays private")
         } else { check(false, "calibre converts") }
+        // calibre picks its reader by extension and runs a `.recipe` as Python: a file that is really a MOBI reaches it as
+        // `.mobi` whatever it is called, as a copy in the work folder, with nothing in its name a tool could misread.
+        let named = fakeApp("calibre.app", in: dir.appendingPathComponent("named"), executable: "ebook-convert",
+                            body: "printf '%s' \"$1\" > \"$(dirname \"$2\")/input-name\"; cp \"$1\" \"$2\"")
+        let nrig = Rig([.calibre: named])
+        let recipe = complete(60) { try await nrig.convert(.calibre, "mobi", "epub", file: "-o 50%d\nbook.recipe") }
+        if let url = try? recipe?.get() {
+            let seen = (try? String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("input-name"), encoding: .utf8)) ?? ""
+            check(seen.hasSuffix("/_o 50_d_book.mobi"), "the helper reads the file as what it really is, under a safe name (\(seen))")
+            check(seen.hasPrefix(nrig.work.path + "/"), "a copy in the work folder")
+        } else { check(false, "a misnamed book still converts (\(String(describing: recipe)))") }
+        check(HelperRuntime.safeName("Report") == "Report" && HelperRuntime.safeName("..hidden") == "_.hidden" && HelperRuntime.safeName("") == "input"
+              && HelperRuntime.safeName("a\u{202E}b:c") == "a_b_c", "safe names keep the person's words")
 
         // Pandoc → DocModel
         let ast = dir.appendingPathComponent("pbin/ast.json")
