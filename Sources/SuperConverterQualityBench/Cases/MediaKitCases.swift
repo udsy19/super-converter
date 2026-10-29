@@ -250,6 +250,10 @@ enum MediaBench {
     static let videoTargets: Set<FormatID> = ["3g2", "3gp", "3gpp", "avi", "dv", "dvr", "flv", "m2ts", "m4v", "mkv", "mod", "mov", "mp4", "mpeg", "mpg", "mts",
                                               "mxf", "ogv", "rm", "rmvb", "swf", "ts", "vob", "webm", "wmv", "wtv", "gif", "webp"]
 
+    /// Decoded frames are written as plain sRGB-less PNGs: FFmpeg would otherwise copy the video's colour tags into cICP /
+    /// gAMA chunks, and ColorSync would then convert one picture of a pair and not the other.
+    static let untagged = "setparams=color_primaries=unknown:color_trc=unknown:colorspace=unknown"
+
     static func tool(_ name: String) throws -> URL {
         let url = RepoRoot.url.appendingPathComponent("Vendor/Tools/\(name)")
         guard FileManager.default.isExecutableFile(atPath: url.path) else { throw CheckFailure("Vendor/Tools/\(name) is missing (scripts/fetch-vendor.sh)") }
@@ -344,7 +348,7 @@ enum MediaBench {
     static func frame(_ url: URL, at seconds: Double, into folder: URL) throws -> Raster {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let png = folder.appendingPathComponent("frame-\(UUID().uuidString.prefix(8)).png")
-        _ = try ffmpeg(["-ss", String(seconds), "-i", url.path, "-frames:v", "1", "-vf", "scale=out_range=pc,format=rgb24", "-y", png.path])
+        _ = try ffmpeg(["-ss", String(seconds), "-i", url.path, "-frames:v", "1", "-vf", "scale=out_range=pc,format=rgb24,\(MediaBench.untagged)", "-y", png.path])
         guard let raster = Raster(contentsOf: png) else { throw CheckFailure("the frame at \(seconds) s can't be read") }
         return raster
     }
@@ -438,7 +442,7 @@ enum VTCalibration {
                 let mean = tables.map { $0[crf]! }.reduce(0, +) / Double(tables.count)
                 line.append("\(crf): \(String(format: "%.2f", mean))")
                 let shipped = VideoToolboxCalibration.quality(crf: crf, hevc: codec == "hevc")
-                out.append(Measurement(name: "\(codec) crf \(crf): shipped − measured", value: abs(shipped - mean), limit: .atMost(0.05)))
+                out.append(Measurement(name: "\(codec) crf \(crf): shipped − measured", value: abs(shipped - mean), limit: .atMost(0.05), noise: 0.02))
             }
             print("  measured \(codec): " + line.joined(separator: ", "))
         }
@@ -473,7 +477,7 @@ enum VTCalibration {
     static func decode(_ url: URL, into folder: URL, tag: String) throws -> [Raster] {
         let select = frames.map { "eq(n\\,\($0))" }.joined(separator: "+")
         let pattern = folder.appendingPathComponent("\(tag)-%02d.png").path
-        _ = try MediaBench.ffmpeg(["-i", url.path, "-vf", "select='\(select)',scale=out_range=pc,format=rgb24", "-fps_mode", "passthrough", "-y", pattern])
+        _ = try MediaBench.ffmpeg(["-i", url.path, "-vf", "select='\(select)',scale=out_range=pc,format=rgb24,\(MediaBench.untagged)", "-fps_mode", "passthrough", "-y", pattern])
         return try (1...frames.count).map { i in
             let file = folder.appendingPathComponent(String(format: "\(tag)-%02d.png", i))
             defer { try? FileManager.default.removeItem(at: file) }
