@@ -148,9 +148,11 @@ final class GDIPlayer {
         dc = target
     }
 
-    /// Clips to `segments` (device units) inside the current clip.
+    /// Clips to `segments` (device units) inside the current clip. Each clip nests a layer; past `maxGroupNesting` (clip
+    /// records without a SaveDC/RestoreDC to undo them, repeated) further clips are left out, with a note.
     func intersectClip(_ segments: [PathSegment]) {
         flushLine()
+        guard layers.count < maxGroupNesting else { note(.otherLoss, "Clips nested too deep were left out"); return }
         layers.append(Layer(clip: segments, nodes: []))
     }
 
@@ -292,7 +294,10 @@ final class GDIPlayer {
     }
 
     /// Elliptical arc segments (logical units) from parametric angle t1 sweeping `sweep` radians, in cubic pieces.
-    static func arcSegments(cx: Double, cy: Double, rx: Double, ry: Double, t1: Double, sweep: Double) -> [PathSegment] {
+    /// A sweep past a full turn (or not finite: a damaged angle) draws one turn, so the piece count stays at most 4.
+    static func arcSegments(cx: Double, cy: Double, rx: Double, ry: Double, t1: Double, sweep sweepIn: Double) -> [PathSegment] {
+        guard sweepIn.isFinite, t1.isFinite else { return [] }
+        let sweep = max(-2 * .pi, min(2 * .pi, sweepIn))
         let n = max(1, Int(ceil(abs(sweep) / (.pi / 2) - 1e-9)))
         let step = sweep / Double(n)
         let k = 4.0 / 3.0 * tan(step / 4)

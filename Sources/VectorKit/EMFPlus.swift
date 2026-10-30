@@ -422,8 +422,10 @@ final class EMFPlusPlayer {
         return segs
     }
 
-    func region(_ r: ByteReader, _ o: Int, count: Int) -> (RegionShape, Int)? {
-        guard r.has(o, 4) else { return nil }
+    /// A region node and the offset after it. Combining nodes nest; real regions are a handful deep, and `depth` stops a
+    /// damaged one (a run of combine words) from recursing without bound.
+    func region(_ r: ByteReader, _ o: Int, count: Int, depth: Int = 0) -> (RegionShape, Int)? {
+        guard r.has(o, 4), depth < 32 else { return nil }
         let type = r.u32(o)
         switch type {
         case 0x10000000: return (.rect(CGRect(x: r.f32(o + 4), y: r.f32(o + 8), width: r.f32(o + 12), height: r.f32(o + 16))), o + 20)
@@ -434,7 +436,7 @@ final class EMFPlusPlayer {
         case 0x10000002: return (.empty, o + 4)
         case 0x10000003: return (.infinite, o + 4)
         case 0...4:
-            guard let (a, next) = region(r, o + 4, count: 0), let (b, end) = region(r, next, count: 0) else { return nil }
+            guard let (a, next) = region(r, o + 4, count: 0, depth: depth + 1), let (b, end) = region(r, next, count: 0, depth: depth + 1) else { return nil }
             return (type == 0 ? .and(a, b) : .other(a), end)
         default: return nil
         }
@@ -444,7 +446,11 @@ final class EMFPlusPlayer {
         guard r.u32(4) == 1 else { return nil }
         let w = r.i32(8), h = r.i32(12), stride = r.i32(16), format = r.u32(20), kind = r.u32(24)
         if kind == 1 { return ImageBridge.asset(decoding: Data(r.slice(28, r.count - 28))) }
-        guard w > 0, h > 0, w * h <= 40_000_000, stride >= 0 else { return nil }
+        // A raw bitmap in a format read here, whose rows (`stride` apart) are all in the record: a size the data can't
+        // hold is damage, and would be a runaway allocation.
+        let bpp = format == 0x00021808 ? 3 : 4
+        guard [0x26200A, 0x000E200B, 0x00022009, 0x00021808].contains(format), ImageBridge.plausible(width: w, height: h),
+              stride >= w * bpp, (h - 1) * stride + w * bpp <= r.count - 28 else { return nil }
         var out = [UInt8](repeating: 255, count: w * h * 4)
         var hasAlpha = false
         let bits = 28
@@ -526,7 +532,7 @@ final class EMFPlusPlayer {
         case 0, 2: deviceEm = em * t.lengthScale
         default: em *= f.1; deviceEm = em
         }
-        guard deviceEm > 0.01 else { return }
+        guard deviceEm > 0.01, deviceEm.isFinite else { return }
         let name = GDIFontNames.postScriptName(families: font.family, bold: font.bold, italic: font.italic)
         let ct = VectorDrawing.font(named: name, size: deviceEm)
         let origin = t.apply(VectorPoint(Double(layout.minX), Double(layout.minY)))

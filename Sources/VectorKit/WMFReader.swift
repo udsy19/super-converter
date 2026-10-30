@@ -71,6 +71,9 @@ struct WMFPlayer {
     let d: ByteReader
     let p: GDIPlayer
     var warnings: [String] = []
+    /// Object indices freed below `nextIndex`, lowest first, and the next index never used.
+    var freed: [Int] = []
+    var nextIndex = 0
 
     init(d: ByteReader, p: GDIPlayer) { self.d = d; self.p = p }
 
@@ -111,11 +114,20 @@ struct WMFPlayer {
     }
     func note(_ text: String) { p.note(.otherLoss, text) }
 
-    /// A new object takes the lowest free index (MS-WMF 3.1.4.1).
-    func add(_ object: GDIPlayer.Object) {
-        var i = 0
-        while p.objects[i] != nil { i += 1 }
+    /// A new object takes the lowest free index (MS-WMF 3.1.4.1): the lowest one a DELETEOBJECT freed, else the next unused
+    /// one. Kept as a sorted list rather than found by scanning the table, which a file of many small object records
+    /// would make quadratic.
+    mutating func add(_ object: GDIPlayer.Object) {
+        let i = freed.isEmpty ? nextIndex : freed.removeFirst()
+        if i == nextIndex { nextIndex += 1 }
         p.objects[i] = object
+    }
+
+    mutating func delete(_ i: Int) {
+        guard p.objects.removeValue(forKey: i) != nil else { return }
+        var lo = 0, hi = freed.count
+        while lo < hi { let mid = (lo + hi) / 2; if freed[mid] < i { lo = mid + 1 } else { hi = mid } }
+        freed.insert(i, at: lo)
     }
 
     // MARK: Records
@@ -154,7 +166,7 @@ struct WMFPlayer {
             add(.brush(.approximated(.black)))
         case 0x06FF: add(region(q, end).map { .region($0) } ?? .other)
         case 0x00F7: add(.other)
-        case 0x01F0: p.objects[d.u16(q)] = nil
+        case 0x01F0: delete(d.u16(q))
         case 0x012D:
             guard let object = p.objects[d.u16(q)] else { break }
             if case .region(let rects) = object { p.resetClip(); p.intersectClip(rects.flatMap(p.rectSegments)) } else { p.select(object) }
@@ -247,7 +259,7 @@ struct WMFPlayer {
     // MARK: Objects
 
     /// LOGFONT (MS-WMF 2.2.1.2): height, escapement, weight, italic, face name.
-    func font(_ q: Int, _ end: Int) {
+    mutating func font(_ q: Int, _ end: Int) {
         var f = GDIPlayer.Font()
         f.height = Double(d.i16(q))
         f.escapement = Double(d.i16(q + 4)) / 10
