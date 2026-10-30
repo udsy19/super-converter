@@ -178,6 +178,37 @@ func registerLayoutKitTests() {
         }
     }))
 
+    SelfTest.cases.append(("LayoutKit.damagedInputNeverCrashes", {
+        // Quartz's fixture (compressed streams: damage mostly reaches the PDF reader) and an uncompressed page whose content
+        // stream the page graphics scanner and the analysis meet directly: words, rulings of a table, an image, nested forms.
+        let drawn = svtSinglePagePDF(content: """
+            BT /F1 18 Tf 72 700 Td (Damaged input heading) Tj ET
+            BT /F1 10 Tf 72 670 Td (A paragraph of words that the analysis groups into lines) Tj 0 -12 Td (and a second line below it.) Tj ET
+            0.5 w 72 600 m 300 600 l S 72 580 m 300 580 l S 72 560 m 300 560 l S 72 560 m 72 600 l S 186 560 m 186 600 l S 300 560 m 300 600 l S
+            BT /F1 9 Tf 76 586 Td (Cell one) Tj 114 0 Td (Cell two) Tj 0 -20 Td (12.50) Tj -114 0 Td (Total) Tj ET
+            72 440 1 100 re f 1 0 0 rg 80 450 60 40 re f
+            q 120 0 0 80 300 400 cm /Im1 Do Q q 1 0 0 1 20 20 cm /Fm1 Do Q
+            """, resources: "/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> /XObject << /Im1 5 0 R /Fm1 6 0 R >>",
+            extra: ["/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8",
+                    "/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Resources << /XObject << /Fm1 6 0 R >> >>"],
+            extraStreams: [5: "\u{0}\u{80}\u{80}\u{FF}", 6: "0 0 1 rg 10 10 50 50 re f 2 w 0 0 m 200 0 l S /Fm1 Do"])
+        let fixture = (try? Data(contentsOf: layoutPDF)).map { [UInt8]($0) } ?? []
+        let seeds = [FuzzSeed(name: "fixture", ext: "pdf", bytes: fixture),
+                     FuzzSeed(name: "drawn", ext: "pdf", bytes: [UInt8](drawn), nesting: ["q ", "[", "<<", "0 0 1 1 re "])]
+        let dir = scratch.appendingPathComponent("layoutkit-fuzz", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // The model readers, page-layout text (its columns come from word positions) and figure pictures in turn.
+        let targets: [StepEndpoint] = [.layoutDocument, .docModel, .format("txt"), .workbook, .deck]
+        var next = 0
+        let ran = fuzzNeverCrashes("LayoutKit.damagedInputNeverCrashes", seeds: seeds, count: 75) { url, _ in
+            let to = targets[next % targets.count]; next += 1
+            let context = StepContext(workFolder: dir, source: url, sourceFormat: "pdf", targetFormat: "txt",
+                                      options: OptionValues(["ocr": false, "layout": "page"]))
+            _ = try await LayoutKitConverter().run(Step(.layoutKit, "pdf", to), input: .file(url), context: context)
+        }
+        check(ran == 150, "every damaged input was handled without a crash (\(ran))")
+    }))
+
     registerPDFOpsTests()
 }
 
