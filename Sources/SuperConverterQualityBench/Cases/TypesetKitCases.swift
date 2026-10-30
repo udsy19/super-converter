@@ -140,17 +140,22 @@ extension Check {
     private static func lineEnds(_ doc: PDFDocument) -> [String] {
         (0..<doc.pageCount).flatMap { i -> [String] in
             guard let page = doc.page(at: i), let all = page.selection(for: page.bounds(for: .mediaBox)) else { return [] }
-            var lines: [(pieces: [(text: String, minX: CGFloat)], first: CGRect)] = []
+            // Bounds are in the unrotated page space, so on a turned page (/Rotate 90 or 270, a landscape table) lines run
+            // along y: there "the same line" is judged across x and pieces are ordered along y.
+            let turned = page.rotation % 180 != 0
+            func across(_ r: CGRect) -> (mid: CGFloat, size: CGFloat) { turned ? (r.midX, r.width) : (r.midY, r.height) }
+            func along(_ r: CGRect) -> CGFloat { turned ? (page.rotation == 90 ? r.minY : -r.maxY) : r.minX }
+            var lines: [(pieces: [(text: String, start: CGFloat)], first: CGRect)] = []
             for piece in all.selectionsByLine() {
                 let b = piece.bounds(for: page), text = piece.string ?? ""
-                if let first = lines.last?.first, abs(first.midY - b.midY) < 0.6 * min(first.height, b.height) {
-                    lines[lines.count - 1].pieces.append((text, b.minX))
+                if let first = lines.last?.first, abs(across(first).mid - across(b).mid) < 0.6 * min(across(first).size, across(b).size) {
+                    lines[lines.count - 1].pieces.append((text, along(b)))
                 } else {
-                    lines.append(([(text, b.minX)], b))
+                    lines.append(([(text, along(b))], b))
                 }
             }
             return lines.compactMap { line -> String? in
-                let text = line.pieces.sorted { $0.minX < $1.minX }.map(\.text).joined(separator: " ")
+                let text = line.pieces.sorted { $0.start < $1.start }.map(\.text).joined(separator: " ")
                 let w = words(text.precomposedStringWithCompatibilityMapping)   // ligatures decomposed
                 return w.contains { $0.filter(\.isLetter).count >= 3 } ? w.last { $0.count > 1 } : nil
             }
