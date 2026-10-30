@@ -262,10 +262,11 @@ enum TeX {
     }
 
     private static func append(_ piece: String, to out: inout String) {
-        // `\alpha` followed by a letter would read as `\alphax`.
-        if let first = piece.first, first.isLetter, let backslash = out.lastIndex(of: "\\"),
-           out[out.index(after: backslash)...].allSatisfy({ $0.isLetter && $0.isASCII }), !out[out.index(after: backslash)...].isEmpty {
-            out += " "
+        // `\alpha` followed by a letter would read as `\alphax`. Only the trailing letters are looked at, so a long formula
+        // without commands stays linear to emit.
+        if let first = piece.first, first.isLetter {
+            let letters = out.reversed().prefix { $0.isLetter && $0.isASCII }.count
+            if letters > 0, out.dropLast(letters).last == "\\" { out += " " }
         }
         out += piece
     }
