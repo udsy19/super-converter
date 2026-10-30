@@ -8,10 +8,19 @@ import SuperConverterCore
 public enum ImageBridge {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    /// The most pixels a picture inside a drawing may have (80 megapixels, 320 MB as RGBA).
+    static let maxPixels = 80_000_000
+    /// The most pixels one byte of encoded picture can describe: DEFLATE expands at most 1032:1 and a 1-bit PNG packs eight
+    /// pixels in a byte, so a header claiming more is damage, not a picture.
+    static let maxPixelsPerByte = 8192
+
+    /// Whether `w` × `h` is a size worth decoding: positive and at most `maxPixels`, tested without overflowing.
+    static func plausible(width w: Int, height h: Int) -> Bool { w > 0 && h > 0 && w <= maxPixels && h <= maxPixels / w }
+
     /// A single-frame `ImageAsset` (8-bit RGBA, un-premultiplied) from a `CGImage`.
     public static func asset(_ image: CGImage) -> ImageAsset? {
         let w = image.width, h = image.height
-        guard w > 0, h > 0 else { return nil }
+        guard plausible(width: w, height: h) else { return nil }
         var premultiplied = Data(count: w * h * 4)
         let ok = premultiplied.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) -> Bool in
             guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: srgb,
@@ -34,10 +43,18 @@ public enum ImageBridge {
         return ImageAsset(frames: [ImageFrame(width: w, height: h, pixels: .rgba8(premultiplied, bytesPerRow: w * 4), hasAlpha: hasAlpha)])
     }
 
-    /// Decodes image bytes (PNG, JPEG, GIF, TIFF, …) into an asset.
+    /// Decodes image bytes (PNG, JPEG, GIF, TIFF, …) into an asset; nil when they don't decode or their header claims
+    /// more pixels than the bytes can hold.
     public static func asset(decoding data: Data) -> ImageAsset? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        guard let image = image(decoding: data) else { return nil }
         return asset(image)
+    }
+
+    /// The first picture in encoded bytes, refused when its size isn't plausible for them (see `maxPixelsPerByte`).
+    static func image(decoding data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              plausible(width: image.width, height: image.height), image.width * image.height / maxPixelsPerByte <= data.count else { return nil }
+        return image
     }
 
     /// PNG bytes of an asset's first frame.

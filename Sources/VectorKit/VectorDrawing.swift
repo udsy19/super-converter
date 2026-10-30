@@ -11,9 +11,13 @@ public enum VectorDrawing {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
     /// A page as an sRGB bitmap at `scale` pixels per point, over `background` (white unless given; nil keeps it
-    /// transparent). For engines and tests that need pixels without RenderKit's colour-managed rasteriser.
+    /// transparent). For engines and tests that need pixels without RenderKit's colour-managed rasteriser. Nil when the
+    /// bitmap would not be a plausible picture (a page from a damaged file can be NaN or astronomically large).
     public static func render(_ page: VectorPage, scale: Double = 1, background: VectorColour? = .white) -> CGImage? {
-        let width = max(1, Int((page.size.width * scale).rounded(.up))), height = max(1, Int((page.size.height * scale).rounded(.up)))
+        let w = (page.size.width * scale).rounded(.up), h = (page.size.height * scale).rounded(.up)
+        guard w.isFinite, h.isFinite, w < Double(ImageBridge.maxPixels), h < Double(ImageBridge.maxPixels) else { return nil }
+        let width = max(1, Int(w)), height = max(1, Int(h))
+        guard ImageBridge.plausible(width: width, height: height) else { return nil }
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: srgb,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         if let background {
