@@ -5,14 +5,16 @@ import NaturalLanguage
 /// Hyphenation points (quality §3.3): TeX's Liang patterns from hyph-utf8 for the languages with a permissive pattern
 /// licence (Resources/Hyphenation: English, German, French, Spanish, Dutch, Polish, Portuguese, Ukrainian, Danish,
 /// Greek), so breaks match `pdflatex`; Apple's dictionaries (`CFStringGetHyphenationLocationBeforeIndex`) for the
-/// rest. TeX's `\lefthyphenmin`/`\righthyphenmin` (2 and 3 for English, the pattern file's own values otherwise). Words
-/// with digits, all capitals, words shorter than five letters, URLs and code are never hyphenated.
+/// rest. TeX's `\lefthyphenmin`/`\righthyphenmin` as babel sets them for the language (`LanguageConventions`), else the
+/// pattern file's own values (2 and 3 for Apple's dictionaries). Words with digits, all capitals, words shorter than
+/// five letters, URLs and code are never hyphenated.
 public final class Hyphenator {
     private enum Source {
         case patterns(LiangPatterns)
         case apple(CFLocale)
     }
     private let source: Source
+    private let mins: (left: Int, right: Int)
     /// Whether TeX's patterns (rather than Apple's dictionary) hyphenate this language.
     public var usesTeXPatterns: Bool { if case .patterns = source { true } else { false } }
     private var cache: [String: [Int]] = [:]
@@ -20,12 +22,15 @@ public final class Hyphenator {
     /// Nil when there are neither patterns nor a macOS dictionary for the language.
     public init?(language: String?) {
         let id = (language ?? "en_US").replacingOccurrences(of: "_", with: "-").lowercased()
+        let babel = LanguageConventions(language: id).hyphenMins
         if let patterns = LiangPatterns.load(for: id) {
             source = .patterns(patterns)
+            mins = babel ?? (patterns.leftMin, patterns.rightMin)
         } else {
             let locale = Locale(identifier: language ?? "en_US") as CFLocale
             guard CFStringIsHyphenationAvailableForLocale(locale) else { return nil }
             source = .apple(locale)
+            mins = babel ?? (2, 3)
         }
     }
 
@@ -51,14 +56,14 @@ public final class Hyphenator {
         }
         let result: [Int]
         switch source {
-        case .patterns(let patterns): result = patterns.points(in: word)
-        case .apple(let locale): result = Self.applePoints(word, locale)
+        case .patterns(let patterns): result = patterns.points(in: word, mins: mins)
+        case .apple(let locale): result = Self.applePoints(word, locale, mins: mins)
         }
         cache[word] = result
         return result
     }
 
-    private static func applePoints(_ word: String, _ locale: CFLocale) -> [Int] {
+    private static func applePoints(_ word: String, _ locale: CFLocale, mins: (left: Int, right: Int)) -> [Int] {
         let ns = word as NSString
         var result: [Int] = []
         var index = ns.length
@@ -70,7 +75,7 @@ public final class Hyphenator {
             index = p
         }
         return result.reversed().filter { p in
-            ns.substring(to: p).filter(\.isLetter).count >= 2 && ns.substring(from: p).filter(\.isLetter).count >= 3
+            ns.substring(to: p).filter(\.isLetter).count >= mins.left && ns.substring(from: p).filter(\.isLetter).count >= mins.right
         }
     }
 }
@@ -102,7 +107,7 @@ final class LiangPatterns: @unchecked Sendable {
         if let p = loaded[file] { return p }
         guard let url = directory()?.appendingPathComponent(file + ".tex"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let p = LiangPatterns(tex: text, english: file.hasPrefix("hyph-en"))
+        let p = LiangPatterns(tex: text)
         loaded[file] = p
         return p
     }
@@ -117,7 +122,7 @@ final class LiangPatterns: @unchecked Sendable {
         return candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("hyph-en-us.tex").path) }
     }
 
-    init(tex: String, english: Bool) {
+    init(tex: String) {
         var section = ""   // "patterns", "hyphenation" or ""
         var inMins = false, inTypesetting = false
         for raw in tex.split(whereSeparator: \.isNewline) {
@@ -151,8 +156,6 @@ final class LiangPatterns: @unchecked Sendable {
                 if closes { section = "" }
             }
         }
-        // LaTeX's \lefthyphenmin 2 and \righthyphenmin 3 for English (quality §3.3).
-        if english { leftMin = 2; rightMin = 3 }
     }
 
     private func addPattern(_ p: String) {
@@ -171,8 +174,8 @@ final class LiangPatterns: @unchecked Sendable {
         exceptions[word.lowercased()] = points
     }
 
-    /// Break offsets in UTF-16 units of `word`.
-    func points(in word: String) -> [Int] {
+    /// Break offsets in UTF-16 units of `word`, at least `mins` letters from either end.
+    func points(in word: String, mins: (left: Int, right: Int)) -> [Int] {
         let chars = Array(word)
         let lower = chars.map { c -> Character in
             let l = String(c).lowercased()
@@ -195,7 +198,7 @@ final class LiangPatterns: @unchecked Sendable {
             // values[i] sits before dotted[i]; dotted[i] is chars[i - 1], so a break before chars[j] is values[j + 1].
             letterPoints = (1..<max(1, chars.count)).filter { values[$0 + 1] % 2 == 1 }
         }
-        letterPoints = letterPoints.filter { $0 >= leftMin && chars.count - $0 >= rightMin }
+        letterPoints = letterPoints.filter { $0 >= mins.left && chars.count - $0 >= mins.right }
         var offsets: [Int] = [], utf16 = 0, next = 0
         for (i, c) in chars.enumerated() {
             if next < letterPoints.count, letterPoints[next] == i { offsets.append(utf16); next += 1 }

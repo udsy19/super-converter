@@ -2,22 +2,34 @@ import Foundation
 import PDFKit
 import SuperConverterCore
 import TypesetKit
+import VectorKit
 
 /// TypesetKit (quality §3.7): the typographic lint on every PDF it writes (layout log and PDF), text that extracts as
-/// written, and LaTeX parity against Tectonic compiling DocKit's LaTeX of the same fixture — skipped where Tectonic is
-/// not installed. Office files and e-books reach TypesetKit through OfficeKit's, DocKit's and EbookKit's readers.
+/// written, and LaTeX parity against Tectonic compiling DocKit's LaTeX of the same fixture (the committed golden PDF,
+/// remade by `--bless` where Tectonic is installed). Office files and e-books reach TypesetKit through OfficeKit's,
+/// DocKit's and EbookKit's readers.
 enum TypesetKitCases {
     /// The parity and lint fixtures (`scripts/make-fixtures.swift`, `typesetting()`): their bookmark counts (the opening
     /// "# Title" becomes the title block, bookmarked when it is the only heading; each "##" a section) and the share of
-    /// the source's words PDFKit reads back in order (its reading order wanders in nested lists, footnotes and formulas).
+    /// the source's words PDFKit reads back in order (its reading order wanders in nested lists, footnotes and formulas;
+    /// a float set above its heading and a table turned onto a landscape page are read out of the source's order).
     static let fixtures: [(name: String, bookmarks: Int, words: Double)] = [
         ("prose-en", 2, 0.98), ("prose-de", 1, 0.98), ("prose-fr", 1, 0.98), ("prose-es", 1, 0.98), ("prose-it", 1, 0.98),
         ("prose-nl", 1, 0.98), ("prose-pt", 1, 0.98), ("prose-pl", 1, 0.98), ("lists", 1, 0.9), ("footnotes", 1, 0.9),
         ("tables", 1, 0.98), ("math", 1, 0.9), ("code", 1, 0.98), ("quotes", 1, 0.98),
+        ("prose-sv", 1, 0.98), ("prose-da", 1, 0.98), ("prose-cs", 1, 0.98), ("long-words", 1, 0.98), ("numbered", 6, 0.98),
+        ("headings", 5, 0.98), ("title-block", 1, 0.98), ("abstract", 2, 0.98), ("multipage", 5, 0.98), ("lists-deep", 1, 0.9),
+        ("lists-start", 1, 0.9), ("footnotes-many", 1, 0.9), ("table-caption", 1, 0.7), ("table-numbers", 1, 0.98),
+        ("table-long", 1, 0.98), ("table-wide", 1, 0.85), ("math-inline", 1, 0.9), ("math-aligned", 1, 0.85),
+        ("math-display", 1, 0.9), ("code-blocks", 1, 0.98), ("inline-styles", 1, 0.98), ("quotes-nested", 1, 0.98),
+        ("links", 1, 0.98), ("punctuation", 1, 0.98), ("article", 4, 0.9), ("rule", 1, 0.98),
     ]
     /// Markdown words a reader never sees in the PDF: front matter, link targets, TeX control words.
-    static let markup: Set<String> = ["lang", "en", "de", "fr", "es", "it", "nl", "pt", "pl", "https", "example", "com", "spec",
-                                      "int", "infty", "sqrt", "pi", "sum", "frac", "dx", "e", "i", "x", "k", "n", "a", "b", "c", "1", "2"]
+    static let markup: Set<String> = ["lang", "en", "de", "fr", "es", "it", "nl", "pt", "pl", "sv", "da", "cs", "https", "example", "com", "spec",
+                                      "int", "infty", "sqrt", "pi", "sum", "frac", "dx", "e", "i", "x", "k", "n", "a", "b", "c", "1", "2",
+                                      "title", "author", "date", "abstract", "2024", "03", "14", "tug", "org", "ctan", "unicode",
+                                      "pm", "alpha", "beta", "gamma", "begin", "end", "aligned", "cases", "text", "if", "geq", "pmatrix",
+                                      "prod", "left", "right", "leq", "log", "f", "y", "z", "j", "t", "3", "4", "0"]
 
     static let all: [BenchCase] =
         fixtures.map { f in
@@ -25,10 +37,10 @@ enum TypesetKitCases {
                       checks: [.producesFormat("pdf"), .typographicLint(bookmarks: f.bookmarks), .textAsWritten(atLeast: f.words, ignoring: markup)])
         }
         + fixtures.map { f in
-            // Tectonic compiles DocKit's LaTeX of the fixture (the golden); the check sets the same fixture with TypesetKit.
+            // TypesetKit sets the fixture on LaTeX's default Letter paper; the check compares it with Tectonic's PDF of
+            // DocKit's LaTeX of the same fixture.
             BenchCase(id: "typesetkit.parity-\(f.name)", category: .document, tier: .full, fixture: "generated/typeset-\(f.name).md", target: "pdf",
-                      route: [Step(.markdownReader, "md", .docModel), Step(.latexWriter, .docModel, "tex"), Step(.tectonic, "tex", "pdf")],
-                      checks: [.latexParity()], timeout: 300)
+                      options: OptionValues(["paper": "letter"]), checks: [.latexParity()], timeout: 300)
         }
         + [
             // The other ways in: plain text, office files as written and in the LaTeX look, spreadsheets, e-books, mail.
@@ -90,21 +102,21 @@ extension Check {
         }
     }
 
-    /// LaTeX parity (quality §3.7): `ctx.output` is Tectonic's PDF of the fixture; TypesetKit sets the same fixture and
-    /// must give the same page count, ≥ 90 % agreement of line-ending words (TeX's and our hyphenation patterns are the
-    /// same for the languages we bundle), page 1's first baseline within 0.5 pt, and page images SSIM ≥ 0.90 at 100 dpi.
+    /// LaTeX parity (quality §3.7): `ctx.output` is TypesetKit's PDF of the fixture; `Tests/Golden/<case>/tectonic.pdf` is
+    /// Tectonic's (`--bless` remakes it and records the version in `tectonic.txt`). Same page count, ≥ 90 % agreement of
+    /// line-ending words (TeX's and our hyphenation patterns are the same for the languages we bundle), page 1's first
+    /// baseline within 0.5 pt, and page images SSIM ≥ 0.90 at 100 dpi.
     static func latexParity() -> Check {
         Check(name: "LaTeX parity") { ctx in
-            guard let golden = ctx.output, let tex = PDFDocument(url: golden) else { throw CheckFailure("Tectonic's PDF does not open") }
-            let ours = await Pipeline.convert(ctx.source, to: "pdf", into: ctx.work.appendingPathComponent("typesetkit", isDirectory: true))
-            guard case .converted(let result) = ours.outcome, let file = result.outputs.first, let mine = PDFDocument(url: file) else {
-                throw CheckFailure("TypesetKit did not set the fixture: \(ours.outcome)")
-            }
+            let golden = ctx.golden.appendingPathComponent("tectonic.pdf")
+            if ctx.blessing { try await Tectonic.compile(ctx.source, to: golden, work: ctx.work.appendingPathComponent("tectonic", isDirectory: true)) }
+            guard let tex = PDFDocument(url: golden) else { throw CheckFailure("no Tectonic golden: run --bless \(ctx.bench.id) where Tectonic is installed") }
+            guard let file = ctx.output, let mine = PDFDocument(url: file) else { throw CheckFailure("TypesetKit's PDF does not open") }
             var out: [Measurement] = [.exact("pages", Double(mine.pageCount), equals: Double(tex.pageCount))]
             let texEnds = lineEnds(tex), ourEnds = lineEnds(mine)
             out.append(Measurement(name: "line-ending words agree", value: texEnds.isEmpty ? 1 : Double(longestCommonSubsequence(texEnds, ourEnds)) / Double(texEnds.count),
                                    limit: .atLeast(0.9)))
-            if let a = firstBaseline(tex), let b = firstBaseline(mine) {
+            if let a = firstBaseline(golden), let b = firstBaseline(file) {
                 out.append(Measurement(name: "first baseline offset", value: abs(a - b), unit: "pt", limit: .atMost(0.5)))
             }
             var worst = 1.0
@@ -119,17 +131,60 @@ extension Check {
         }
     }
 
-    /// The last word of every text line, in reading order.
+    /// The last word of every line of text, in reading order: of a line with a word of three letters or more, the last
+    /// word longer than one character. TeX's formulas extract as glyph fragments — "∫∞", "k=1", a lone "β" — where
+    /// TypesetKit draws them as paths with their TeX as `/ActualText`, so neither side counts them.
     private static func lineEnds(_ doc: PDFDocument) -> [String] {
         (0..<doc.pageCount).flatMap { i -> [String] in
             guard let page = doc.page(at: i), let all = page.selection(for: page.bounds(for: .mediaBox)) else { return [] }
-            return all.selectionsByLine().compactMap { words($0.string ?? "").last }
+            return all.selectionsByLine().compactMap { line -> String? in
+                let w = words((line.string ?? "").precomposedStringWithCompatibilityMapping)   // ligatures decomposed
+                return w.contains { $0.filter(\.isLetter).count >= 3 } ? w.last { $0.count > 1 } : nil
+            }
         }
     }
 
-    /// Page 1's first text line: the bottom of its bounds, from the top of the page.
-    private static func firstBaseline(_ doc: PDFDocument) -> Double? {
-        guard let page = doc.page(at: 0), let line = page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine().first else { return nil }
-        return page.bounds(for: .mediaBox).height - line.bounds(for: page).minY
+    /// Page 1's first baseline, in TeX points from the top of the page: the highest text origin VectorKit's PDF reader
+    /// finds (PDFKit's line bounds hang from each font's own bounding box, which differs between Tectonic's Type 1 and our
+    /// OpenType Latin Modern).
+    private static func firstBaseline(_ url: URL) -> Double? {
+        guard let page = (try? PDFReader.read(url))?.document.pages.first else { return nil }
+        func origins(_ nodes: [VectorNode], _ t: VectorTransform) -> [Double] {
+            nodes.flatMap { node -> [Double] in
+                switch node {
+                case .text(let run): [t.b * run.origin.x + t.d * run.origin.y + t.ty]
+                case .group(let children, let g, _, _):
+                    origins(children, VectorTransform(a: g.a * t.a + g.b * t.c, b: g.a * t.b + g.b * t.d, c: g.c * t.a + g.d * t.c, d: g.c * t.b + g.d * t.d,
+                                                      tx: g.tx * t.a + g.ty * t.c + t.tx, ty: g.tx * t.b + g.ty * t.d + t.ty))
+                default: []
+                }
+            }
+        }
+        return origins(page.nodes, .identity).max().map { (page.size.height - $0) * 72.27 / 72 }
+    }
+}
+
+/// The golden side of LaTeX parity: DocKit writes the fixture's LaTeX and the developer machine's Tectonic compiles it
+/// (quality §9: a test tool, run here and never shipped), with network so its package cache fills on first use.
+@MainActor
+private enum Tectonic {
+    static func compile(_ fixture: URL, to golden: URL, work: URL) async throws {
+        guard let tool = HelperCatalog.info(.tectonic).detection.map(URL.init(fileURLWithPath:))
+            .first(where: { $0.lastPathComponent == "tectonic" && FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            throw CheckFailure("Tectonic is not installed (brew install tectonic)")
+        }
+        let run = await Pipeline.convertSteps(fixture, steps: [Step(.markdownReader, "md", .docModel), Step(.latexWriter, .docModel, "tex")], target: "tex", into: work)
+        guard case .converted(let result) = run.outcome, let tex = result.outputs.first else { throw CheckFailure("DocKit did not write the LaTeX: \(run.outcome)") }
+        let compiled = Subprocess.run(tool, ["-X", "compile", "--untrusted", "--outdir", work.path, tex.path], currentDirectory: work, timeout: 600)
+        let pdf = tex.deletingPathExtension().appendingPathExtension("pdf")
+        guard compiled.status == 0, FileManager.default.fileExists(atPath: pdf.path) else {
+            throw CheckFailure("Tectonic failed: \(compiled.standardError?.suffix(400) ?? "")")
+        }
+        let version = Subprocess.run(tool, ["--version"]).standardOutput?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let folder = golden.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: golden)
+        try FileManager.default.copyItem(at: pdf, to: golden)
+        try (version + "\n").write(to: folder.appendingPathComponent("tectonic.txt"), atomically: true, encoding: .utf8)
     }
 }

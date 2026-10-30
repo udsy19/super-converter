@@ -104,11 +104,14 @@ final class CaseContext {
     let work: URL
     /// Where artifacts for the report go (`.build/quality/artifacts/<case>`).
     let artifactFolder: URL
+    /// `--bless` names this case: a check that keeps a reference file in `golden` rewrites it.
+    let blessing: Bool
     private(set) var artifacts: [Artifact] = []
 
-    init(bench: BenchCase, source: URL, sourceFormat: FormatID, outputs: [URL], result: ConversionResult, work: URL, artifactFolder: URL) {
+    init(bench: BenchCase, source: URL, sourceFormat: FormatID, outputs: [URL], result: ConversionResult, work: URL, artifactFolder: URL,
+         blessing: Bool) {
         self.bench = bench; self.source = source; self.sourceFormat = sourceFormat; self.outputs = outputs
-        self.result = result; self.work = work; self.artifactFolder = artifactFolder
+        self.result = result; self.work = work; self.artifactFolder = artifactFolder; self.blessing = blessing
     }
 
     var output: URL? { outputs.first }

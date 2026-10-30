@@ -76,7 +76,7 @@ struct Runner {
         if let missing = converted.outputs.first(where: { !FileManager.default.fileExists(atPath: $0.path) }) { return result(.failed, "\(missing.lastPathComponent) was reported but is not on disk") }
 
         let context = CaseContext(bench: c, source: fixture, sourceFormat: run.sourceFormat ?? "", outputs: converted.outputs, result: converted, work: work,
-                                  artifactFolder: artifactRoot.appendingPathComponent(c.id, isDirectory: true))
+                                  artifactFolder: artifactRoot.appendingPathComponent(c.id, isDirectory: true), blessing: bless.contains(c.id))
         var measurements: [Measurement] = []
         var problems: [String] = []
         for check in c.checks {

@@ -207,7 +207,7 @@ final class Composer {
                     if look == .asWritten { c.documentFont = "Courier New" }
                     out.append(.text(code, c))
                 case .link(let inner, let destination):
-                    let plain = Self.plainText(inner)
+                    let plain = inner.plainText
                     out.append(.linkStart(destination))
                     if plain == destination || "mailto:" + plain == destination {
                         // \url: typewriter, breaking after slashes and dots.
@@ -255,21 +255,6 @@ final class Composer {
         return out
     }
 
-    static func plainText(_ t: DocText) -> String {
-        var s = ""
-        for n in t {
-            switch n {
-            case .text(let x): s += x
-            case .emphasis(let i), .strong(let i), .strike(let i), .link(let i, _), .styled(let i, _): s += plainText(i)
-            case .code(let c): s += c
-            case .math(let tex): s += tex
-            case .lineBreak: s += " "
-            case .image, .footnoteReference: break
-            }
-        }
-        return s
-    }
-
     // MARK: Paragraphs
 
     func paragraph(_ content: [InlinePiece], _ ctx: BlockContext, pstyle: DocParagraphStyle = DocParagraphStyle(),
@@ -291,7 +276,7 @@ final class Composer {
         }
         if !items.isEmpty && !suppressParskip { items.append(.glue(ctx.parskip)) }
         suppressParskip = false
-        let indented = indent ?? !(afterHeading || noIndentNext || !pendingLabels.isEmpty)
+        let indented = indent ?? !((afterHeading && !setter.conventions.indentFirst) || noIndentNext || !pendingLabels.isEmpty)
         var shape = ParagraphShape(width: lineWidth(ctx))
         shape.indent = indented && alignment == .justified ? ctx.parindent : 0
         shape.alignment = alignment
@@ -324,7 +309,8 @@ final class Composer {
             }
             var box = line.box
             if k == 0 && !pendingLabels.isEmpty {
-                for (label, x) in pendingLabels { box.ops.append(.box(label, x: x - ctx.left, y: 0)) }
+                // Drawn before the line's text, as TeX's \box\@labels opens the item's paragraph.
+                box.ops.insert(contentsOf: pendingLabels.map { label, x in .box(label, x: x - ctx.left, y: 0) }, at: 0)
                 box.height = max(box.height, pendingLabels.map(\.0.height).max() ?? 0)
                 pendingLabels = []
             }
@@ -359,7 +345,7 @@ final class Composer {
         base.size = look == .asWritten ? [16, 13, 12, 11, 11][index] * fonts.normalSize / 11 : style.size(hs.size).size
         base.bold = hs.bold
         let pieces = inline(text, ctx, base: base)
-        items.append(.mark(HeadingMark(level: index, title: Self.plainText(text), number: number, anchor: anchor, inContents: inContents)))
+        items.append(.mark(HeadingMark(level: index, title: text.plainText, number: number, anchor: anchor, inContents: inContents)))
         guard let after = hs.after else {
             // Run-in heading: the title starts the next paragraph, followed by an em.
             pendingRunIn = [.box(HBox(width: 0, height: 0, depth: 0, ops: [.anchor(anchor, x: 0, y: 10)]))] + pieces
@@ -392,13 +378,14 @@ final class Composer {
 
     func listLevel(_ depth: Int) -> ListLevel { style.lists[min(depth, style.lists.count - 1)] }
 
-    /// LaTeX's `itemize` and `enumerate`: `\topsep` (and `\partopsep` at the top level) around, `\itemsep` plus
-    /// `\parsep` between items, labels right-aligned `\labelsep` before the text.
+    /// LaTeX's `itemize` and `enumerate`: `\topsep` plus `\partopsep` around (the list starts a paragraph of its own),
+    /// with the surrounding `\parskip` above (`\@trivlist`'s `\@topsep`), `\itemsep` plus `\parsep` between items,
+    /// labels right-aligned `\labelsep` before the text.
     func list(ordered: Bool, start: Int, entries: [[DocBlock]], _ ctx: BlockContext) {
         let depth = ctx.listDepth
         let spacing = listLevel(min(depth, 2))
         addPenalty(-51)   // \@beginparpenalty
-        addVSpace(spacing.topsep + (depth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep + ctx.parskip)
         var inner = ctx
         inner.left += listLevel(depth).leftMargin
         inner.listDepth += 1
@@ -411,7 +398,7 @@ final class Composer {
             pendingLabels.append((label, inner.left - style.labelsep - label.width))
             var itemCtx = inner
             itemCtx.tags = ctx.tags + [listTag, nextTag(.listItem)]
-            suppressParskip = true
+            suppressParskip = k == 0   // the first item's \parskip is taken back by \addvspace{-\parskip}
             afterHeading = false
             compose(entry, itemCtx)
             if !pendingLabels.isEmpty {
@@ -424,7 +411,7 @@ final class Composer {
             }
         }
         addPenalty(-51)
-        addVSpace(spacing.topsep + (depth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep)
         suppressParskip = false
     }
 
@@ -469,7 +456,7 @@ final class Composer {
     func quote(_ blocks: [DocBlock], _ ctx: BlockContext) {
         let depth = ctx.listDepth
         let spacing = listLevel(min(depth, 2))
-        addVSpace(spacing.topsep + (depth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep + ctx.parskip)
         var inner = ctx
         inner.left += listLevel(depth).leftMargin
         inner.right += listLevel(depth).leftMargin
@@ -480,7 +467,7 @@ final class Composer {
         suppressParskip = true
         afterHeading = false
         compose(blocks, inner)
-        addVSpace(spacing.topsep + (depth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep)
         suppressParskip = false
     }
 
@@ -490,7 +477,7 @@ final class Composer {
     /// two-space hanging indent rather than running into the margin.
     func code(_ text: String, _ ctx: BlockContext) {
         let spacing = listLevel(min(ctx.listDepth, 2))
-        addVSpace(spacing.topsep + (ctx.listDepth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep + ctx.parskip)   // \trivlist, as a list
         var mono = runStyle(ctx)
         mono.family = .mono; mono.verbatim = true
         if look == .asWritten { mono.documentFont = "Courier New"; mono.size = max(8, fonts.normalSize - 1) }
@@ -538,7 +525,7 @@ final class Composer {
                           baselineskip: leading)
             }
         }
-        addVSpace(spacing.topsep + (ctx.listDepth == 0 ? spacing.partopsep : .zero))
+        addVSpace(spacing.topsep + spacing.partopsep)
         afterHeading = false
     }
 
@@ -711,16 +698,14 @@ final class Composer {
         let scale = min(1, width / img.width, style.geometry.textHeight * (caption == nil ? 0.9 : 0.75) / img.height)
         let w = img.width * scale, h = img.height * scale
         let picture = HBox(width: width, height: h, depth: 0, ops: [.image(img.content, x: (width - w) / 2, y: 0, width: w, height: h)])
-        let tag = nextTag(.figure, alt: alt ?? caption.map(Self.plainText))
+        let tag = nextTag(.figure, alt: alt ?? caption.map(\.plainText))
         if let caption {
             figureCount += 1
-            let saved = (items, prevDepth)
-            items = []; prevDepth = nil
-            appendBox(VBox(box: picture, x: ctx.left, tags: ctx.tags + [tag]), baselineskip: style.normal.leading)
-            items.append(.glue(Glue(width: style.abovecaptionskip)))
-            captionLines(label: "Figure \(figureCount)", caption, ctx)
-            let floatItems = items
-            (items, prevDepth) = saved
+            let floatItems = isolated {
+                appendBox(VBox(box: picture, x: ctx.left, tags: ctx.tags + [tag]), baselineskip: style.normal.leading)
+                items.append(.glue(Glue(width: style.abovecaptionskip)))
+                captionLines(label: "Figure \(figureCount)", caption, ctx)
+            }
             items.append(.float(FloatBlock(items: floatItems, height: Self.height(of: floatItems))))
             return
         }
@@ -739,6 +724,16 @@ final class Composer {
         var shape = ParagraphShape(width: lineWidth(ctx))
         shape.alignment = setter.natural(pieces).width <= lineWidth(ctx) ? .centred : .justified
         emitLines(setter.set(pieces, shape: shape).lines, ctx, baselineskip: style.normal.leading, tag: nextTag(.caption))
+    }
+
+    /// What `body` adds, as a vertical list of its own (a float's `\vbox`: no interline glue above its first box); the
+    /// main list is left as it was.
+    func isolated(_ body: () -> Void) -> [VItem] {
+        let saved = (items, prevDepth)
+        items = []; prevDepth = nil
+        body()
+        defer { (items, prevDepth) = saved }
+        return items
     }
 
     /// Natural height of a vertical list.
@@ -770,11 +765,13 @@ final class Composer {
         } else if result.isFloat {
             items.append(.float(FloatBlock(items: result.items, height: Self.height(of: result.items))))
         } else {
-            let spacing = listLevel(min(ctx.listDepth, 2))
-            addVSpace(spacing.topsep + spacing.partopsep)
+            // longtable: \penalty0 and \vskip\LTpre before the rows, which stack with no interline glue; \addvspace\LTpost
+            // after, and the next line \baselineskip below the bottom rule.
+            items.append(.penalty(0))
+            items.append(.glue(style.bigskip))
             items += result.items
-            addVSpace(spacing.topsep + spacing.partopsep)
-            prevDepth = nil
+            addVSpace(style.bigskip)
+            prevDepth = 0
         }
         afterHeading = false
         lastLine = nil
@@ -815,11 +812,8 @@ final class Composer {
         emitLines([authorLine(meta.authors, authorStyle, width: lineWidth(ctx), leading: large.leading)], ctx,
                   baselineskip: large.leading, tag: nextTag(.paragraph), keepTogether: true)
         items.append(.glue(Glue(width: em)))
-        if let date = meta.date {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: meta.language ?? "en_US")
-            f.setLocalizedDateFormatFromTemplate("MMMMdyyyy")
-            emitLines(setter.set([.text(f.string(from: date), authorStyle)], shape: shape).lines, ctx, baselineskip: large.leading,
+        if let date = meta.longDate {
+            emitLines(setter.set([.text(date, authorStyle)], shape: shape).lines, ctx, baselineskip: large.leading,
                       tag: nextTag(.paragraph), keepTogether: true)
         }
         addVSpace(center.topsep + center.partopsep)
