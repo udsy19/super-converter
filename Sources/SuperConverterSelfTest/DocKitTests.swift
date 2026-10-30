@@ -1212,6 +1212,10 @@ private func dockitTextOutputs() {
     check(prose.contains("\\usepackage{array}") && prose.contains("{l>{\\raggedright\\arraybackslash}p{") && !prose.contains("landscape"), "LaTeX: a table of sentences wraps in p{} columns")
     let narrow = LaTeXWriter.render(grid([["A", "B"], ["1", "2"]])).tex
     check(narrow.contains("\\begin{longtable}{ll}") && !narrow.contains("\\small") && !narrow.contains("landscape") && !narrow.contains("p{"), "LaTeX: a table that fits is left alone")
+    // CJK text gets xeCJK and a system font for its script (Latin Modern has no CJK glyphs, so it would vanish).
+    let cjk = { (t: String) in LaTeXWriter.render(DocModel(blocks: [para(t)])).tex }
+    check(cjk("東京").contains("\\setCJKmainfont{Songti SC}") && cjk("ひらがな").contains("{Hiragino Mincho ProN}")
+          && cjk("한국어").contains("{AppleMyungjo}") && !cjk("Plain Latin text").contains("xeCJK"), "LaTeX: CJK text gets xeCJK and a font for its script")
     check(LaTeXWriter.escape("50% of $5 & #1_x ~ ^ \\ {}") == "50\\% of \\$5 \\& \\#1\\_x \\textasciitilde{} \\textasciicircum{} \\textbackslash{} \\{\\}", "LaTeX escaping")
     // Through the converters, with the options.
     if let url = writeFile(model, engine: .latexWriter, to: "tex", folder: folder, options: OptionValues(["latexClass": "book"])) {

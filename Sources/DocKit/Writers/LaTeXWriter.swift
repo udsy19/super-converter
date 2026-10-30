@@ -74,6 +74,21 @@ enum LaTeXWriter {
             for case .footnote(let id, let blocks) in model.blocks { footnoteBodies[id] = blocks }
         }
 
+        /// Latin Modern has no CJK glyphs, so text in Chinese, Japanese or Korean would vanish from the PDF: under XeTeX
+        /// (Tectonic) xeCJK sets it in a macOS system font for the script found (pdfTeX can't set it at all).
+        static func cjkFont(for text: String) -> String? {
+            var han = false, kana = false
+            for v in text.unicodeScalars.lazy.map(\.value) {
+                switch v {
+                case 0xAC00...0xD7AF, 0x1100...0x11FF, 0x3130...0x318F: return "AppleMyungjo"
+                case 0x3040...0x30FF, 0x31F0...0x31FF: kana = true
+                case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF: han = true
+                default: continue
+                }
+            }
+            return kana ? "Hiragino Mincho ProN" : han ? "Songti SC" : nil
+        }
+
         mutating func run() -> Output {
             // Display math belongs to the paragraphs around it, as TypesetKit sets it: no blank line on either side (one
             // before `\[` leaves an empty line above the formula, one after starts a new, indented paragraph).
@@ -99,6 +114,7 @@ enum LaTeXWriter {
             if usesLandscape { preamble += ["\\usepackage{pdflscape}", "\\usepackage{afterpage}"] }
             if usesStrike { preamble.append("\\usepackage[normalem]{ulem}") }
             if usesColour { preamble.append("\\usepackage{xcolor}") }
+            if let cjk = Self.cjkFont(for: body.joined() + (m.title ?? "")) { preamble.append("\\ifPDFTeX\\else\n\\usepackage{xeCJK}\n\\setCJKmainfont{\(cjk)}\n\\fi") }
             preamble.append("\\usepackage{hyperref}")
             // TeX's third pass instead of an overfull line, as TypesetKit's emergency pass (quality §3.3).
             preamble.append("\\setlength{\\emergencystretch}{3em}")

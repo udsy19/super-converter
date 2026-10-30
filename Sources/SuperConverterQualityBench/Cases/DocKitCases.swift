@@ -35,7 +35,7 @@ enum DocKitCases {
             .producesFormat("png"), .pictureHasInk(inkAtLeast: 0.003),
         ]),
         BenchCase(id: "dockit.md-tex", category: .document, tier: .full, fixture: "generated/sample.md", target: "tex", checks: [
-            .producesFormat("tex"), .textContains(["\\section", "\\emph", "\\begin{tabular}"]),
+            .producesFormat("tex"), .textContains(["\\section", "\\emph", "\\begin{longtable}"]),
         ]),
         BenchCase(id: "dockit.md-rtf", category: .document, tier: .full, fixture: "generated/sample.md", target: "rtf", checks: [
             .producesFormat("rtf"), .textContains(["{\\rtf1", "Super Converter sample"]), .roundTrip(to: "md", wordsAtLeast: 0.95),
