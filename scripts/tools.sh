@@ -59,14 +59,14 @@ check_binary() { # path
     for arch in "${ARCHS[@]}"; do
         [[ " $archs " == *" $arch "* ]] || die "$name has no $arch slice (has: $archs)"
         deps="$(otool -arch "$arch" -L "$bin" | tail -n +2 | awk '{print $1}')"
-        if grep -v -E '^(/usr/lib/|/System/Library/)' <<<"$deps" | grep -q .; then
+        if [ -n "$(grep -v -E '^(/usr/lib/|/System/Library/)' <<<"$deps")" ]; then
             die "$name ($arch) links outside the system: $(grep -v -E '^(/usr/lib/|/System/Library/)' <<<"$deps" | tr '\n' ' ')"
         fi
         minos="$(otool -arch "$arch" -l "$bin" | awk '/LC_BUILD_VERSION/{f=1} f && /minos/{print $2; exit}')"
         [[ -n "$minos" ]] || minos="$(otool -arch "$arch" -l "$bin" | awk '/LC_VERSION_MIN_MACOSX/{f=1} f && /version/{print $2; exit}')"
         [[ "$(printf '%s\n%s\n' "$minos" "$DEPLOYMENT_TARGET" | sort -V | tail -1)" == "$DEPLOYMENT_TARGET" ]] ||
             die "$name ($arch) needs macOS $minos, above $DEPLOYMENT_TARGET"
-        if strings -a "$bin" | grep -q '/opt/homebrew'; then die "$name ($arch) mentions /opt/homebrew"; fi
+        if grep -q '/opt/homebrew' <<< "$(strings -a "$bin")"; then die "$name ($arch) mentions /opt/homebrew"; fi
         printf '    %-8s %-6s %s system libraries only, minos %s\n' "$name" "$arch" "$(wc -l <<<"$deps" | tr -d ' ')" "$minos" >&2
     done
 }
@@ -137,7 +137,7 @@ smoke_ffmpeg() { # arch
     ffq "${tone[@]}" -c:a libmp3lame -b:a 128k "$d/tone.mp3"
     expect "$d/tone.mp3" "mp3"; decodes -i "$d/tone.mp3"
     # AMR is decoded only (formats §2.7): no AMR encoder is built; the native decoder reads the committed AMR-NB fixture
-    if "${ff[@]:0:3}" -hide_banner -encoders 2>/dev/null | grep -q -i amr; then die "[$arch] ffmpeg has an AMR encoder"; fi
+    if grep -q -i amr <<< "$("${ff[@]:0:3}" -hide_banner -encoders 2>/dev/null)"; then die "[$arch] ffmpeg has an AMR encoder"; fi
     ffq -c:a amrnb -i "$ROOT/Tests/Corpus/generated/media/sample.amr" -c:a pcm_s16le "$d/amr.wav"
     expect "$d/amr.wav" "pcm_s16le"
     ffq "${tone[@]}" -c:a alac "$d/tone.m4a"

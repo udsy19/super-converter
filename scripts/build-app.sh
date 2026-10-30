@@ -109,7 +109,7 @@ TIMESTAMP=()
 sign() { codesign -f -s "$SIGN_AS" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} -o runtime "$@"; }
 if [ -n "${DEVELOPER_ID:-}" ]; then
   # A "Developer ID Application: …" identity in the login keychain; notarisation needs the secure timestamp.
-  security find-identity -v -p codesigning | grep -qF "$DEVELOPER_ID" || { echo "error: DEVELOPER_ID \"$DEVELOPER_ID\" is not a valid signing identity in your keychains" >&2; exit 1; }
+  grep -qF "$DEVELOPER_ID" <<< "$(security find-identity -v -p codesigning)" || { echo "error: DEVELOPER_ID \"$DEVELOPER_ID\" is not a valid signing identity in your keychains" >&2; exit 1; }
   SIGN_AS="$DEVELOPER_ID"; KEYCHAIN=(); TIMESTAMP=(--timestamp)
 elif [ -f "$KC" ]; then
   SIGN_AS="$IDENTITY"; KEYCHAIN=(--keychain "$KC")
@@ -162,7 +162,8 @@ for bin in "${BINARIES[@]}"; do
   fi
   codesign --verify --strict "$bin" 2>/dev/null || fail "$(basename "$bin") is not signed"
 done
-otool -l "$EXE" | grep -q '@executable_path/../Frameworks' || fail "the app has no rpath into Contents/Frameworks"
+# (otool's output is captured first: under pipefail, `otool | grep -q` fails when grep stops reading a long listing.)
+grep -q '@executable_path/../Frameworks' <<< "$(otool -l "$EXE")" || fail "the app has no rpath into Contents/Frameworks"
 # Info.plist: well formed, the executable, the bundle id, the URL scheme, document types for every kind, the Services
 # entries, every usage string.
 for plist in "$APP/Contents/Info.plist" "${EXTENSIONS[@]/%//Contents/Info.plist}"; do plutil -lint -s "$plist" || fail "$plist is not a valid property list"; done

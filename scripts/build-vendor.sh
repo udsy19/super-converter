@@ -641,7 +641,7 @@ check_xcframework() { # Name kind
     [[ -s "$xcf/Licenses/COMPONENTS.txt" ]] || die "$name has no Licenses/COMPONENTS.txt"
     [[ -n "$(ls "$xcf"/Licenses | grep -v COMPONENTS.txt)" ]] || die "$name has no licence texts"
     if [[ "$kind" == dylib ]]; then
-        otool -L "$lib" | tail -n +2 | grep -q "/opt/homebrew\|/usr/local" && die "$name links a Homebrew library"
+        grep -q "/opt/homebrew\|/usr/local" <<< "$(otool -L "$lib" | tail -n +2)" && die "$name links a Homebrew library"
         for arch in "${ARCHS[@]}"; do
             minos="$(vtool -arch "$arch" -show-build "$lib" | awk '$1=="minos" {print $2}')"
             [[ "$minos" == "$DEPLOYMENT_TARGET" ]] || die "$name $arch minos is '$minos', want $DEPLOYMENT_TARGET"
