@@ -228,3 +228,108 @@ func registerVectorKitMetafileTests() {
         check((try? EMFReader.read(Data(emf))) == nil || (try? EMFReader.read(Data(emf)))?.warnings.isEmpty == false, "a broken EMF record is caught")
     }))
 }
+
+/// Fuzz seeds for the metafile readers (`VectorKit.damagedInputNeverCrashes`): the writers' output of the round-trip
+/// drawing (DIBs, AlphaBlend, text), GDI records the writers don't use (regions, gradients, poly-draws, arcs, an RLE
+/// pattern brush, clips), an EMF+ stream with every object kind (brush, pen, path, nested region, raw bitmap, font) and
+/// the records that draw with them, and a WMF with regions, poly-polygons, arcs, DIBs and clipped text.
+func svtMetafileFuzzSeeds() -> [FuzzSeed] {
+    var seeds: [FuzzSeed] = []
+    if let emf = try? EMFWriter.write(mfDrawing(), options: VectorWriteOptions()) { seeds.append(FuzzSeed(name: "emf-written", ext: "emf", bytes: [UInt8](emf.data))) }
+    if let wmf = try? WMFWriter.write(mfDrawing(), options: VectorWriteOptions()) { seeds.append(FuzzSeed(name: "wmf-written", ext: "wmf", bytes: [UInt8](wmf.data))) }
+
+    func f(_ v: Float) -> Int { Int(v.bitPattern) }
+    // A 2 × 2 BI_RLE8 DIB with two palette entries, as 32-bit words: header, palette, then the runs.
+    let rle = [40, 2, 2, 1 | 8 << 16, 1, 0, 0, 0, 2, 0, 0x0000FF, 0x00FF00, 0x0000_0102, 0x0100_0002]
+    let region = [32, 1, 2, 32, 10, 10, 60, 60, 10, 10, 30, 30, 40, 40, 60, 60]
+    let gdi = emfFile([
+        emfRecord(94, [5, 0, 32, 48, 80, 8] + rle), emfRecord(37, [5]),
+        emfRecord(71, [0, 0, 99, 99, region.count * 4, 5] + region), emfRecord(75, [region.count * 4, 1] + region),
+        emfRecord(8, [0, 0, 99, 99, 2, 6, 3, 3, 10, 10, 50, 10, 30, 40, 60, 60, 90, 60, 75, 90]),
+        emfRecord(56, [0, 0, 99, 99, 4, 10, 10, 20, 30, 40, 30, 50, 10, 0x0204_0406]),
+        emfRecord(118, [0, 0, 99, 99, 3, 1, 2, 0, 0, 0xFF00, 0xFF00, 100, 100, 0, 0xFF00, 50, 0, 0xFF00_0000, 0, 0, 1, 2]),
+        emfRecord(41, [50, 50, 20, f(30), f(270)]), emfRecord(45, [10, 10, 90, 90, 90, 50, 50, 10]), emfRecord(47, [10, 10, 90, 90, 50, 90, 10, 50]),
+        emfRecord(33, []), emfRecord(30, [20, 20, 80, 80]), emfRecord(29, [40, 40, 60, 60]),
+        emfRecord(35, [f(1), 0, 0, f(1), f(5), 0]), emfRecord(42, [20, 20, 80, 80]), emfRecord(34, [-1]),
+    ])
+    seeds.append(FuzzSeed(name: "emf-gdi", ext: "emf", bytes: [UInt8](gdi)))
+
+    var header = MFBytes(); header.u32(0xDBC01002); header.u32(1); header.u32(96); header.u32(96)
+    var brush = MFBytes(); brush.u32(0xDBC01002); brush.u32(4); brush.u32(2 | 4); brush.u32(0)
+    for v: Float in [0, 0, 50, 50] { brush.f32(v) }
+    brush.u32(0xFFFF0000); brush.u32(0xFF0000FF); brush.u32(0); brush.u32(0)
+    for v: Float in [1, 0, 0, 1, 0, 0] { brush.f32(v) }
+    brush.u32(2); brush.f32(0); brush.f32(1); brush.u32(0xFFFF0000); brush.u32(0xFF0000FF)
+    var pen = MFBytes(); pen.u32(0xDBC01002); pen.u32(0); pen.u32(0); pen.u32(2 | 8 | 0x10 | 0x100); pen.u32(0); pen.f32(2)
+    pen.u32(2); pen.u32(1); pen.f32(4); pen.u32(2); pen.f32(3); pen.f32(1); pen.u32(0xDBC01002); pen.u32(0); pen.u32(0xFF00FF00)
+    var path = MFBytes(); path.u32(0xDBC01002); path.u32(4); path.u32(0)
+    for v: Float in [10, 10, 60, 10, 60, 60, 10, 60] { path.f32(v) }
+    path.bytes += [0, 1, 1, 0x81]
+    var region2 = MFBytes(); region2.u32(0xDBC01002); region2.u32(2); region2.u32(0); region2.u32(0x1000_0000)
+    for v: Float in [5, 5, 80, 80] { region2.f32(v) }
+    region2.u32(0x1000_0001); region2.u32(path.bytes.count); region2.bytes += path.bytes
+    var image = MFBytes(); image.u32(0xDBC01002); image.u32(1); image.u32(2); image.u32(2); image.u32(8); image.u32(0x26200A); image.u32(0)
+    image.bytes += [0, 0, 255, 255, 0, 255, 0, 128, 255, 0, 0, 255, 255, 255, 255, 0]
+    var font = MFBytes(); font.u32(0xDBC01002); font.f32(12); font.u32(2); font.u32(1); font.u32(0); font.u32(0); font.u32(5)
+    for c in "Arial".utf16 { font.u16(Int(c)) }
+    func words(_ values: [Int]) -> [UInt8] { var b = MFBytes(); for v in values { b.u32(v) }; return b.bytes }
+    let hi = Array("Hi".utf16).map(Int.init)
+    let plus = emfFile([
+        emfPlusComment([
+            (0x4001, 1, header.bytes), (0x4008, 0x0100 | 1, brush.bytes), (0x4008, 0x0200 | 2, pen.bytes), (0x4008, 0x0300 | 3, path.bytes),
+            (0x4008, 0x0400 | 4, region2.bytes), (0x4008, 0x0500 | 5, image.bytes), (0x4008, 0x0600 | 6, font.bytes),
+            (0x4026, 0, words([1])), (0x402E, 0, words([f(5), f(5)])), (0x402F, 0x2000, words([f(1), f(1)])), (0x4030, 0, words([f(10)])),
+            (0x4031, 2, words([f(1)])), (0x4033, 0x0100, words([f(0), f(0), f(90), f(90)])),
+            (0x400A, 0x8000, words([0xFFFF0000, 1, f(10), f(10), f(40), f(40)])), (0x400B, 2, words([1, f(5), f(5), f(20), f(20)])),
+            (0x400C, 1, words([1, 3, f(0), f(0), f(30), f(0), f(15), f(30)])), (0x400D, 0x2002, words([3, f(0), f(0), f(30), f(0), f(15), f(30)])),
+            (0x400E, 0x8000, words([0xFF00FF00, f(50), f(50), f(20), f(10)])), (0x400F, 2, words([f(50), f(50), f(20), f(10)])),
+            (0x4010, 0x8000, words([0xFF0000FF, f(30), f(120), f(20), f(20), f(40), f(40)])), (0x4011, 2, words([f(0), f(90), f(20), f(20), f(40), f(40)])),
+            (0x4012, 2, words([f(45), f(-200), f(20), f(20), f(40), f(40)])), (0x4014, 3, words([1])), (0x4015, 3, words([2])),
+            (0x4038, 3, words([1, 2])), (0x401A, 2, words([4, f(0), f(0), f(10), f(20), f(30), f(20), f(40), f(0)])),
+            (0x4016, 0x8000, words([0xFF808080, f(0.5), 3, f(60), f(60), f(80), f(60), f(70), f(80)])),
+            (0x4018, 2, words([f(0.5), 0, 0, 3, f(0), f(90), f(20), f(70), f(40), f(90)])),
+            (0x401B, 5, words([0, 2, f(0), f(0), f(2), f(2), f(60), f(10), f(20), f(20)])),
+            (0x401C, 5, words([0, 2, f(0), f(0), f(1), f(1), 3, f(10), f(60), f(30), f(60), f(10), f(80)])),
+            (0x401D, 0x8006, words([0xFF000000, 0, hi.count, f(10), f(80), f(50), f(20), hi[0] | hi[1] << 16])),
+            (0x4034, 0x0103, []), (0x4035, 0x0104, []), (0x402D, 0, words([f(1), 0, 0, f(1), f(1), f(1)])), (0x4027, 0, words([1])),
+            (0x402B, 0, words([f(1), 0, 0, f(1), 0, 0])), (0x402C, 0, []), (0x4032, 0, []), (0x4004, 0, []),
+        ]),
+        emfRecord(43, [10, 10, 50, 50]), emfPlusComment([(0x4002, 0, [])]),
+    ])
+    seeds.append(FuzzSeed(name: "emf-plus", ext: "emf", bytes: [UInt8](plus)))
+
+    // A 2 × 2 24-bit DIB as 16-bit words: the header, then two padded rows.
+    let dib = [40, 0, 2, 0, 2, 0, 1, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00FF, 0xFF00, 0, 0, 0, 0xFF, 0xFFFF, 0]
+    let wmf = wmfFile([
+        wmfRecord(0x06FF, [0, 6, 0, 0, 34, 1, 2, 10, 10, 50, 50, 2, 10, 50, 10, 50, 2]), wmfRecord(0x012C, [0]),
+        wmfRecord(0x02FC, [0, 0x00FF, 0, 0]), wmfRecord(0x0228, [0, 1]),
+        wmfRecord(0x0538, [2, 3, 3, 10, 10, 50, 10, 30, 40, 60, 60, 90, 60, 75, 90]),
+        wmfRecord(0x0817, [50, 90, 90, 50, 90, 90, 10, 10]), wmfRecord(0x081A, [10, 50, 50, 90, 90, 90, 10, 10]),
+        wmfRecord(0x0830, [90, 50, 50, 10, 90, 90, 10, 10]), wmfRecord(0x061C, [10, 10, 80, 80, 20, 20]),
+        wmfRecord(0x0F43, [0x0020, 0x00CC, 0, 2, 2, 0, 0, 40, 40, 50, 50] + dib),
+        wmfRecord(0x0142, [3, 0] + dib), wmfRecord(0x012D, [2]), wmfRecord(0x041B, [60, 60, 20, 20]),
+        wmfRecord(0x0A32, [20, 10, 2, 4, 0, 0, 90, 30, 0x6948, 8, 8]),
+        wmfRecord(0x0416, [80, 80, 5, 5]), wmfRecord(0x0415, [30, 30, 20, 20]), wmfRecord(0x001E, []), wmfRecord(0x0127, [0xFFFF]),
+    ], placeable: (100, 100, 96))
+    seeds.append(FuzzSeed(name: "wmf-records", ext: "wmf", bytes: [UInt8](wmf)))
+    return seeds
+}
+
+/// Hostile metafiles, one per bug the fuzzing and the review found: each trapped, recursed without bound, allocated far
+/// more than its bytes or ran for minutes before its fix.
+func svtHostileMetafiles() -> [(name: String, ext: String, data: Data)] {
+    func f(_ v: Float) -> Int { Int(v.bitPattern) }
+    // A 2 × 2 picture header claiming 30 000 × 1 333 pixels (40 M) over a single row of data.
+    let tall = [40, 30000, 1333, 1 | 24 << 16, 0, 0, 0, 0, 0, 0] + [Int](repeating: 0, count: 22_500)
+    var region = MFBytes(); region.u32(0xDBC01002); region.u32(1)
+    for _ in 0..<100_000 { region.u32(0) }   // a run of "combine" nodes, each nesting the next
+    var bitmap = MFBytes(); bitmap.u32(0xDBC01002); bitmap.u32(1); bitmap.u32(6000); bitmap.u32(6000); bitmap.u32(24000); bitmap.u32(0x26200A); bitmap.u32(0)
+    return [
+        ("emf-infinite-sweep", "emf", emfFile([emfRecord(41, [50, 50, 20, f(0), f(.infinity)]), emfRecord(41, [50, 50, 20, f(.nan), f(1e30)])])),
+        ("emf-nested-clips", "emf", emfFile(Array(repeating: emfRecord(30, [0, 0, 90, 90]), count: 100_000) + [emfRecord(42, [10, 10, 50, 50])])),
+        ("emf-tall-dib", "emf", emfFile([emfRecord(81, [0, 0, 99, 99, 0, 0, 0, 0, 30000, 1333, 80, 40, 120, tall.count * 4 - 40, 0, 0x00CC0020, 100, 100] + tall)])),
+        ("emf-plus-deep-region", "emf", emfFile([emfPlusComment([(0x4008, 0x0400 | 1, region.bytes), (0x4035, 0x0101, [])]), emfRecord(42, [10, 10, 50, 50])])),
+        ("emf-plus-empty-bitmap", "emf", emfFile([emfPlusComment([(0x4008, 0x0500 | 1, bitmap.bytes)]), emfRecord(42, [10, 10, 50, 50])])),
+        ("wmf-many-objects", "wmf", wmfFile(Array(repeating: wmfRecord(0x00F7, []), count: 60_000), placeable: (100, 100, 96))),
+    ]
+}

@@ -202,4 +202,192 @@ func registerVectorKitTests() {
         check(left.r > 200 && right.r < 60, "linear gradient runs white → black left to right: \(left.r) \(right.r)")
         check(bitmap.near(189, 89, 255, 255, 255) && bitmap.at(180, 80).r < 80, "rounded corner left empty")
     }))
+
+    SelfTest.cases.append(("VectorKit.damagedInputNeverCrashes", {
+        VectorKitModule.install()
+        let readers: [String: EngineID] = ["pdf": .vectorKit, "ai": .aiReader, "svg": .svgReader, "svgz": .svgReader, "emf": .emfReader,
+                                           "wmf": .wmfReader, "sk": .skencilReader, "sk1": .sk1Reader]
+        let nesting: [String: [String]] = ["pdf": ["[", "<<", "q "], "ai": ["[", "<<"], "svg": ["<g>", "<svg>"], "sk": ["(", "[", "G()\n"], "sk1": ["(", "[", "G()\n"]]
+        let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Corpus/generated", isDirectory: true)
+        var seeds: [FuzzSeed] = readers.keys.sorted().compactMap { ext in
+            (try? Data(contentsOf: corpus.appendingPathComponent("sample.\(ext)"))).map { FuzzSeed(name: ext, ext: ext, bytes: [UInt8]($0), nesting: nesting[ext] ?? []) }
+        }
+        check(seeds.count == readers.count, "every corpus sample is there (\(seeds.count))")
+        seeds += svtMetafileFuzzSeeds()
+        // What the corpus samples don't reach: CSS, every paint server, masks, markers, nested viewports, `use`, text and
+        // pictures in SVG; images, functions (sampled, calculator, stitching), patterns and fonts in PDF; groups, masks,
+        // arcs and pictures in Skencil.
+        let png = ImageBridgeFixture.redPNGBase64
+        let svg = svtSVG("""
+        <style>.a { fill: #0f0 } g > rect + rect { stroke: red } @media print { rect { fill: blue } } rect:first-child { opacity: 0.5 }</style>
+        <defs>
+          <linearGradient id="lg" x1="0" x2="0.2" spreadMethod="reflect" gradientTransform="rotate(20)"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="hsl(120, 50%, 50%)"/></linearGradient>
+          <radialGradient id="rg" href="#lg" r="0.3" fx="0.2" spreadMethod="repeat"/>
+          <pattern id="p" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="skewX(10)"><rect width="4" height="4" fill="#f00"/></pattern>
+          <clipPath id="cp" clipPathUnits="objectBoundingBox"><circle cx="0.5" cy="0.5" r="0.5"/></clipPath>
+          <mask id="mk"><rect width="100" height="100" fill="url(#lg)"/></mask>
+          <marker id="m" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto"><path d="M0 0 L4 2 L0 4 z"/></marker>
+          <symbol id="s" viewBox="0 0 10 10"><use href="#u"/></symbol>
+          <g id="u"><rect class="a" width="10" height="10" rx="2"/><rect x="2" y="2" width="4" height="4"/></g>
+          <path id="tp" d="M10 90 Q50 60 90 90"/>
+        </defs>
+        <g transform="translate(5,5) rotate(10 50 50) scale(0.9)" opacity="0.8">
+          <rect x="0" y="0" width="40" height="30" fill="url(#lg)" stroke="url(#rg)" stroke-dasharray="4 2" clip-path="url(#cp)"/>
+          <ellipse cx="70" cy="20" rx="20" ry="10" fill="url(#p)" mask="url(#mk)"/>
+          <polyline points="5,50 30,60 50,45 70,70" fill="none" stroke="#000" marker-start="url(#m)" marker-mid="url(#m)" marker-end="url(#m)"/>
+          <path d="M60 50 a15 10 30 1 0 20 10 S 90 80 70 90 T 50 95 Z" fill="rgba(0,0,255,0.5)" fill-rule="evenodd"/>
+          <use href="#s" x="80" y="40" width="15" height="15"/>
+          <svg x="0" y="70" width="30" height="30" viewBox="0 0 10 10" preserveAspectRatio="xMaxYMin slice"><circle cx="5" cy="5" r="6" fill="orange"/></svg>
+          <text x="5" y="68" font-size="10" font-family="Helvetica" letter-spacing="1" text-anchor="middle">A<tspan dx="2 1" dy="-3" font-weight="bold">bc</tspan><textPath href="#tp">along</textPath></text>
+          <image x="40" y="60" width="20" height="10" href="data:image/png;base64,\(png)" preserveAspectRatio="none"/>
+          <switch><rect systemLanguage="fr" width="5" height="5"/><circle cx="95" cy="95" r="3"/></switch>
+        </g>
+        """)
+        seeds.append(FuzzSeed(name: "svg-features", ext: "svg", bytes: [UInt8](svg), nesting: ["<g>", "<svg>", "<use href=\"#u\"/>"]))
+        let pdf = svtSinglePagePDF(
+            content: """
+            q 0 0 50 50 re W n /Sh1 sh Q /Sh2 sh /Sh3 sh
+            q 20 0 0 20 5 5 cm /Im1 Do Q q 20 0 0 20 30 5 cm /Im2 Do Q q 1 0 0 1 50 0 cm /Fm1 Do Q
+            /Pattern cs /P1 scn 0 50 50 50 re f
+            BT /F1 12 Tf 2 Tr 1 0 0 1 10 80 Tm 0.5 Tc 2 Tw 90 Tz 12 TL (Hi) Tj [(A) -120 (B)] TJ T* (C) ' 1 2 (D) " ET
+            /CS1 cs 0.5 sc 60 60 20 20 re f /CS2 CS 1 SCN 1 J 2 j 4 M [3 1] 0 d 60 60 m 90 90 l 95 60 80 50 70 55 c S
+            """,
+            resources: "/Shading << /Sh1 5 0 R /Sh2 12 0 R /Sh3 13 0 R >> /XObject << /Im1 6 0 R /Im2 7 0 R /Fm1 8 0 R >> /Pattern << /P1 9 0 R >> " +
+                "/Font << /F1 10 0 R >> /ColorSpace << /CS1 [/Separation /Spot /DeviceRGB 14 0 R] /CS2 [/Indexed /DeviceRGB 1 <ff000000ff00>] >>",
+            extra: [
+                "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 50 0] /Function 11 0 R /Extend [true true] >>",
+                "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 15 0 R /Decode [1 0 0 1 0 1]",
+                "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace [/Indexed /DeviceRGB 1 <0000ffffff00>] /BitsPerComponent 1 /Mask [0 0]",
+                "/Type /XObject /Subtype /Form /BBox [0 0 50 50] /Matrix [1 0 0 1 0 0] /Group << /S /Transparency >> /Resources << >>",
+                "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10 /Resources << >>",
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 68 /Widths [600 600 600 600] /Encoding << /Differences [65 /B /A] >> /ToUnicode 16 0 R >>",
+                "/FunctionType 0 /Domain [0 1] /Range [0 1 0 1 0 1] /Size [2] /BitsPerSample 8",
+                "<< /ShadingType 3 /ColorSpace /DeviceGray /Coords [50 50 0 50 50 40] /Function << /FunctionType 3 /Domain [0 1] /Functions [<< /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 2 >> << /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>] /Bounds [0.5] /Encode [0 1 0 1] >> >>",
+                "<< /ShadingType 4 /ColorSpace /DeviceRGB /Background [0 1 0] >>",
+                "/FunctionType 4 /Domain [0 1] /Range [0 1 0 1 0 1]",
+                "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8",
+                "/Length1 0",
+            ],
+            extraStreams: [6: "\u{00}\u{00}\u{ff}\u{ff}\u{00}\u{00}\u{00}\u{ff}\u{00}\u{ff}\u{ff}\u{ff}", 7: "\u{40}\u{80}",
+                           8: "0 1 0 rg 5 5 40 40 re f", 9: "1 0.5 0 rg 0 0 5 5 re f", 11: "\u{00}\u{ff}\u{80}\u{ff}\u{00}\u{40}",
+                           14: "{ dup 0.5 mul exch 1 exch sub 2 copy add 3 1 roll }", 15: "\u{ff}\u{80}\u{40}\u{00}",
+                           16: "/CIDInit /ProcSet findresource begin 1 begincodespacerange <00> <ff> endcodespacerange 2 beginbfchar <41> <0042> <42> <0041> endbfchar 1 beginbfrange <43> <44> <0063> endbfrange endcmap"])
+        seeds.append(FuzzSeed(name: "pdf-features", ext: "pdf", bytes: [UInt8](pdf), nesting: ["[", "<<", "q ", "{ "]))
+        let sk = """
+        ##Sketch 1 2
+        document()
+        layout('letter',1)
+        layer('Layer 1',1,1,0,0,(0,0,0))
+        bm(1)
+        \(png)
+        -
+        im((20,0,0,20,10,10),1)
+        G()
+        M()
+        b()
+        bs(0,0,0)
+        bs(100,0,0)
+        bs(50,80,0)
+        bC()
+        fp((0,0.5,0))
+        e(30,0,0,30,50,40,0.5,2.5,2)
+        e(30,0,0,30,50,40,0,3,1)
+        M_()
+        B()
+        fp((1,0,0))
+        r(20,0,0,20,200,200,0.3,0.3)
+        B_()
+        G_()
+        lc(3)
+        lj(2)
+        ld((4,1,1,1))
+        la1(None)
+        gl([(0,(1,1,1)),(0.5,(0,0,1)),(1,(0,0,0))])
+        pgr(0.3,0.7)
+        r(50,0,0,50,300,300)
+        dstyle('s')
+        ds('s')
+        Fn('Helvetica-Bold')
+        Fs(18)
+        txt('tab\\there \\u00e9\\101',(0.9,0.1,-0.1,0.9,100,500),1,2)
+        phs((1,0,0),(0,0,1),0,1,10,0)
+        guidelayer('Guides',1,0,0,1,(0,0,1))
+        """
+        seeds.append(FuzzSeed(name: "sk-features", ext: "sk", bytes: Array(sk.utf8), nesting: ["(", "[", "G()\n", "M()\n"]))
+
+        let dir = scratch.appendingPathComponent("vectorkit-fuzz", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        @MainActor func read(_ url: URL, _ ext: String) async throws -> StepOutput? {
+            let format = FormatID(ext)
+            guard let id = readers[ext], let converter = Services.converters.converter(for: id) else { return nil }
+            let context = StepContext(workFolder: dir, source: url, sourceFormat: format, targetFormat: "pdf")
+            return try await converter.run(Step(id, .format(format), .vectorDocument), input: .file(url), context: context)
+        }
+        let ran = fuzzNeverCrashes("VectorKit.damagedInputNeverCrashes", seeds: seeds, count: 130) { url, seed in _ = try await read(url, seed.ext) }
+        check(ran == seeds.count * 130, "every damaged input was handled without a crash (\(ran))")
+
+        // One hostile file per bug found: each trapped, recursed without bound, allocated far more than its bytes or ran
+        // for minutes before its fix. Read once each; finishing is the check.
+        let huge = "1000000000000000000000000000000"
+        let calculator = "/FunctionType 4 /Domain [0 1] /Range [0 1 0 1 0 1]"
+        var hostile = svtHostileMetafiles()
+        hostile += [
+            ("pdf-function-sizes", "pdf", svtSinglePagePDF(content: "/Sh1 sh /Sh2 sh /Sh3 sh /Sh4 sh", resources: "/Shading << /Sh1 5 0 R /Sh2 6 0 R /Sh3 7 0 R /Sh4 8 0 R >>", extra: [
+                "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 50 0] /Function 9 0 R >>",
+                "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 50 0] /Function 10 0 R >>",
+                "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 50 0] /Function 11 0 R >>",
+                "<< /ShadingType 2 /ColorSpace /DeviceGray /Coords [0 0 50 0] /Domain [0] /Function << /FunctionType 2 /Domain [0] /C0 [0] /C1 [1] /N 1 >> >>",
+                "/FunctionType 0 /Domain [0 1] /Range [0 1 0 1 0 1] /Size [\(huge)] /BitsPerSample 8",
+                "<< /FunctionType 3 /Domain [0 1] /Functions [10 0 R] /Encode [0 1] >>",
+                calculator,
+            ], extraStreams: [9: "abc", 11: "{ 1 " + (0..<31).map { "\(1 << $0) copy " }.joined() + "}"])),
+            ("pdf-deep-calculator", "pdf", svtSinglePagePDF(content: "/Sh1 sh", resources: "/Shading << /Sh1 5 0 R >>", extra: [
+                "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 50 0] /Function 6 0 R >>", calculator,
+            ], extraStreams: [6: String(repeating: "{ ", count: 100_000)])),
+            ("pdf-image-sizes", "pdf", svtSinglePagePDF(content: "q 10 0 0 10 0 0 cm /Im1 Do /Im2 Do Q", resources: "/XObject << /Im1 5 0 R /Im2 6 0 R >>", extra: [
+                "/Type /XObject /Subtype /Image /Width 60000 /Height 1000 /ColorSpace /DeviceRGB /BitsPerComponent 8",
+                "/Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8 /SMask 7 0 R",
+                "/Type /XObject /Subtype /Image /Width 4294967296 /Height 4294967296 /ColorSpace /DeviceGray /BitsPerComponent 8",
+            ], extraStreams: [5: "abcd", 6: "abcd", 7: "abcd"])),
+            ("pdf-tiny-tiles", "pdf", svtSinglePagePDF(content: "/Pattern cs /P1 scn 0 0 100 100 re f", resources: "/Pattern << /P1 5 0 R >>", extra: [
+                "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 0.000000000000000000000000000001 /YStep 1 /Resources << >>",
+            ], extraStreams: [5: "0 0 5 5 re f"])),
+            ("pdf-huge-operands", "pdf", svtSinglePagePDF(
+                content: "\(huge) Tr /CS1 cs \(huge) sc 0 0 10 10 re f BT /F1 12 Tf (AB) Tj /F2 12 Tf <00410042> Tj ET",
+                resources: "/ColorSpace << /CS1 [/Indexed /DeviceRGB 1 <ff000000ff00>] >> /Font << /F1 5 0 R /F2 6 0 R >>", extra: [
+                    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar \(huge) /Widths [500] /Encoding << /Differences [\(huge) /A /B] >> >>",
+                    "<< /Type /Font /Subtype /Type0 /BaseFont /Helvetica /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Helvetica /W [\(huge) [500] 0 \(huge) 500] >>] >>",
+                ])),
+            ("pdf-unclosed-clips", "pdf", svtSinglePagePDF(content: String(repeating: "0 0 100 100 re W n ", count: 50_000) + "0 0 1 rg 0 0 50 50 re f")),
+            ("sk-deep-tuple", "sk", Data(("##Sketch 1 2\nfp(" + String(repeating: "(", count: 50_000) + "\n").utf8)),
+            ("sk-huge-numbers", "sk", Data("##Sketch 1 2\nlayer('L',1,1,0,0,(0,0,0))\nlc(1e300)\nlj(-1e300)\ne(30,0,0,30,50,40,0,3,1e300)\nim((1,0,0,1,0,0),1e300)\nr(10,0,0,10,0,0)\n".utf8)),
+            ("sk-deep-groups", "sk", Data(("##Sketch 1 2\nlayer('L',1,1,0,0,(0,0,0))\n" + String(repeating: "G()\n", count: 50_000) + "r(10,0,0,10,0,0)\n").utf8)),
+            ("svg-tiny-pattern", "svg", svtSVG("<defs><pattern id=\"p\" width=\"1e-300\" height=\"1e-300\" patternUnits=\"userSpaceOnUse\"><rect width=\"1\" height=\"1\"/></pattern></defs><rect width=\"100\" height=\"100\" fill=\"url(#p)\"/>")),
+            ("svg-open-style", "svg", svtSVG("<style>rect{</style><rect width=\"10\" height=\"10\"/>")),
+            ("svg-steep-gradient", "svg", svtSVG("<defs><linearGradient id=\"g\" x2=\"1e-150\" spreadMethod=\"reflect\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient></defs><rect width=\"100\" height=\"100\" fill=\"url(#g)\"/>")),
+            ("svg-huge-text-path", "svg", svtSVG("<path id=\"tp\" d=\"M0 0 C 1e300 1e300 -1e300 1e300 5 5\"/><text font-size=\"10\"><textPath href=\"#tp\">abc</textPath></text>")),
+            ("svg-infinite-size", "svg", Data("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1e999\" height=\"1e999\"><rect width=\"10\" height=\"10\"/></svg>".utf8)),
+            ("svg-deep-nesting", "svg", svtSVG("<defs><clipPath id=\"c\"><rect width=\"90\" height=\"90\"/></clipPath></defs>"
+                                                 + String(repeating: "<svg width=\"100\" height=\"100\"><g opacity=\"0.9\" clip-path=\"url(#c)\">", count: 195) + "<rect width=\"10\" height=\"10\"/>"
+                                                 + String(repeating: "</g></svg>", count: 195))),
+            ("svg-huge-font", "svg", svtSVG("<text x=\"5\" y=\"50\" font-size=\"1e999\" letter-spacing=\"1e308\">Hi</text><text x=\"5\" y=\"50\" font-size=\"1e300\">Hi</text>")),
+            ("svg-use-fan-out", "svg", svtSVG("<defs>" + (0..<8).map { level in "<g id=\"l\(level)\">" + String(repeating: "<use href=\"#l\(level + 1)\"/>", count: 10) + "</g>" }.joined()
+                                               + "<rect id=\"l8\" width=\"1\" height=\"1\"/></defs><use href=\"#l0\"/>")),
+        ]
+        for (name, ext, data) in hostile {
+            let url = dir.appendingPathComponent("hostile.\(ext)")
+            guard (try? data.write(to: url)) != nil else { check(false, "\(name) written"); continue }
+            if Fuzz.trace { FileHandle.standardError.write(Data("hostile \(name)\n".utf8)) }
+            switch complete(30, { try await read(url, ext) }) {
+            case nil: check(false, "\(name) did not finish in 30 s")
+            case .success(let out)?:
+                // Every page that comes out has a size the steps after a reader can turn into pixels.
+                if case .vector(let doc)? = out?.value {
+                    check(doc.pages.allSatisfy { $0.size.width.isFinite && $0.size.height.isFinite && max($0.size.width, $0.size.height) <= 1e6 }, "\(name): sane page sizes")
+                }
+            case .failure?: break
+            }
+        }
+    }))
 }
