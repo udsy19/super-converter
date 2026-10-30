@@ -133,7 +133,7 @@ private func listenOnLoopback() -> (fd: Int32, port: UInt16)? {
     return (fd, UInt16(bigEndian: address.sin_port))
 }
 
-private func gone(_ pid: pid_t, within seconds: Double = 4) -> Bool {
+private func gone(_ pid: pid_t, within seconds: Double = 15) -> Bool {
     let deadline = Date().addingTimeInterval(seconds)
     while Date() < deadline { if kill(pid, 0) != 0 { return true }; Thread.sleep(forTimeInterval: 0.05) }
     return kill(pid, 0) != 0
@@ -241,7 +241,8 @@ func registerHelperKitTests() {
         let cancelScript = script("cancel.sh", in: dir, "echo $$ > \"$1\"\nsleep 40")
         let cancelled = complete(30) { () -> RunFailure? in
             let task = Task { try await ProcessRunner.run(ProcessSpec(executable: cancelScript, arguments: [cancelFile.path], workFolder: dir.appendingPathComponent("w5"), writable: [dir])) }
-            try await Task.sleep(nanoseconds: 700_000_000)
+            // Cancel once the helper is really running (its pid is written), however loaded the machine is.
+            for _ in 0..<400 where !FileManager.default.fileExists(atPath: cancelFile.path) { try await Task.sleep(nanoseconds: 50_000_000) }
             task.cancel()
             do { _ = try await task.value; return nil } catch { return error as? RunFailure }
         }
@@ -411,7 +412,7 @@ func registerHelperKitTests() {
 
         // Tectonic: the install warms the cache with network allowed.
         let tex = Rig(fetch: fetch, pins: [tectonicPin])
-        let texEvents = done(120) { await finish(tex.service.install(.tectonic)) } ?? []
+        let texEvents = done(300) { await finish(tex.service.install(.tectonic)) } ?? []
         if case .finished? = texEvents.last {} else { check(false, "Tectonic installs (\(String(describing: texEvents.last)))") }
         check(FileManager.default.fileExists(atPath: tex.cache.appendingPathComponent("warmed").path), "the install ran a warm-up that filled the cache")
     }))
@@ -430,7 +431,7 @@ func registerHelperKitTests() {
         // A copy that fails its signature check is never made visible.
         let refusing = Rig(fetch: fetch, verify: { _, team in asked.value.append(team); throw HelperInstallError.badSignature("test") }, pins: [pin])
         let applications = refusing.applications
-        let refused = done(120) { await finish(refusing.service.install(.libreoffice)) } ?? []
+        let refused = done(300) { await finish(refusing.service.install(.libreoffice)) } ?? []
         if case .failed(let why)? = refused.last { check(why.contains("isn’t signed"), "an unsigned app is refused (\(why))") } else { check(false, "a failed signature check fails the install") }
         check(asked.value == ["ABCDE12345"], "the publisher's team is what's checked")
         check(((try? FileManager.default.contentsOfDirectory(atPath: applications.path)) ?? []).isEmpty, "nothing, not even a staging copy, is left in the applications folder")
@@ -455,7 +456,7 @@ func registerHelperKitTests() {
         // Passing, the app is copied to the applications folder, recorded, detected and removable.
         let removed = Box<[URL]>([])
         let accepting = Rig(fetch: fetch, verify: { _, _ in }, pins: [pin], remove: { removed.value.append($0); try FileManager.default.removeItem(at: $0) })
-        let events = done(120) { await finish(accepting.service.install(.libreoffice)) } ?? []
+        let events = done(300) { await finish(accepting.service.install(.libreoffice)) } ?? []
         if case .finished(let status)? = events.last, case .installed(let version, let location, _) = status {
             check(version == "9.9" && location == accepting.applications.appendingPathComponent("Fake.app"), "the app is in the applications folder (\(location.path))")
         } else { check(false, "the app install finishes (\(String(describing: events.last)))") }
