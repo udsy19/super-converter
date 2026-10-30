@@ -571,7 +571,7 @@ func registerCADKitTests() {
                 + entity("INSERT", [(2, "NODE"), (10, "5"), (20, "5"), (30, "0")]))
             + block("*Paper_Space", "")
         var body = frame
-        body += entity("INSERT", [(2, "NODE"), (10, "10"), (20, "10"), (30, "0"), (41, "2"), (42, "2"), (50, "30"), (70, "4"), (71, "2"), (44, "8"), (45, "8")])
+        body += entity("INSERT", [(2, "NODE"), (10, "10"), (20, "10"), (30, "0"), (41, "2"), (42, "2"), (50, "30"), (70, "1"), (71, "1"), (44, "8"), (45, "8")])
         body += entity("INSERT", [(2, "LEAF"), (66, "1"), (10, "1"), (20, "1"), (30, "0")]) + entity("ATTRIB", [(10, "1"), (20, "1"), (40, "1"), (1, "Tag"), (70, "0")]) + rec("SEQEND", [(8, "0")])
         body += entity("ARC", [(10, "0"), (20, "0"), (40, "5"), (50, "30"), (51, "120"), (210, "0.6"), (220, "0"), (230, "0.8")])
         body += entity("LWPOLYLINE", [(90, "3"), (70, "1"), (10, "0"), (20, "0"), (42, "0.5"), (10, "4"), (20, "0"), (10, "4"), (20, "3")])
@@ -612,12 +612,12 @@ func registerCADKitTests() {
         let dir = scratch.appendingPathComponent("cadkit-fuzz", isDirectory: true)
         // All layouts, so the viewport's view of model space is plotted as well as the sheet.
         let options = OptionValues(["allLayouts": true])
-        let ran = fuzzNeverCrashes("CADKit.damagedInputNeverCrashes", seeds: seeds, count: 30) { url, _ in
+        let ran = fuzzNeverCrashes("CADKit.damagedInputNeverCrashes", seeds: seeds, count: 150) { url, _ in
             let context = StepContext(workFolder: dir, source: url, sourceFormat: "dxf", targetFormat: "svg", options: options)
             let read = try await reader.run(Step(.dxfReader, .format("dxf"), .model(.cadDrawing)), input: .file(url), context: context)
             _ = try await plotter.run(Step(.cadKit, .model(.cadDrawing), .model(.vectorDocument)), input: read.value, context: context)
         }
-        check(ran == 30 * seeds.count && seeds.count == 3, "every damaged input was handled without a crash (\(ran))")
+        check(ran == 150 * seeds.count && seeds.count == 3, "every damaged input was handled without a crash (\(ran))")
     }))
 }
 
