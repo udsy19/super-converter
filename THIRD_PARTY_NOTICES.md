@@ -6624,7 +6624,10 @@ folder's `README.md`, and each folder carries the full licence texts.
 
 **MathJax** 3.2.2 (`mathjax-full`), Apache License 2.0 (`MathJax/LICENSE`), Copyright (c) 2009–2022 The MathJax
 Consortium; with **mhchemParser** 4.2.1, Apache License 2.0, Copyright (c) 2015–2023 Martin Hensel. Bundled into one
-script with MathKit's entry point (`entry.js`); the bundle keeps their licence notices.
+script with MathKit's entry point (`entry.js`, which adapts MathJax's `SVGmfrac.makeFraction`, Apache-2.0); the
+bundle keeps their licence notices. `tex-metrics.js` lists the character widths, heights, depths and italic
+corrections of Donald E. Knuth's Computer Modern fonts (cmr, cmmi and cmsy at 10, 7 and 5 pt) as TeX reads them from
+their TFM files, made by `scripts/make-tex-metrics.py`; no font program is included.
 
 ### Hyphenation patterns (`Resources/Hyphenation/`)
 

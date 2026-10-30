@@ -33,8 +33,8 @@ final class FontResolver {
         return f
     }
 
-    /// The upright or italic text font at `size` (math's `\text`).
-    func textFont(size: Double, bold: Bool, italic: Bool) -> CTFont {
-        font(for: RunStyle(family: .roman, bold: bold, shape: italic ? .italic : .upright, size: size))
+    /// The upright or italic text font at `size`, or the typewriter one (math's `\text`, `\textbf`, `\texttt`).
+    func textFont(size: Double, bold: Bool, italic: Bool, mono: Bool) -> CTFont {
+        font(for: RunStyle(family: mono ? .mono : .roman, bold: bold, shape: italic ? .italic : .upright, size: size))
     }
 }

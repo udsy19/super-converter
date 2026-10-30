@@ -544,7 +544,7 @@ final class Composer {
     /// the formula), the formula centred (scaled down if wider than the measure), its `\tag` at the right margin.
     func displayMath(_ tex: String, _ ctx: BlockContext) {
         let size = style.size(ctx.size)
-        let (box, tag) = math.box(tex, display: true, size: size.size)
+        let (box, tag) = math.display(tex, size: size.size)
         let width = lineWidth(ctx)
         let tagBox = tag.map { setter.natural([.text($0, runStyle(ctx))]) }
         var formula = box

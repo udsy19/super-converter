@@ -133,12 +133,25 @@ extension Check {
 
     /// The last word of every line of text, in reading order: of a line with a word of three letters or more, the last
     /// word longer than one character. TeX's formulas extract as glyph fragments — "∫∞", "k=1", a lone "β" — where
-    /// TypesetKit draws them as paths with their TeX as `/ActualText`, so neither side counts them.
+    /// TypesetKit draws them as paths with their TeX as `/ActualText`, so neither side counts them. PDFKit splits a line
+    /// at a raised or lowered fragment (a numerator, a superscript): a piece whose middle is within 0.6 of the smaller
+    /// height of the line's first piece is part of that line (the rows of a display, a line apart, are not), read
+    /// left to right.
     private static func lineEnds(_ doc: PDFDocument) -> [String] {
         (0..<doc.pageCount).flatMap { i -> [String] in
             guard let page = doc.page(at: i), let all = page.selection(for: page.bounds(for: .mediaBox)) else { return [] }
-            return all.selectionsByLine().compactMap { line -> String? in
-                let w = words((line.string ?? "").precomposedStringWithCompatibilityMapping)   // ligatures decomposed
+            var lines: [(pieces: [(text: String, minX: CGFloat)], first: CGRect)] = []
+            for piece in all.selectionsByLine() {
+                let b = piece.bounds(for: page), text = piece.string ?? ""
+                if let first = lines.last?.first, abs(first.midY - b.midY) < 0.6 * min(first.height, b.height) {
+                    lines[lines.count - 1].pieces.append((text, b.minX))
+                } else {
+                    lines.append(([(text, b.minX)], b))
+                }
+            }
+            return lines.compactMap { line -> String? in
+                let text = line.pieces.sorted { $0.minX < $1.minX }.map(\.text).joined(separator: " ")
+                let w = words(text.precomposedStringWithCompatibilityMapping)   // ligatures decomposed
                 return w.contains { $0.filter(\.isLetter).count >= 3 } ? w.last { $0.count > 1 } : nil
             }
         }

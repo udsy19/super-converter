@@ -8,13 +8,27 @@ public struct MathRendering: Sendable {
     public var width: Double
     public var height: Double
     public var depth: Double
-    /// MathJax's SVG as vector nodes: Computer Modern outlines as filled paths, rules, and the odd character its fonts
-    /// lack as text.
+    /// MathJax's SVG as vector nodes: Computer Modern outlines as filled paths, rules, and `\text{…}` and the odd
+    /// character its fonts lack as text (in a Times face of the style asked for; TypesetKit uses its text font).
     public var nodes: [VectorNode]
     /// Undefined macros (set in red, as MathJax's noundefined does) and parse errors (the source set in red).
     public var problems: [String]
     /// The equation number from `\tag{…}`, as printed: "(3)", or the text of `\tag*{…}`.
     public var tag: String?
+    /// The glue between the atoms of the outer list and where a line may break, left to right (TeXbook ch. 18): an
+    /// inline formula stretches, shrinks and breaks with its paragraph as TeX's does.
+    public var breaks: [MathBreak] = []
+}
+
+/// A space between two atoms of a formula's outer list, in points: it starts at `x`, is `width` wide and stretches and
+/// shrinks by the amounts of `\medmuskip` or `\thickmuskip`; `penalty` is the cost of a line break there (`\relpenalty`,
+/// `\binoppenalty`), 10000 where TeX does not break.
+public struct MathBreak: Sendable, Equatable {
+    public var x: Double
+    public var width: Double
+    public var stretch: Double
+    public var shrink: Double
+    public var penalty: Int
 }
 
 /// TeX math through MathJax 3 in JavaScriptCore (quality §3.4): TeX input jax, SVG output jax, lite DOM adaptor — no
@@ -92,9 +106,12 @@ public final class MathJax: @unchecked Sendable {
             default: break
             }
         }
+        let breaks = (result["breaks"] as? [[Double]] ?? []).filter { $0.count == 5 }.map {
+            MathBreak(x: $0[0] * em, width: $0[1] * em, stretch: $0[2] * em, shrink: $0[3] * em, penalty: Int($0[4]))
+        }
         return MathRendering(width: (result["w"] as? Double ?? 0) * em, height: (result["h"] as? Double ?? 0) * em,
                              depth: (result["d"] as? Double ?? 0) * em, nodes: nodes,
-                             problems: result["undefined"] as? [String] ?? [], tag: tag)
+                             problems: result["undefined"] as? [String] ?? [], tag: tag, breaks: breaks)
     }
 
     /// A formula MathJax cannot parse: its source in red monospace, as TeX's error recovery would leave it visible.

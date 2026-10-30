@@ -112,10 +112,10 @@ public final class Typesetter {
 
     private func engines(_ style: StyleSheet, latex: Bool, sans: Bool, language: String?, hyphenate: Bool) -> Engines {
         let fonts = FontResolver(library: library, latex: latex, sans: sans, normalSize: style.normal.size)
-        let math = MathBridge()
+        let math = MathBridge(fonts: fonts)
         let setter = ParagraphSetter(fonts: fonts, hyphenator: hyphenate ? Hyphenator(language: language) : nil,
                                      conventions: latex ? LanguageConventions(language: language) : .none,
-                                     mathBox: { tex, s in math.box(tex, display: false, size: s.size).box })
+                                     mathPieces: { tex, s in math.inline(tex, size: s.size) })
         return Engines(fonts: fonts, math: math, setter: setter)
     }
 
