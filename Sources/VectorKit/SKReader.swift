@@ -63,6 +63,8 @@ public enum SKReader {
         var styles: [String: Style] = [:]
         /// Open containers (layers, groups, masks); the bottom one is the page.
         var stack: [(kind: String, nodes: [VectorNode])] = [("page", [])]
+        /// Containers opened past `maxGroupNesting`: their objects join the container they would sit in.
+        var flattened = 0
         var pageSize = VectorSize(width: 595.276, height: 841.89)
         var path: [PathSegment] = []
         var inBezier = false
@@ -104,8 +106,8 @@ public enum SKReader {
             case "lp": style.line = a.first.flatMap(colour).map { .solid($0) }
             case "le": style.line = nil
             case "lw": style.lineWidth = a.first?.number ?? 0
-            case "lc": style.cap = [1: .butt, 2: .round, 3: .square][Int(a.first?.number ?? 1)] ?? .butt
-            case "lj": style.join = [0: .miter, 1: .round, 2: .bevel][Int(a.first?.number ?? 0)] ?? .miter
+            case "lc": style.cap = [1: .butt, 2: .round, 3: .square][a.first?.number?.checkedInt ?? 1] ?? .butt
+            case "lj": style.join = [0: .miter, 1: .round, 2: .bevel][a.first?.number?.checkedInt ?? 0] ?? .miter
             case "ld": style.dash = a.first?.numbers ?? []
             case "la1", "la2": lossNotes.insert(LossNote(.otherLoss, detail: "Arrowheads weren’t drawn"))
             case "Fn": style.fontName = a.first?.string ?? style.fontName
@@ -137,8 +139,8 @@ public enum SKReader {
             case "eps":
                 lossNotes.insert(LossNote(.imagesDropped, detail: "An embedded EPS picture was left out"))
                 style = Style()
-            case "G", "M", "B", "Bi": stack.append((call.name, []))
-            case "G_", "M_", "B_", "Bi_": closeGroup(call.name.dropLast().description)
+            case "G", "M", "B", "Bi": if stack.count < maxGroupNesting { stack.append((call.name, [])) } else { flattened += 1 }
+            case "G_", "M_", "B_", "Bi_": if flattened > 0 { flattened -= 1 } else { closeGroup(call.name.dropLast().description) }
             default: warnings.append("“\(call.name)” isn’t read")
             }
         }
@@ -216,7 +218,7 @@ public enum SKReader {
                 if sweep < 0 { sweep += 2 * .pi }
                 let from = VectorPoint(cos(start), sin(start)), to = VectorPoint(cos(start + sweep), sin(start + sweep))
                 unit = [.move(from)] + PathBuilder.arc(from: from, to: to, rx: 1, ry: 1, rotation: 0, large: sweep > .pi, sweep: true)
-                let kind = a.count > 8 ? Int(a[8].number ?? 0) : 0
+                let kind = a.count > 8 ? a[8].number?.checkedInt ?? 0 : 0
                 if kind == 2 { unit += [.line(VectorPoint(0, 0)), .close] } else if kind == 1 { unit.append(.close) }
                 if kind == 0 { style.fill = nil; style.fillGradientKind = nil }
             } else {
@@ -296,6 +298,7 @@ public enum SKReader {
                 let top = stack.removeLast()
                 stack[stack.count - 1].nodes.append(contentsOf: top.nodes)
             }
+            if kind == "page" { flattened = 0 }
         }
 
         mutating func closeAll() { closeTo("page") }
@@ -379,7 +382,7 @@ indirect enum SKValue: Equatable {
     /// An object id written as a number or a string.
     var idKey: String? {
         switch self {
-        case .number(let n): String(Int(n))
+        case .number(let n): n.checkedInt.map { String($0) }
         case .string(let s): s
         default: nil
         }
@@ -407,7 +410,7 @@ struct SKCall {
             var j = i
             while j < chars.count, CharacterSet.alphanumerics.contains(chars[j]) || chars[j] == "_" { j += 1 }
             if j > i, j < chars.count, chars[j] == "=", CharacterSet.letters.contains(chars[i]) { i = j + 1 }
-            guard let value = parseValue(chars, &i) else { return nil }
+            guard let value = parseValue(chars, &i, depth: 0) else { return nil }
             args.append(value)
             skipSpace(chars, &i)
             if i < chars.count, chars[i] == "," { i += 1 }
@@ -417,11 +420,13 @@ struct SKCall {
 
     private static func skipSpace(_ c: [Unicode.Scalar], _ i: inout Int) { while i < c.count, c[i] == " " || c[i] == "\t" { i += 1 } }
 
-    private static func parseValue(_ c: [Unicode.Scalar], _ i: inout Int) -> SKValue? {
+    private static func parseValue(_ c: [Unicode.Scalar], _ i: inout Int, depth: Int) -> SKValue? {
         skipSpace(c, &i)
         guard i < c.count else { return nil }
         let ch = c[i]
         if ch == "(" || ch == "[" {
+            // Real files nest tuples a few levels (gradient stops, sK1 colours); deeper is damage.
+            guard depth < 32 else { return nil }
             let close: Unicode.Scalar = ch == "(" ? ")" : "]"
             i += 1
             var items: [SKValue] = []
@@ -429,7 +434,7 @@ struct SKCall {
                 skipSpace(c, &i)
                 guard i < c.count else { return nil }
                 if c[i] == close { i += 1; break }
-                guard let v = parseValue(c, &i) else { return nil }
+                guard let v = parseValue(c, &i, depth: depth + 1) else { return nil }
                 items.append(v)
                 skipSpace(c, &i)
                 if i < c.count, c[i] == "," { i += 1 }
