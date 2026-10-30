@@ -2,7 +2,7 @@ import AppKit
 import Compression
 import SuperConverterCore
 import VectorKit
-import XPSKit
+@testable import XPSKit
 
 // XPSKit's checks (WP-V): packages built here (by hand and through the writer), read back and compared by rendered pixels.
 // Renders go to $SUPERCONVERTER_SELFTEST_RENDERS when it is set, so they can be looked at.
@@ -49,7 +49,7 @@ private let seqXML = """
 """
 
 /// A one-page package around `page` (the inner XML of a 200 × 200 px FixedPage) plus extra parts.
-private func handPackage(_ page: String, extra: [(String, Data)] = [], width: Int = 200, height: Int = 200, rels: String = relsXML) -> Data {
+private func handPackage(_ page: String, extra: [(String, Data)] = [], width: String = "200", height: String = "200", rels: String = relsXML) -> Data {
     let fpage = "<FixedPage xmlns=\"http://schemas.microsoft.com/xps/2005/06\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" Width=\"\(width)\" Height=\"\(height)\">\(page)</FixedPage>"
     return makeZip([("[Content_Types].xml", xpsText("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>")),
                     ("_rels/.rels", xpsText(rels)), ("FixedDocumentSequence.fdseq", xpsText(seqXML)),
@@ -266,5 +266,79 @@ func registerXPSKitTests() {
         _ = try? XPSReader.read(data: handPackage(deep))
         let junk = handPackage("<Path Data=\"M 1,2 L oops C\" Stroke=\"nonsense\"/><Glyphs UnicodeString=\"x\"/><Path Data=\"F1\"/>")
         check((try? XPSReader.read(data: junk)) != nil, "bad values are skipped, not fatal")
+    }))
+
+    SelfTest.cases.append(("XPSKit.damagedInputNeverCrashes", {
+        XPSKitModule.install()
+        let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Corpus/generated/sample.xps")
+        // Resources inline, on a canvas and in a dictionary part of their own; nested canvases; every brush and geometry form.
+        let page = """
+        <FixedPage.Resources><ResourceDictionary Source="/Resources/dict.xaml"><SolidColorBrush x:Key="b" Color="#FF0000FF"/><PathGeometry x:Key="g" Figures="M 100,10 L 140,10 140,50 100,50 Z"/><MatrixTransform x:Key="m" Matrix="1,0,0,1,5,5"/></ResourceDictionary></FixedPage.Resources>
+        <Path Data="F1 M 10,10 h 40 v 40 h -40 z m 5,5 c 1,2 3,4 5,6 s 1,1 2,2 q 3,3 4,4 t 5,5 Z" Fill="{StaticResource b}" RenderTransform="{StaticResource m}"/>
+        <Path Data="{StaticResource g}" Fill="{StaticResource far}"/>
+        <Path Data="M 10,70 A 20,20 0 1 1 50,70 A 20,20 0 1 1 10,70 Z" Fill="sc#1,0,1,0" Opacity="0.5"/>
+        <Path Data="M 70,60 L 130,60 130,100 70,100 Z" Stroke="ContextColor /c.icc 1,0.5,0.5,0.5" StrokeThickness="4" StrokeDashArray="3 1" StrokeDashOffset="1" StrokeLineJoin="Bevel" StrokeStartLineCap="Triangle" StrokeMiterLimit="2"><Path.Fill>
+          <LinearGradientBrush MappingMode="RelativeToBoundingBox" StartPoint="0,0" EndPoint="1,0" SpreadMethod="Reflect"><LinearGradientBrush.Transform><MatrixTransform Matrix="1,0.5,0,1,0,0"/></LinearGradientBrush.Transform><LinearGradientBrush.GradientStops><GradientStop Color="#FFFF0000" Offset="0"/><GradientStop Color="#800000FF" Offset="1"/></LinearGradientBrush.GradientStops></LinearGradientBrush></Path.Fill></Path>
+        <Canvas RenderTransform="0,1,-1,0,190,110" Clip="M 0,0 L 50,0 50,50 Z"><Canvas.Resources><ResourceDictionary><SolidColorBrush x:Key="b" Color="#FF00AAAA"/></ResourceDictionary></Canvas.Resources>
+          <Canvas Opacity="0.7"><Path Data="M 0,0 L 40,0 L 40,20 L 0,20 Z" Fill="{StaticResource b}"/></Canvas></Canvas>
+        <Path Data="M 10,120 L 60,120 60,170 10,170 Z"><Path.Fill><ImageBrush ImageSource="/Resources/o.png" Viewbox="0,0,1,1" Viewport="0,0,0.25,0.25" ViewboxUnits="RelativeToBoundingBox" ViewportUnits="RelativeToBoundingBox" TileMode="Tile"/></Path.Fill></Path>
+        <Path Stroke="#FF000000"><Path.Data><PathGeometry FillRule="NonZero"><PathGeometry.Transform><MatrixTransform Matrix="1,0,0,1,0,10"/></PathGeometry.Transform><PathFigure StartPoint="150,150" IsClosed="true"><PolyLineSegment Points="160,150 160,160"/><PolyBezierSegment Points="170,170 180,160 190,170"/><PolyQuadraticBezierSegment Points="195,180 190,190"/><ArcSegment Point="150,190" Size="20,10" RotationAngle="15" IsLargeArc="true" SweepDirection="Clockwise"/></PathFigure></PathGeometry></Path.Data><Path.OpacityMask><SolidColorBrush Color="#80000000"/></Path.OpacityMask></Path>
+        <Path Data="M 0,180 L 20,180 20,200 Z"><Path.Fill><RadialGradientBrush Center="0.5,0.5" GradientOrigin="0.3,0.3" RadiusX="0.5" RadiusY="0.3" MappingMode="RelativeToBoundingBox"><RadialGradientBrush.GradientStops><GradientStop Color="#FFFFFFFF" Offset="0"/><GradientStop Color="#FF000000" Offset="1"/></RadialGradientBrush.GradientStops></RadialGradientBrush></Path.Fill></Path>
+        <Path Data="M 30,180 L 50,180 50,200 Z"><Path.Fill><VisualBrush/></Path.Fill></Path>
+        <Glyphs UnicodeString="Hi" FontUri="/Resources/Fonts/Missing.ttf" FontRenderingEmSize="30" OriginX="130" OriginY="150" BidiLevel="1" Indices="43,60;44" Fill="#FF000000" NavigateUri="http://example.com"/>
+        """
+        let dict = "<ResourceDictionary xmlns=\"http://schemas.microsoft.com/xps/2005/06\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><SolidColorBrush x:Key=\"far\" Color=\"#FF808000\"/></ResourceDictionary>"
+        var seeds: [FuzzSeed] = []
+        let packages: [(String, Data?)] = [("sample", try? Data(contentsOf: corpus)),
+                                            ("features", handPackage(page, extra: [("Resources/o.png", png(255, 128, 0)), ("Resources/dict.xaml", xpsText(dict))]))]
+        for (name, data) in packages {
+            guard let data, let zip = try? ZipReader(data) else { check(false, "the \(name) package opens"); continue }
+            let entries = zip.names.compactMap { n in (try? zip.read(n)).map { (path: n, bytes: [UInt8]($0)) } }
+            let bytes = [UInt8](data)
+            // Most inputs damage one part inside an intact package, so the XML and value parsers meet it; the rest damage the
+            // package's own bytes, for the ZIP reader.
+            seeds.append(FuzzSeed(name: name, ext: "xps", bytes: bytes, mutate: { rng in
+                guard Int.random(in: 0..<4, using: &rng) != 0 else { return Fuzz.mutate(bytes, using: &rng) }
+                var writer = ZipWriter()
+                for e in Fuzz.mutateEntries(entries, nesting: ["<Canvas>", "<Canvas.Resources><ResourceDictionary>"], using: &rng) { writer.add(e.path, Data(e.bytes)) }
+                return [UInt8](writer.finish())
+            }))
+        }
+        let dir = scratch.appendingPathComponent("xpskit-fuzz", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let reader = Services.converters.converter(for: .xpsKit) else { check(false, "the reader is registered"); return }
+        @MainActor func read(_ url: URL) async throws -> StepOutput {
+            let context = StepContext(workFolder: dir, source: url, sourceFormat: "xps", targetFormat: "pdf")
+            return try await reader.run(Step(.xpsKit, "xps", .vectorDocument), input: .file(url), context: context)
+        }
+        let ran = fuzzNeverCrashes("XPSKit.damagedInputNeverCrashes", seeds: seeds, count: 600) { url, _ in _ = try await read(url) }
+        check(ran == seeds.count * 600, "every damaged input was handled without a crash (\(ran))")
+
+        // One hostile package per bug found (a trap, or an allocation far beyond the bytes); finishing is the check.
+        let square = "<Path Data=\"M 0,0 L 100,0 100,100 0,100 Z\"><Path.Fill><ImageBrush ImageSource=\"/o.png\" Viewbox=\"0,0,4,4\" Viewport=\"0,0,1e-300,1e-300\" ViewboxUnits=\"Absolute\" ViewportUnits=\"Absolute\" TileMode=\"Tile\"/></Path.Fill></Path>"
+        let glyphs = "<Glyphs UnicodeString=\"Hi\" FontUri=\"/f.ttf\" FontRenderingEmSize=\"20\" OriginX=\"10\" OriginY=\"50\" Indices=\"70000;-5\" Fill=\"#FF000000\"/>"
+            + "<Glyphs UnicodeString=\"Hi\" FontUri=\"/f.ttf\" FontRenderingEmSize=\"1e999\" OriginX=\"10\" OriginY=\"50\" Fill=\"#FF000000\"/>"
+        var hostile: [(String, Data)] = [
+            ("declared-size", makeZip([("Documents/1/Pages/1.fpage", Data(repeating: 0x20, count: 4096))], declaredSize: { _ in 200 << 20 })),
+            ("tiny-tiles", handPackage(square, extra: [("o.png", png(255, 0, 0))])),
+            ("deep-canvas", handPackage(String(repeating: "<Canvas Opacity=\"0.9\" Clip=\"M 0,0 L 90,0 90,90 Z\" RenderTransform=\"1,0,0,1,1,1\">", count: 390)
+                                        + "<Path Data=\"M 0,0 L 10,0 10,10 Z\" Fill=\"#FF000000\"/>" + String(repeating: "</Canvas>", count: 390))),
+            ("infinite-page", handPackage("<Path Data=\"M 0,0 L 10,0 10,10 Z\" Fill=\"#FF000000\"/>", width: "1e999", height: "nan")),
+        ]
+        if let ttf = try? Data(contentsOf: arialURL) { hostile.append(("glyph-indices", handPackage(glyphs, extra: [("f.ttf", ttf)]))) }
+        for (name, data) in hostile {
+            let url = dir.appendingPathComponent("hostile.xps")
+            guard (try? data.write(to: url)) != nil else { check(false, "\(name) written"); continue }
+            if Fuzz.trace { FileHandle.standardError.write(Data("hostile \(name)\n".utf8)) }
+            switch complete(30, { try await read(url) }) {
+            case nil: check(false, "\(name) did not finish in 30 s")
+            case .success(let out)?:
+                if case .vector(let doc) = out.value {
+                    check(doc.pages.allSatisfy { $0.size.width.isFinite && $0.size.height.isFinite && max($0.size.width, $0.size.height) <= 1e6 }, "\(name): sane page sizes")
+                }
+            case .failure?: break
+            }
+        }
     }))
 }
