@@ -416,7 +416,7 @@ func registerMediaKitTests() {
             seeds.append(FuzzSeed(name: "ffprobe", ext: "json", bytes: [UInt8](captured), nesting: nesting))
         }
         check(MediaProbe(json: Data(constructed.utf8))?.mainVideo?.colour.isHDR == true, "the constructed probe JSON reads")
-        let ran = fuzzNeverCrashes("MediaKit.damagedInputNeverCrashes", seeds: seeds, count: 60) { url, seed in
+        let ran = fuzzNeverCrashes("MediaKit.damagedInputNeverCrashes", seeds: seeds, count: 1000) { url, seed in
             let data = try Data(contentsOf: url)
             if seed.ext == "sf2" {
                 let font = try SoundFont.read(data)
@@ -428,7 +428,7 @@ func registerMediaKitTests() {
                 _ = probe.duration.map(MediaTime.clock)
             }
         }
-        check(ran == 60 * seeds.count, "every damaged input was handled without a crash (\(ran))")
+        check(ran == 1000 * seeds.count, "every damaged input was handled without a crash (\(ran))")
     }))
 }
 
