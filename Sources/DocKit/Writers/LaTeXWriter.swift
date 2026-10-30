@@ -60,6 +60,8 @@ enum LaTeXWriter {
         var usesColour = false
         var usesStrike = false
         var usesLongtable = false
+        var usesLandscape = false
+        var usesArray = false
         let sectionLevel: Int
         let star: String
 
@@ -92,7 +94,9 @@ enum LaTeXWriter {
                             "\\ifPDFTeX\n\\usepackage[T1]{fontenc}\n\\usepackage[utf8]{inputenc}\n\\usepackage{lmodern}\n\\else\n\\usepackage{fontspec}\n\\fi", "\\usepackage{microtype}",
                             "\\usepackage{amsmath,amssymb}", "\\usepackage{booktabs}", "\\usepackage{graphicx}"]
             if let lang = m.language?.split(separator: "-").first.map(String.init), let name = Self.babel[lang.lowercased()] { preamble.append("\\usepackage[\(name)]{babel}") }
+            if usesArray { preamble.append("\\usepackage{array}") }
             if usesLongtable { preamble.append("\\usepackage{longtable}") }
+            if usesLandscape { preamble += ["\\usepackage{pdflscape}", "\\usepackage{afterpage}"] }
             if usesStrike { preamble.append("\\usepackage[normalem]{ulem}") }
             if usesColour { preamble.append("\\usepackage{xcolor}") }
             preamble.append("\\usepackage{hyperref}")
@@ -135,7 +139,7 @@ enum LaTeXWriter {
                     out += "\n\\item " + body
                 }
                 return out + "\n\\end{\(env)}"
-            case .table(let table): return self.table(table)
+            case .table(let table): return self.table(table, depth: depth)
             case .figure(let resource, let caption, let alt):
                 guard let path = picture(resource) else {
                     lossNotes.append(LossNote(.imagesDropped, detail: resource))
@@ -166,20 +170,19 @@ enum LaTeXWriter {
             return path
         }
 
-        mutating func table(_ table: DocTable) -> String? {
+        /// Booktabs tables fitted to the text block as TypesetKit fits them (Core's `TableFit`, quality §3.3): a table too
+        /// wide steps down to `\small`, then `\footnotesize`; a table of figures and short labels then goes on landscape
+        /// pages of its own (`pdflscape`, split with the header repeated); one with sentences in its cells gets `p{}`
+        /// columns as wide as TypesetKit wraps them.
+        mutating func table(_ table: DocTable, depth: Int) -> String? {
             let (columns, rows) = TableGrid.expand(table)
             guard !rows.isEmpty else { return nil }
             var rowSpanned = false
-            let spec = (0..<columns).map { c -> String in
+            var alignments = (0..<columns).map { c -> String in
                 switch c < table.alignments.count ? table.alignments[c] : .start { case .centre: "c"; case .end: "r"; default: "l" }
-            }.joined()
-            // A captioned table floats as a `tabular`; any other stays in the text as a `longtable`, which breaks across
-            // pages with its header repeated (as TypesetKit sets both).
-            let floats = table.caption != nil
-            if !floats { usesLongtable = true }
-            var lines = ["\\begin{\(floats ? "tabular" : "longtable")}{\(spec)}", "\\toprule"]
-            let headers = table.rows.prefix { !$0.isEmpty && $0.allSatisfy(\.isHeader) }.count
-            for (r, row) in rows.enumerated() {
+            }
+            var rowLines: [String] = []
+            for row in rows {
                 var cells: [String] = []
                 var c = 0
                 while c < columns {
@@ -196,14 +199,70 @@ enum LaTeXWriter {
                     } else { cells.append("") }
                     c += span
                 }
-                lines.append(cells.joined(separator: " & ") + " \\\\")
-                if r == max(headers, 1) - 1 { lines += floats ? ["\\midrule"] : ["\\midrule", "\\endhead", "\\bottomrule", "\\endlastfoot"] }
+                rowLines.append(cells.joined(separator: " & ") + " \\\\")
             }
-            lines += floats ? ["\\bottomrule", "\\end{tabular}"] : ["\\end{longtable}"]
             if rowSpanned { lossNotes.append(LossNote(.tableSimplified, detail: "merged cells")) }
-            let out = lines.joined(separator: "\n")
-            guard let caption = table.caption else { return out }
-            return "\\begin{table}[tbp]\n\\centering\n\\caption{\(inline(caption))}\n\(out)\n\\end{table}"
+            let fit = self.fit(table, columns: columns, rows: rows, depth: depth)
+            if let fit, fit.wrap {
+                // Columns narrower than their contents wrap, ragged as TypesetKit sets them.
+                usesArray = true
+                let natural = Self.columns(columns, rows, fit.size).natural
+                for j in 0..<columns where fit.widths[j] < natural[j] - 0.01 {
+                    let ragged = alignments[j] == "c" ? "\\centering" : alignments[j] == "r" ? "\\raggedleft" : "\\raggedright"
+                    alignments[j] = ">{\(ragged)\\arraybackslash}p{\(String(format: "%.2f", fit.widths[j]))pt}"
+                }
+            }
+            let spec = alignments.joined()
+            let size = switch fit?.size { case .small?: "\\small"; case .footnote?: "\\footnotesize"; default: "" }
+            let headers = max(table.rows.prefix { !$0.isEmpty && $0.allSatisfy(\.isHeader) }.count, 1)
+            let head = ["\\toprule"] + rowLines.prefix(headers) + ["\\midrule"]
+            let body = Array(rowLines.dropFirst(headers))
+            if fit?.landscape == true {
+                // Landscape pages of their own after this one, the text going on around them (as a float page would):
+                // the caption on the first, the header and the closing rule on every one.
+                usesLongtable = true; usesLandscape = true
+                var lines = ["\\begin{longtable}{\(spec)}"]
+                if let caption = table.caption { lines += ["\\caption{\(inline(caption))}\\\\"] + head + ["\\endfirsthead"] }
+                lines += head + ["\\endhead", "\\bottomrule", "\\endfoot", "\\bottomrule", "\\endlastfoot"] + body + ["\\end{longtable}"]
+                if table.caption == nil { lines.append(Self.unnumbered) }
+                return "\\afterpage{\\begin{landscape}\(size.isEmpty ? "" : "\n" + size)\n" + lines.joined(separator: "\n") + "\n\\end{landscape}}"
+            }
+            // A captioned table floats as a `tabular`; any other stays in the text as a `longtable`, which breaks across
+            // pages with its header repeated (as TypesetKit sets both).
+            guard let caption = table.caption else {
+                usesLongtable = true
+                let out = (["\\begin{longtable}{\(spec)}"] + head + ["\\endhead", "\\bottomrule", "\\endlastfoot"] + body + ["\\end{longtable}", Self.unnumbered]).joined(separator: "\n")
+                return size.isEmpty ? out : "\\begingroup\(size)\n\(out)\n\\endgroup"
+            }
+            let out = (["\\begin{tabular}{\(spec)}"] + head + body + ["\\bottomrule", "\\end{tabular}"]).joined(separator: "\n")
+            return "\\begin{table}[tbp]\n\\centering\n\\caption{\(inline(caption))}\n\(size.isEmpty ? "" : size + "\n")\(out)\n\\end{table}"
+        }
+
+        /// Every `longtable` steps the table counter; one without a caption gives its number back, so captioned tables
+        /// are numbered as TypesetKit numbers them.
+        static let unnumbered = "\\addtocounter{table}{-1}"
+
+        /// The table's `TableFit` in the text block (narrowed by the lists it is in); nil without the bundled fonts to
+        /// measure with. Only a table of the main text may turn.
+        func fit(_ table: DocTable, columns: Int, rows: [[TableGrid.Slot]], depth: Int) -> TableFit? {
+            guard LaTeXTableMetrics.available else { return nil }
+            let indent = LaTeXTableMetrics.listMargins.prefix(depth).reduce(0, +)
+            let prose = table.rows.contains { $0.contains { TableFit.isProse(LaTeXTableMetrics.text($0)) } }
+            return TableFit.plan(textWidth: LaTeXTableMetrics.textWidth - indent, landscapeWidth: depth == 0 ? LaTeXTableMetrics.textHeight : nil,
+                                 prose: prose) { Self.columns(columns, rows, $0) }
+        }
+
+        /// Each column's widths at `size`, from the cells that do not span columns.
+        static func columns(_ count: Int, _ rows: [[TableGrid.Slot]], _ size: TableFit.Size) -> TableFit.Columns {
+            var natural = [Double](repeating: 0, count: count), minimum = natural
+            for row in rows {
+                for (j, slot) in row.enumerated() {
+                    guard let cell = slot.cell, cell.columnSpan <= 1 else { continue }
+                    let m = LaTeXTableMetrics.measure(cell, size)
+                    natural[j] = max(natural[j], m.natural); minimum[j] = max(minimum[j], m.minimum)
+                }
+            }
+            return TableFit.Columns(natural: natural, minimum: minimum)
         }
 
         // MARK: Inlines
