@@ -2,7 +2,7 @@
   "accepted" : {
     "first baseline offset" : 5.018749999408101e-05,
     "line-ending words agree" : 1,
-    "page ssim (worst)" : 0.9999367517238265,
+    "page ssim (worst)" : 0.9991128474840533,
     "pages" : 1
   },
   "thresholds" : {

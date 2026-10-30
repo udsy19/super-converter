@@ -1,0 +1,23 @@
+{
+  "accepted" : {
+    "first baseline offset" : 3.0112499928236502e-05,
+    "line-ending words agree" : 1,
+    "page ssim (worst)" : 0.9968764134844913,
+    "pages" : 1
+  },
+  "thresholds" : {
+    "first baseline offset" : {
+      "atMost" : 0.5
+    },
+    "line-ending words agree" : {
+      "atLeast" : 0.9
+    },
+    "page ssim (worst)" : {
+      "atLeast" : 0.9
+    },
+    "pages" : {
+      "target" : 1,
+      "tolerance" : 0
+    }
+  }
+}

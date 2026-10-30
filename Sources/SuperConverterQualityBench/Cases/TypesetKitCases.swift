@@ -16,10 +16,19 @@ enum TypesetKitCases {
         ("prose-en", 2, 0.98), ("prose-de", 1, 0.98), ("prose-fr", 1, 0.98), ("prose-es", 1, 0.98), ("prose-it", 1, 0.98),
         ("prose-nl", 1, 0.98), ("prose-pt", 1, 0.98), ("prose-pl", 1, 0.98), ("lists", 1, 0.9), ("footnotes", 1, 0.9),
         ("tables", 1, 0.98), ("math", 1, 0.9), ("code", 1, 0.98), ("quotes", 1, 0.98),
+        ("prose-sv", 1, 0.98), ("prose-da", 1, 0.98), ("prose-cs", 1, 0.98), ("long-words", 1, 0.98), ("numbered", 6, 0.98),
+        ("headings", 5, 0.98), ("title-block", 1, 0.98), ("abstract", 2, 0.98), ("multipage", 5, 0.98), ("lists-deep", 1, 0.9),
+        ("lists-start", 1, 0.9), ("footnotes-many", 1, 0.9), ("table-caption", 1, 0.98), ("table-numbers", 1, 0.98),
+        ("table-long", 1, 0.98), ("table-wide", 1, 0.98), ("math-inline", 1, 0.9), ("math-aligned", 1, 0.9),
+        ("math-display", 1, 0.9), ("code-blocks", 1, 0.98), ("inline-styles", 1, 0.98), ("quotes-nested", 1, 0.98),
+        ("links", 1, 0.98), ("punctuation", 1, 0.98), ("article", 4, 0.9), ("rule", 1, 0.98),
     ]
     /// Markdown words a reader never sees in the PDF: front matter, link targets, TeX control words.
-    static let markup: Set<String> = ["lang", "en", "de", "fr", "es", "it", "nl", "pt", "pl", "https", "example", "com", "spec",
-                                      "int", "infty", "sqrt", "pi", "sum", "frac", "dx", "e", "i", "x", "k", "n", "a", "b", "c", "1", "2"]
+    static let markup: Set<String> = ["lang", "en", "de", "fr", "es", "it", "nl", "pt", "pl", "sv", "da", "cs", "https", "example", "com", "spec",
+                                      "int", "infty", "sqrt", "pi", "sum", "frac", "dx", "e", "i", "x", "k", "n", "a", "b", "c", "1", "2",
+                                      "title", "author", "date", "abstract", "2024", "03", "14", "tug", "org", "ctan", "unicode",
+                                      "pm", "alpha", "beta", "gamma", "begin", "end", "aligned", "cases", "text", "if", "geq", "pmatrix",
+                                      "prod", "left", "right", "leq", "log", "f", "y", "z", "j", "t", "3", "4", "0"]
 
     static let all: [BenchCase] =
         fixtures.map { f in
@@ -121,15 +130,15 @@ extension Check {
         }
     }
 
-    /// The last word of every line of text, in reading order: a line with a word of three letters or more (TeX's display
-    /// formulas extract as glyph fragments — "∫∞", "k=1" — where TypesetKit draws them as paths with their TeX as
-    /// `/ActualText`).
+    /// The last word of every line of text, in reading order: of a line with a word of three letters or more, the last
+    /// word longer than one character. TeX's formulas extract as glyph fragments — "∫∞", "k=1", a lone "β" — where
+    /// TypesetKit draws them as paths with their TeX as `/ActualText`, so neither side counts them.
     private static func lineEnds(_ doc: PDFDocument) -> [String] {
         (0..<doc.pageCount).flatMap { i -> [String] in
             guard let page = doc.page(at: i), let all = page.selection(for: page.bounds(for: .mediaBox)) else { return [] }
             return all.selectionsByLine().compactMap { line -> String? in
-                let w = words(line.string ?? "")
-                return w.contains { $0.filter(\.isLetter).count >= 3 } ? w.last : nil
+                let w = words((line.string ?? "").precomposedStringWithCompatibilityMapping)   // ligatures decomposed
+                return w.contains { $0.filter(\.isLetter).count >= 3 } ? w.last { $0.count > 1 } : nil
             }
         }
     }

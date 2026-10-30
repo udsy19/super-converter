@@ -412,6 +412,402 @@ func typesetting() throws {
     Straight "quotes" become curly ones, two hyphens make an en dash for ranges such as 10--20, three make an em dash---like this---and three dots make an ellipsis... A [link to the specification](https://example.com/spec) is clickable without a visible box.
 
     """)
+    try typesettingParity()
+}
+
+/// The other 26 LaTeX parity fixtures (quality §3.7: 40 in all): long words, headings and numbering, the title block and
+/// abstract, several pages, deep and restarted lists, many footnotes, captioned and numeric tables, inline, display and
+/// aligned math, code, nested quotes, links, TeX punctuation, a mixed article, a rule, and three more languages.
+func typesettingParity() throws {
+    let more: [(String, String, [String])] = [
+        ("sv", "Radbrytning", [
+            "Ett stycke delas upp i rader genom att alla tänkbara brytpunkter prövas samtidigt och den följd väljs vars sammanlagda kostnad är minst. Långa sammansättningar som järnvägsstationsbyggnad eller sjukförsäkringsavgifterna gör en god avstavning nödvändig.",
+            "Mellanrummen mellan orden töjs och krymper inom gränser som typsnittet anger, så att sidans gråton blir jämn och behaglig att läsa.",
+        ]),
+        ("da", "Linjebrydning", [
+            "Et afsnit deles i linjer ved at alle mulige brud overvejes på én gang, og den række vælges hvis samlede omkostning er mindst. Lange sammensætninger som arbejdsløshedsforsikringen eller speciallægepraksisplanlægning har stor gavn af en god orddeling.",
+            "Mellemrummene mellem ordene strækkes og trykkes sammen inden for de grænser skriften fastsætter, så siden får en jævn gråtone.",
+        ]),
+        ("cs", "Sazba odstavců", [
+            "Odstavec se dělí na řádky tak, že se současně zváží všechna možná zalomení a vybere se ta posloupnost, jejíž celková cena je nejmenší. Dlouhá slova jako nejneobhospodařovávatelnějšími nebo nejkrásnějšímu potřebují dobré dělení.",
+            "Mezery mezi slovy se natahují a stlačují v mezích, které určuje písmo, takže šeď sazby zůstává rovnoměrná.",
+        ]),
+    ]
+    for (language, title, paragraphs) in more {
+        try write("typeset-prose-\(language).md", "---\nlang: \(language)\n---\n\n# \(title)\n\n" + paragraphs.joined(separator: "\n\n") + "\n")
+    }
+    try write("typeset-long-words.md", """
+    # Long words
+
+    Some words are long enough to need two or three hyphens on their own: internationalization, characteristically, incomprehensibilities, electroencephalographic, counterrevolutionaries and institutionalization all have to break somewhere when the measure is only 345 points wide.
+
+    Technical prose adds compounds of its own, such as microprocessor-based instrumentation, telecommunications infrastructure, photolithographically patterned semiconductors and the electrophysiological characterization of cardiomyocytes, which TeX's patterns break at the places a dictionary would choose.
+
+    """)
+    try write("typeset-numbered.md", """
+    # Numbered sections
+
+    ## Introduction
+
+    Three or more sections at the top level are numbered, as LaTeX numbers \\section and \\subsection.
+
+    ## Method
+
+    The method has parts of its own.
+
+    ### Measuring
+
+    Each paragraph is measured with the fonts it will be set in.
+
+    ### Breaking
+
+    Then it is broken into lines by minimising the total demerits.
+
+    ## Results
+
+    The results are compared line by line.
+
+    ## Discussion
+
+    Differences come from the fonts, the patterns and the page builder.
+
+    """)
+    try write("typeset-headings.md", """
+    # Heading levels
+
+    ## A section
+
+    A section heading is set in large bold type with generous space above and somewhat less below.
+
+    ### A subsection
+
+    A subsection heading is a little smaller, and the text that follows it is not indented.
+
+    #### A subsubsection
+
+    A subsubsection heading has the size of the text, still in bold.
+
+    ##### A paragraph heading
+
+    A paragraph heading runs into its paragraph, separated from the text by an em of space, which saves vertical room in a long document.
+
+    ## Another section
+
+    The second section closes the fixture with a paragraph long enough to wrap onto a second line of text.
+
+    """)
+    try write("typeset-title-block.md", """
+    ---
+    title: A Study of Line Breaking
+    author: Ada Lovelace, Charles Babbage
+    date: 2024-03-14
+    ---
+
+    The title block sets the title in a large size, the authors side by side below it and the date under them, all centred, before the text begins.
+
+    ## Background
+
+    The first paragraph after a section heading is not indented; later ones are.
+
+    A second paragraph shows the indent of fifteen points that LaTeX gives every paragraph but the first.
+
+    """)
+    try write("typeset-abstract.md", """
+    ---
+    title: On Justified Text
+    author: Donald Knuth
+    abstract: This short paper looks at how a paragraph is broken into lines of equal width with the least visible strain.
+    ---
+
+    ## Overview
+
+    The abstract above is set smaller than the text, under a centred bold heading, with its own margins on both sides.
+
+    ## Conclusion
+
+    The rest of the document follows the abstract with ordinary spacing.
+
+    """)
+    let multipage = [
+        "Long documents are set one page at a time. TeX's page builder collects lines, headings, displays and floats into a vertical list and breaks it where the cost is lowest, preferring not to leave a single line of a paragraph alone at the top or the bottom of a page.",
+        "Each page has the same text height, but with a ragged bottom the last line need not sit exactly on the bottom margin; the white space that remains is left below the text instead of being spread between the paragraphs.",
+        "Club and widow penalties discourage a page break after the first line or before the last line of a paragraph. They are not absolute, so a page may still end that way when every alternative is worse, but in ordinary prose the builder almost always finds a better place.",
+        "Headings are kept with the lines that follow them. A heading at the foot of a page with no text under it is one of the faults a careful compositor never lets through, and the page builder treats it as a forbidden break.",
+        "Footnotes, figures and tables complicate the picture, because they take room on a page that the builder must account for before it knows where the page will end. Here the text is plain, so only the lines and the headings matter.",
+    ]
+    var body = ""
+    for section in ["Pages", "Penalties", "Headings", "Floats", "Summary"] {
+        body += "## \(section)\n\n" + multipage.joined(separator: "\n\n") + "\n\n"
+    }
+    try write("typeset-multipage.md", "# Several pages\n\n" + body)
+    try write("typeset-lists-deep.md", """
+    # Nested lists
+
+    Itemize changes its label at every level:
+
+    - A bullet at the first level.
+      - An en dash at the second level.
+        - An asterisk at the third level.
+          - A centred dot at the fourth level.
+        - Back to the third level.
+      - Back to the second level.
+    - Back to the first level.
+
+    Enumerate counts in four styles:
+
+    1. Arabic numerals.
+       1. Lower-case letters in parentheses.
+          1. Lower-case roman numerals.
+             1. Upper-case letters.
+             2. A second upper-case letter.
+          2. A second roman numeral.
+       2. A second letter.
+    2. A second numeral.
+
+    """)
+    try write("typeset-lists-start.md", """
+    # Lists that continue
+
+    A numbered list can start anywhere:
+
+    4. The fourth step comes first here.
+    5. The fifth step follows it.
+    6. The sixth step ends the list.
+
+    An item may hold more than one paragraph:
+
+    - The first paragraph of the item is set next to the bullet.
+
+      The second paragraph of the same item lines up with the first one and is separated from it by the list's paragraph space.
+
+    - A short item follows.
+
+    The text after the list starts a new paragraph.
+
+    """)
+    try write("typeset-footnotes-many.md", """
+    # Many footnotes
+
+    The first claim needs a source.[^a] So does the second one, which is longer and wraps onto another line of the page before its note is referenced.[^b]
+
+    A second paragraph brings two more notes,[^c] one of them with *emphasis* inside.[^d] The notes are numbered in order through the whole document.
+
+    A last paragraph has a final note at its end.[^e]
+
+    [^a]: Knuth and Plass, Breaking Paragraphs into Lines, 1981.
+    [^b]: A footnote can be long enough to need two lines of its own at the foot of the page, set in footnote size with its own leading.
+    [^c]: Short.
+    [^d]: A note with *emphasis* in italics.
+    [^e]: The last note.
+
+    """)
+    try write("typeset-table-caption.md", """
+    # Captioned tables
+
+    A table with a caption floats as a LaTeX table does and is numbered.
+
+    | Paper | Width | Height |
+    |:------|------:|-------:|
+    | Letter | 614.29 | 794.97 |
+    | A4 | 597.51 | 845.05 |
+    | A5 | 421.10 | 597.51 |
+
+    Table: Paper sizes in TeX points.
+
+    The text continues after the table with a paragraph that is long enough to show where the table was placed on the page.
+
+    """)
+    try write("typeset-table-numbers.md", """
+    # Numbers in tables
+
+    Columns can be aligned left, centred or right.
+
+    | Item | Category | Count | Share |
+    |:-----|:--------:|------:|------:|
+    | Paragraphs | prose | 1204 | 61.3 |
+    | Headings | structure | 188 | 9.6 |
+    | Lists | structure | 97 | 4.9 |
+    | Tables | data | 41 | 2.1 |
+    | Formulas | math | 433 | 22.1 |
+
+    A closing paragraph follows the table.
+
+    """)
+    try write("typeset-math-inline.md", """
+    # Inline mathematics
+
+    Inline formulas take their place in the line: the roots of $ax^2 + bx + c = 0$ are $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$, the sum $\\sum_{i=1}^{n} i$ stays small, and Greek letters such as $\\alpha$, $\\beta$ and $\\gamma$ sit on the baseline.
+
+    Subscripts and superscripts like $x_i$, $y^{2}$ and $z_{j}^{k}$ change the size of their characters but not the spacing between the lines, so a paragraph with formulas such as $f(x) = e^{-x}$ keeps an even grey.
+
+    """)
+    try write("typeset-math-aligned.md", """
+    # Aligned equations
+
+    Several equations can be aligned on their relation signs:
+
+    $$\\begin{aligned} (a + b)^2 &= a^2 + 2ab + b^2 \\\\ (a - b)^2 &= a^2 - 2ab + b^2 \\end{aligned}$$
+
+    and a definition by cases uses a brace on the left:
+
+    $$|x| = \\begin{cases} x & \\text{if } x \\geq 0 \\\\ -x & \\text{otherwise} \\end{cases}$$
+
+    A matrix closes the fixture:
+
+    $$A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}$$
+
+    """)
+    try write("typeset-math-display.md", """
+    # Display mathematics
+
+    The Gaussian integral is a classic display:
+
+    $$\\int_0^1 x^2 \\, dx = \\frac{1}{3}$$
+
+    Fractions and roots grow to fit their contents,
+
+    $$\\sqrt{\\frac{a^2 + b^2}{c^2 + d^2}} \\leq \\frac{\\sqrt{a^2 + b^2}}{\\sqrt{c^2 + d^2}} + 1,$$
+
+    and a product with limits ends the fixture:
+
+    $$\\prod_{k=1}^{n} \\left(1 + \\frac{1}{k}\\right) = n + 1.$$
+
+    The paragraph after the displays continues the text.
+
+    """)
+    try write("typeset-code-blocks.md", """
+    # Code blocks
+
+    Two code blocks in a row, the second with longer lines:
+
+    ```
+    let width = 345.0
+    let height = 550.0
+    ```
+
+    ```
+    for line in paragraph.lines { draw(line, at: origin); origin.y -= baselineskip }
+    print("done")
+    ```
+
+    A code block inside a list item:
+
+    - Run the bench:
+
+      ```
+      swift run SuperConverterQualityBench
+      ```
+
+    - Read the report.
+
+    """)
+    try write("typeset-inline-styles.md", """
+    # Inline styles
+
+    Text can be set in *italics* for emphasis, in **bold** for strong emphasis, or in ***both at once***. Code such as `breakLines()` and `CTTypesetter` is set in the typewriter face, and ~~struck text~~ is crossed out.
+
+    Emphasis inside a long sentence shows how *the italic correction* and the spacing around **bold words** work when the line is justified to the full measure of the text block.
+
+    """)
+    try write("typeset-quotes-nested.md", """
+    # Nested quotations
+
+    A quotation can hold more than one paragraph:
+
+    > The first paragraph of the quotation is indented on both sides by the same amount.
+    >
+    > The second paragraph follows with the list's paragraph space between them.
+    >
+    > > A quotation inside a quotation is indented again on both sides, as LaTeX nests its quote environments.
+
+    The text resumes after the quotation.
+
+    """)
+    try write("typeset-links.md", """
+    # Links
+
+    Links are clickable without a visible box: the [TeX Users Group](https://tug.org), the [Comprehensive TeX Archive Network](https://ctan.org) and the [Unicode Consortium](https://unicode.org) are three of them.
+
+    A long address such as <https://example.com/a/rather/long/path/to/a/document.html> can break after its slashes and dots, never in the middle of a word.
+
+    """)
+    try write("typeset-punctuation.md", """
+    # TeX punctuation
+
+    "Double quotes" and 'single quotes' turn curly; it's an apostrophe. Pages 10--20, the years 1990--1999 and a pause---like this---take their dashes, and a sentence can trail off...
+
+    Ligatures join the letters in office, efficient, affluent, shuffle and fjord. After a sentence the space is wider. After an abbreviation such as Mr. Smith or Prof. Jones it stays normal, as it does after the initials in D. E. Knuth.
+
+    """)
+    try write("typeset-article.md", """
+    ---
+    title: A Small Article
+    author: Grace Hopper
+    ---
+
+    ## Summary
+
+    This fixture mixes the elements of a short article: sections, a list, a table, a formula, code and a quotation.
+
+    ## Data
+
+    The measurements were taken on three machines:
+
+    - an older laptop,
+    - a desktop computer,
+    - and a small server.
+
+    | Machine | Seconds |
+    |:--------|--------:|
+    | Laptop | 4.21 |
+    | Desktop | 2.08 |
+    | Server | 1.57 |
+
+    ## Model
+
+    The time grows with the number of lines $n$ as
+
+    $$t(n) = a n + b \\log n,$$
+
+    which fits all three machines.
+
+    ## Code
+
+    ```
+    let t = a * Double(n) + b * log(Double(n))
+    ```
+
+    > Measure twice, typeset once.
+
+    """)
+    var long = "# A long table\n\nA table longer than a page continues on the next one with its header repeated.\n\n| Year | Station | Mean | Rain |\n|-----:|:--------|-----:|-----:|\n"
+    for year in 1961...2020 { long += "| \(year) | Station \(year % 7 + 1) | \(String(format: "%.1f", 8 + Double(year % 13) / 4)) | \(600 + year % 17 * 11) |\n" }
+    try write("typeset-table-long.md", long + "\nThe text after the table closes the fixture.\n")
+    try write("typeset-table-wide.md", """
+    # A wide table
+
+    A table wider than the text block is set smaller until it fits.
+
+    | Language | Patterns | Left | Right | Spacing | Indent | Quotes | Dashes | Sample word |
+    |:---------|:---------|-----:|------:|:--------|:-------|:-------|:-------|:------------|
+    | English | hyph-en-us | 2 | 3 | wide | no | double | en, em | hyphenation |
+    | German | hyph-de-1996 | 2 | 2 | french | no | low-high | en | Silbentrennung |
+    | French | hyph-fr | 2 | 3 | french | yes | guillemets | em | césure |
+    | Spanish | hyph-es | 2 | 2 | french | yes | guillemets | em | silabeo |
+
+    The paragraph after the table continues the text.
+
+    """)
+    try write("typeset-rule.md", """
+    # A rule
+
+    A horizontal rule separates two parts of a text:
+
+    ---
+
+    The second part begins after the rule, as a new paragraph that is indented.
+
+    """)
 }
 
 // MARK: CAD
