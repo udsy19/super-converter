@@ -91,7 +91,12 @@ public enum TXTZReader {
 
 /// The small slice of Markdown e-book text files use: headings, rules, lists, quotes, pictures, emphasis, code, links.
 enum LightMarkdown {
-    static func blocks(from text: String, image: (String) -> String?) -> [DocBlock] {
+    /// Quotes inside quotes this deep; a deeper ">" is text, so "> > > …" thousands of times can't overflow the stack.
+    private static let maxQuoteDepth = 32
+
+    static func blocks(from text: String, image: (String) -> String?) -> [DocBlock] { blocks(from: text, depth: 0, image: image) }
+
+    private static func blocks(from text: String, depth: Int, image: (String) -> String?) -> [DocBlock] {
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
         var out: [DocBlock] = []
         var paragraph: [String] = []
@@ -110,7 +115,7 @@ enum LightMarkdown {
         func flushList() { if let l = list { out.append(.list(ordered: l.ordered, start: l.start, items: l.items)); list = nil } }
         func flushQuote() {
             guard !quote.isEmpty else { return }
-            let inner = blocks(from: quote.joined(separator: "\n"), image: image)
+            let inner = blocks(from: quote.joined(separator: "\n"), depth: depth + 1, image: image)
             quote = []
             if !inner.isEmpty { out.append(.quote(inner)) }
         }
@@ -133,7 +138,7 @@ enum LightMarkdown {
                 continue
             }
             if trimmed.isEmpty { flushAll(); continue }
-            if trimmed.hasPrefix(">") { flushParagraph(); flushList(); quote.append(String(trimmed.dropFirst()).trimmingCharacters(in: .init(charactersIn: " "))); continue }
+            if trimmed.hasPrefix(">"), depth < maxQuoteDepth { flushParagraph(); flushList(); quote.append(String(trimmed.dropFirst()).trimmingCharacters(in: .init(charactersIn: " "))); continue }
             flushQuote()
             if let h = heading(trimmed) {
                 flushAll()
@@ -193,13 +198,19 @@ enum LightMarkdown {
         var out: DocText = []
         var buffer = ""
         func flush() { if !buffer.isEmpty { out.append(.text(buffer)); buffer = "" } }
+        // Each marker's last search: a later search from no earlier than it has the same answer while that answer lies
+        // ahead, so a line of thousands of "[" or "*" without their closers is scanned once, not once per opener.
+        var searched: [[Character]: (from: Int, found: Int?)] = [:]
         func find(_ marker: [Character], from: Int) -> Int? {
+            if let last = searched[marker], last.from <= from, last.found.map({ $0 >= from }) ?? true { return last.found }
             var j = from
+            var found: Int?
             while j + marker.count <= chars.count {
-                if Array(chars[j..<j + marker.count]) == marker { return j }
+                if chars[j..<j + marker.count].elementsEqual(marker) { found = j; break }
                 j += 1
             }
-            return nil
+            searched[marker] = (from, found)
+            return found
         }
         var i = 0
         while i < chars.count {
