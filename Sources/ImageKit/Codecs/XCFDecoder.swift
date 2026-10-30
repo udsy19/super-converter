@@ -127,8 +127,9 @@ enum XCFDecoder {
             try properties(&r) { type, payload in
                 var p = Reader(bytes: Array(payload), wide: false)
                 switch type {
-                case 6: layer.opacity = Float(try p.u32()) / 255
-                case 33: layer.opacity = try p.f32()
+                // Opacity is 0…1; a damaged float (infinite, NaN) would turn the whole composite into NaN.
+                case 6: layer.opacity = min(Float(try p.u32()) / 255, 1)
+                case 33: let o = try p.f32(); layer.opacity = o.isFinite ? min(max(o, 0), 1) : 0
                 case 8: layer.visible = try p.u32() != 0
                 case 15: layer.x = try p.i32(); layer.y = try p.i32()
                 case 7: layer.mode = try p.u32()
