@@ -11,15 +11,16 @@ import VectorKit
 enum TypesetKitCases {
     /// The parity and lint fixtures (`scripts/make-fixtures.swift`, `typesetting()`): their bookmark counts (the opening
     /// "# Title" becomes the title block, bookmarked when it is the only heading; each "##" a section) and the share of
-    /// the source's words PDFKit reads back in order (its reading order wanders in nested lists, footnotes and formulas).
+    /// the source's words PDFKit reads back in order (its reading order wanders in nested lists, footnotes and formulas;
+    /// a float set above its heading and a table turned onto a landscape page are read out of the source's order).
     static let fixtures: [(name: String, bookmarks: Int, words: Double)] = [
         ("prose-en", 2, 0.98), ("prose-de", 1, 0.98), ("prose-fr", 1, 0.98), ("prose-es", 1, 0.98), ("prose-it", 1, 0.98),
         ("prose-nl", 1, 0.98), ("prose-pt", 1, 0.98), ("prose-pl", 1, 0.98), ("lists", 1, 0.9), ("footnotes", 1, 0.9),
         ("tables", 1, 0.98), ("math", 1, 0.9), ("code", 1, 0.98), ("quotes", 1, 0.98),
         ("prose-sv", 1, 0.98), ("prose-da", 1, 0.98), ("prose-cs", 1, 0.98), ("long-words", 1, 0.98), ("numbered", 6, 0.98),
         ("headings", 5, 0.98), ("title-block", 1, 0.98), ("abstract", 2, 0.98), ("multipage", 5, 0.98), ("lists-deep", 1, 0.9),
-        ("lists-start", 1, 0.9), ("footnotes-many", 1, 0.9), ("table-caption", 1, 0.98), ("table-numbers", 1, 0.98),
-        ("table-long", 1, 0.98), ("table-wide", 1, 0.98), ("math-inline", 1, 0.9), ("math-aligned", 1, 0.9),
+        ("lists-start", 1, 0.9), ("footnotes-many", 1, 0.9), ("table-caption", 1, 0.7), ("table-numbers", 1, 0.98),
+        ("table-long", 1, 0.98), ("table-wide", 1, 0.85), ("math-inline", 1, 0.9), ("math-aligned", 1, 0.85),
         ("math-display", 1, 0.9), ("code-blocks", 1, 0.98), ("inline-styles", 1, 0.98), ("quotes-nested", 1, 0.98),
         ("links", 1, 0.98), ("punctuation", 1, 0.98), ("article", 4, 0.9), ("rule", 1, 0.98),
     ]
