@@ -250,7 +250,8 @@ Right-click files in Finder › **Quick Actions** (also in the Finder preview pa
 
 Each one appears only for files it can take. One-step actions convert in the background, put the results next to the
 originals and post a notification. Convert to JPG, PNG and PDF are switched on the first time Super Converter opens;
-MP4 and MP3 wait until you switch them on in Settings › Quick Actions (or in System Settings' Extensions). macOS lists them once Super Converter is in your Applications folder and has been opened.
+MP4 and MP3 wait until you switch them on in Settings › Quick Actions (or in System Settings' Extensions).
+macOS lists them once Super Converter is in your Applications folder and has been opened.
 
 <p align="center"><img src="images/settings-quickActions.png" alt="Settings, Quick Actions pane: the six actions with their switches." width="70%"></p>
 

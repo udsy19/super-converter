@@ -1,0 +1,99 @@
+name: Bug report
+description: Something doesn't convert, or doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Only attach files you're happy to make public, and report security issues privately
+        through [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Super Converter version
+      description: Settings › About, or Super Converter › About Super Converter.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 26.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How was it installed?
+      options:
+        - One-line installer
+        - DMG
+        - Built from source
+  - type: input
+    id: conversion
+    attributes:
+      label: Conversion
+      description: From → to, and the options or look you chose if you changed any.
+      placeholder: "DOCX → PDF, Look: Original"
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you start it?
+      options:
+        - The window
+        - The menu bar
+        - A Finder Quick Action or Services
+        - A superconverter:// link
+        - sconv (command line)
+  - type: checkboxes
+    id: helpers
+    attributes:
+      label: Helpers installed
+      description: Settings › Helpers.
+      options:
+        - label: LibreOffice
+        - label: calibre
+        - label: Pandoc
+        - label: Tectonic
+        - label: Pages, Numbers or Keynote
+        - label: Microsoft Office
+        - label: A Homebrew helper (Ghostscript, DjVuLibre, LibreDWG, FFmpeg)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Drop report.docx on the window
+        2. Choose PDF
+        3. Press Convert
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: What the card said, a screenshot of the result, or the file itself (if it can be public) help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Console.app, filtered by `com.udsy.superconverter`, around the time of the problem; or sconv's standard error.
+      render: text
