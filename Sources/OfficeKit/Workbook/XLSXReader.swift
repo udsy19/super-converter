@@ -217,7 +217,7 @@ enum XLSXReader {
                 guard let node, node.attr("auto") != "1" else { return nil }
                 var rgb: SheetRGB?
                 if let hex = node.attr("rgb") { rgb = SheetRGB(hex: hex) }
-                else if let index = node.attr("theme").flatMap(Int.init), index < theme.count { rgb = theme[index] }
+                else if let index = node.attr("theme").flatMap(Int.init), theme.indices.contains(index) { rgb = theme[index] }
                 else if let index = node.attr("indexed").flatMap(Int.init) { rgb = SheetPalette.indexed(index) }
                 if let tint = node.attr("tint").flatMap(Double.init) { rgb = rgb?.tinted(tint) }
                 return rgb
@@ -240,7 +240,7 @@ enum XLSXReader {
             for xf in root.child("cellXfs")?.children("xf") ?? [] {
                 var style = CellStyle()
                 let fontIndex = xf.attr("fontId").flatMap(Int.init) ?? 0
-                if fontIndex < fonts.count {
+                if fonts.indices.contains(fontIndex) {
                     let font = fonts[fontIndex]
                     style.bold = font.bold; style.italic = font.italic
                     // The workbook's default font (font 0) is the baseline, not a choice a cell made.
@@ -250,7 +250,7 @@ enum XLSXReader {
                     }
                     style.textColour = font.colour.flatMap { $0 == .black ? nil : $0.hash }
                 }
-                if let fill = xf.attr("fillId").flatMap(Int.init), fill < fills.count { style.fillColour = fills[fill]?.hash }
+                if let fill = xf.attr("fillId").flatMap(Int.init), fills.indices.contains(fill) { style.fillColour = fills[fill]?.hash }
                 if let alignment = xf.child("alignment") {
                     switch alignment.attr("horizontal") {
                     case "left": style.alignment = .start
