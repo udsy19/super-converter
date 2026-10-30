@@ -1166,6 +1166,23 @@ private func dockitTextOutputs() {
     let heads = { (n: Int) in LaTeXWriter.render(DocModel(blocks: [.heading(level: 1, [.text("Title")])] + (1...n).flatMap { [.heading(level: 2, [.text("S\($0)")]), para("Text.")] })).tex }
     check(heads(2).contains("\\title{Title}") && heads(2).contains("\\maketitle") && heads(2).contains("\\section*{S1}") && !heads(2).contains("\\section{Title}"), "LaTeX: opening title, unnumbered sections")
     check(heads(3).contains("\\section{S3}"), "LaTeX: three sections are numbered")
+    // Wide tables fitted as TypesetKit fits them (Core's TableFit, quality §3.3): smaller, then landscape for figures,
+    // p{} columns for sentences.
+    let grid = { (rows: [[String]]) in
+        DocModel(blocks: [.table(DocTable(rows: rows.enumerated().map { r, row in row.map { DocTable.Cell(blocks: [para($0)], isHeader: r == 0) } }))])
+    }
+    let labels = ["Language", "Patterns", "Left", "Right", "Spacing", "Indent", "Quotes"]
+    let smaller = LaTeXWriter.render(grid([labels, ["English", "hyph-en-us", "2", "3", "wide", "no", "double quotes"], ["German", "hyph-de-1996", "2", "2", "french", "no", "low-high"]])).tex
+    check(smaller.contains("\\begingroup\\small\n\\begin{longtable}{lllllll}") && !smaller.contains("landscape"), "LaTeX: a table a little too wide is set \\small")
+    let wide = LaTeXWriter.render(grid([labels + ["Dashes", "Sample word"], ["English", "hyph-en-us", "2", "3", "wide", "no", "double", "en, em", "hyphenation"],
+                                        ["German", "hyph-de-1996", "2", "2", "french", "no", "low-high", "en", "Silbentrennung"]])).tex
+    check(wide.contains("\\usepackage{pdflscape}") && wide.contains("\\afterpage{\\begin{landscape}\n\\begin{longtable}{lllllllll}") && wide.contains("\\endhead")
+          && wide.contains("\\end{longtable}\n\\addtocounter{table}{-1}\n\\end{landscape}}"), "LaTeX: a wide table of figures turns onto landscape pages, header repeated")
+    let prose = LaTeXWriter.render(grid([["Term", "Meaning"],
+                                         ["Glue", "Stretchable space between boxes that the line breaker may lengthen or shorten when it justifies a paragraph to the measure."]])).tex
+    check(prose.contains("\\usepackage{array}") && prose.contains("{l>{\\raggedright\\arraybackslash}p{") && !prose.contains("landscape"), "LaTeX: a table of sentences wraps in p{} columns")
+    let narrow = LaTeXWriter.render(grid([["A", "B"], ["1", "2"]])).tex
+    check(narrow.contains("\\begin{longtable}{ll}") && !narrow.contains("\\small") && !narrow.contains("landscape") && !narrow.contains("p{"), "LaTeX: a table that fits is left alone")
     check(LaTeXWriter.escape("50% of $5 & #1_x ~ ^ \\ {}") == "50\\% of \\$5 \\& \\#1\\_x \\textasciitilde{} \\textasciicircum{} \\textbackslash{} \\{\\}", "LaTeX escaping")
     // Through the converters, with the options.
     if let url = writeFile(model, engine: .latexWriter, to: "tex", folder: folder, options: OptionValues(["latexClass": "book"])) {

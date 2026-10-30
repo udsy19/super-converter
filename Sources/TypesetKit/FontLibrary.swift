@@ -1,5 +1,6 @@
 import CoreText
 import Foundation
+import SuperConverterCore
 
 /// The fonts TypesetKit sets type with (Resources/Fonts, formats §3): Latin Modern Roman/Sans/Mono at optical sizes,
 /// Latin Modern Math, CMU Serif/Sans/Typewriter for Greek and Cyrillic, STIX Two Math for symbols Latin Modern Math
@@ -30,12 +31,7 @@ public final class FontLibrary: @unchecked Sendable {
     /// The fonts shipped with the app: `Contents/Resources/Fonts` in the bundle, else the repository's `Resources/Fonts`
     /// when running from a SwiftPM build (self-test, `sconv`, the bench).
     public static func bundled() -> FontLibrary? {
-        var candidates: [URL] = []
-        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Fonts")) }
-        var source = URL(fileURLWithPath: #filePath)
-        for _ in 0..<3 { source.deleteLastPathComponent() }   // <root>/Sources/TypesetKit/FontLibrary.swift → <root>
-        candidates.append(source.appendingPathComponent("Resources/Fonts"))
-        for url in candidates { if let library = try? FontLibrary(directory: url) { return library } }
+        for url in SuperConverterPaths.bundledResources("Fonts") { if let library = try? FontLibrary(directory: url) { return library } }
         return nil
     }
 
