@@ -20,6 +20,8 @@ enum AbiWordReader {
         var resources: [String: Data] = [:]
         var footnoteSections: [String: XMLNode] = [:]
         var noteBlocks: [DocBlock] = []
+        /// Notes being read: a note section that refers to itself (or to a note that refers back) is read once, not forever.
+        var readingNotes = Set<String>()
         var styles: [String: [String: String]] = [:]
 
         mutating func run(_ root: XMLNode) -> DocReadResult {
@@ -101,8 +103,8 @@ enum AbiWordReader {
             let props = resolved(p)
             let style = (props["list-style"] ?? p.attr("style") ?? "").lowercased()
             let ordered = style.contains("numbered") || style.contains("lower") || style.contains("upper") || style.contains("roman") || style.contains("number")
-            let level = max((Int(p.attr("level") ?? "1") ?? 1) - 1, 0)
-            return ListAssembler.Entry(level: level, ordered: ordered, start: Int(props["start-value"] ?? "1") ?? 1, blocks: [.paragraph(inlines(p), alignment(props))], listID: p.attr("listid") ?? "")
+            let level = max(Int(p.attr("level") ?? "1") ?? 1, 1) - 1
+            return ListAssembler.Entry(level: level, ordered: ordered, start: ListAssembler.start(Int(props["start-value"] ?? "1")), blocks: [.paragraph(inlines(p), alignment(props))], listID: p.attr("listid") ?? "")
         }
 
         func alignment(_ props: [String: String]) -> DocParagraphStyle {
@@ -122,7 +124,7 @@ enum AbiWordReader {
                 let props = resolved(node)
                 let name = (node.attr("style") ?? "").lowercased()
                 let text = inlines(node)
-                if name.hasPrefix("heading "), let level = Int(name.dropFirst(8)) { return [.heading(level: min(level, 6), text)] }
+                if name.hasPrefix("heading "), let level = Int(name.dropFirst(8)) { return [.heading(level: min(max(level, 1), 6), text)] }
                 if text.isEmpty { return [.paragraph([], alignment(props))] }
                 if name == "title" { metadata.title = Inlines.plain(text); return [] }
                 if name.contains("block text") || name.contains("quote") { return [.quote([.paragraph(text, alignment(props))])] }
@@ -141,12 +143,14 @@ enum AbiWordReader {
             var placed: [Placed] = []
             for cell in node.children("cell") {
                 let props = Self.props(cell.attr("props") ?? "")
-                let left = Int(props["left-attach"] ?? "0") ?? 0, right = Int(props["right-attach"] ?? "\(left + 1)") ?? left + 1
-                let top = Int(props["top-attach"] ?? "0") ?? 0, bottom = Int(props["bot-attach"] ?? "\(top + 1)") ?? top + 1
+                // Attach points are the file's word: kept in a table's range, so the spans between them cannot overflow.
+                func attach(_ key: String, _ fallback: Int) -> Int { min(max(props[key].flatMap { Int($0) } ?? fallback, 0), 1 << 20) }
+                let left = attach("left-attach", 0), right = attach("right-attach", left + 1)
+                let top = attach("top-attach", 0), bottom = attach("bot-attach", top + 1)
                 var blocks: [DocBlock] = []
                 for child in cell.children { blocks += block(child) }
                 if blocks.isEmpty { blocks = [.paragraph([], DocParagraphStyle())] }
-                placed.append(Placed(top: top, left: left, cell: DocTable.Cell(blocks: blocks, columnSpan: max(right - left, 1), rowSpan: max(bottom - top, 1), isHeader: false)))
+                placed.append(Placed(top: top, left: left, cell: DocTable.Cell(blocks: blocks, columnSpan: TableGrid.span(right - left), rowSpan: TableGrid.span(bottom - top), isHeader: false)))
             }
             let rows = Dictionary(grouping: placed, by: \.top).sorted { $0.key < $1.key }.map { $0.value.sorted { $0.left < $1.left }.map(\.cell) }
             return DocTable(rows: rows)
@@ -191,7 +195,8 @@ enum AbiWordReader {
                         switch e.attr("type") {
                         case "footnote_ref", "endnote_ref":
                             if let id = e.attr("param") ?? e.attr("footnote-id") {
-                                if let section = footnoteSections[id], !noteBlocks.contains(where: { if case .footnote(let n, _) = $0 { n == id } else { false } }) {
+                                if let section = footnoteSections[id], readingNotes.insert(id).inserted,
+                                   !noteBlocks.contains(where: { if case .footnote(let n, _) = $0 { n == id } else { false } }) {
                                     var inner: [DocBlock] = []
                                     for child in section.children { inner += block(child) }
                                     noteBlocks.append(.footnote(id: id, inner))

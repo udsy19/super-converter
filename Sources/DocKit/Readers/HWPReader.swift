@@ -177,7 +177,7 @@ enum HWPReader {
                 if record.tag == Record.listHeader, record.data.count >= 16 {
                     let count = Int(record.data.u16(0))
                     let column = Int(record.data.u16(6)), row = Int(record.data.u16(8))
-                    let colSpan = max(Int(record.data.u16(10)), 1), rowSpan = max(Int(record.data.u16(12)), 1)
+                    let colSpan = TableGrid.span(Int(record.data.u16(10))), rowSpan = TableGrid.span(Int(record.data.u16(12)))
                     let cellLevel = record.level
                     position += 1
                     let content = blocks(level: cellLevel, count: count)

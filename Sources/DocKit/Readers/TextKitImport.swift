@@ -108,7 +108,7 @@ enum TextKitImport {
                     inline = trimmed(inline)
                     let format = list.markerFormat.rawValue
                     let ordered = format.contains("decimal") || format.contains("alpha") || format.contains("roman") || format.contains("Alpha") || format.contains("Roman")
-                    listEntries.append(ListAssembler.Entry(level: (style?.textLists.count ?? 1) - 1, ordered: ordered, start: list.startingItemNumber,
+                    listEntries.append(ListAssembler.Entry(level: (style?.textLists.count ?? 1) - 1, ordered: ordered, start: ListAssembler.start(list.startingItemNumber),
                                                            blocks: [.paragraph(inline, paragraphStyle(style))], listID: "\(ObjectIdentifier(style!.textLists.first!).hashValue)"))
                     continue
                 }

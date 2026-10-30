@@ -46,7 +46,7 @@ enum DOCXWriter {
             if let summary = m.summary { body += styled("Abstract", text: summary) }
             for block in model.blocks { body += self.block(block, listDepth: 0) }
             body += """
-                <w:sectPr><w:footnotePr><w:numFmt w:val="decimal"/></w:footnotePr><w:pgSz w:w="\(Int((paper.width * 20).rounded()))" w:h="\(Int((paper.height * 20).rounded()))"/>\
+                <w:sectPr><w:footnotePr><w:numFmt w:val="decimal"/></w:footnotePr><w:pgSz w:w="\(Int(measure: paper.width * 20))" w:h="\(Int(measure: paper.height * 20))"/>\
                 <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>
                 """
 
@@ -139,8 +139,8 @@ enum DOCXWriter {
             if let numbering { pPr += "<w:numPr><w:ilvl w:val=\"\(numbering.level)\"/><w:numId w:val=\"\(numbering.id)\"/></w:numPr>" }
             if paragraphStyle.spaceBefore != nil || paragraphStyle.spaceAfter != nil {
                 pPr += "<w:spacing"
-                if let b = paragraphStyle.spaceBefore { pPr += " w:before=\"\(Int(b * 20))\"" }
-                if let a = paragraphStyle.spaceAfter { pPr += " w:after=\"\(Int(a * 20))\"" }
+                if let b = paragraphStyle.spaceBefore { pPr += " w:before=\"\(Int(measure: b * 20))\"" }
+                if let a = paragraphStyle.spaceAfter { pPr += " w:after=\"\(Int(measure: a * 20))\"" }
                 pPr += "/>"
             }
             switch paragraphStyle.alignment {
@@ -199,7 +199,7 @@ enum DOCXWriter {
             if f.italic { rPr += "<w:i/>" }
             if f.strike { rPr += "<w:strike/>" }
             if let colour = f.colour { rPr += "<w:color w:val=\"\(colour.replacingOccurrences(of: "#", with: ""))\"/>" }
-            if let size = f.size { rPr += "<w:sz w:val=\"\(Int(size * 2))\"/>" }
+            if let size = f.size { rPr += "<w:sz w:val=\"\(Int(measure: size * 2))\"/>" }
             if f.underline { rPr += "<w:u w:val=\"single\"/>" }
             if f.superscript { rPr += "<w:vertAlign w:val=\"superscript\"/>" } else if f.subscripted { rPr += "<w:vertAlign w:val=\"subscript\"/>" }
             return "<w:r>\(rPr.isEmpty ? "" : "<w:rPr>\(rPr)</w:rPr>")\(Self.textRun(text))</w:r>"
@@ -220,7 +220,7 @@ enum DOCXWriter {
             var width = Double(info.width) / info.dpi * 72, height = Double(info.height) / info.dpi * 72
             let scale = min(1, textWidth / max(width, 1), 600 / max(height, 1))
             width *= scale; height *= scale
-            let cx = Int(width * 12700), cy = Int(height * 12700)
+            let cx = Int(measure: width * 12700), cy = Int(measure: height * 12700)
             let id = drawingID
             drawingID += 1
             let description = XML.escape(alt ?? "")
@@ -309,7 +309,7 @@ enum DOCXWriter {
 
         mutating func table(_ table: DocTable) -> String {
             let (columns, rows) = TableGrid.expand(table)
-            let width = Int(textWidth * 20)
+            let width = Int(measure: textWidth * 20)
             let columnWidth = width / columns
             var out = ""
             if let caption = table.caption { out += paragraph(caption, style: "Caption", paragraphStyle: DocParagraphStyle()) }
