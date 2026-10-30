@@ -82,6 +82,8 @@ struct ZipReader {
         case 0: out = body
         case 8:
             guard e.size > 0 else { return Data() }
+            // DEFLATE expands at most 1032:1, so a declared size beyond that is damage: the buffer is not allocated for it.
+            guard e.size / 1032 <= e.compressed else { throw ConversionError.damaged("xps") }
             var buffer = [UInt8](repeating: 0, count: e.size)
             let n = body.withUnsafeBytes { src -> Int in
                 guard let base = src.bindMemory(to: UInt8.self).baseAddress else { return 0 }
