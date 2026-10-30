@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Same geometry as scripts/make-icon.swift: a white squircle with one ink glyph, a rounded square, an arrow and a circle. -->
+  <defs>
+    <linearGradient id="field" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EFEFEF"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12.3" stdDeviation="15.4" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="100.35" y="85.3" width="823.3" height="823.3" rx="185.24" fill="url(#field)" filter="url(#shadow)"/>
+  <g fill="#141414">
+    <rect x="218.04" y="400.21" width="193.48" height="193.48" rx="38.7"/>
+    <circle cx="703.42" cy="496.95" r="102.54"/>
+  </g>
+  <path d="M448.57 496.95H563.83M521.02 454.14L563.83 496.95L521.02 539.76" fill="none" stroke="#141414" stroke-width="37.05" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

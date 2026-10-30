@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>og image source: render at 1200×630 for og.png</title>
+<!-- og.png is this page at 1200×630: the site's own hero, framed without its buttons. src/build.mjs --assets serves the
+     folder over HTTP, opens this page in a 1200×630 headless Chrome and takes the screenshot. -->
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #fff; }
+  iframe { position: absolute; left: 0; top: -70px; width: 1600px; height: 1000px; border: 0; transform: scale(.75); transform-origin: 0 0; }
+</style></head>
+<body>
+<iframe src="index.html" title="Super Converter" scrolling="no" onload="var d=this.contentDocument; var c=d.querySelector('.hero .ctas'); if (c) c.style.display='none';"></iframe>
+</body>
+</html>
