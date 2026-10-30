@@ -35,11 +35,12 @@ final class ParagraphSetter {
     let fonts: FontResolver
     let hyphenator: Hyphenator?
     let conventions: LanguageConventions
-    let mathBox: (String, RunStyle) -> HBox
+    let mathPieces: (String, RunStyle) -> [MathPiece]
     var paragraphCounter = 0
 
-    init(fonts: FontResolver, hyphenator: Hyphenator?, conventions: LanguageConventions, mathBox: @escaping (String, RunStyle) -> HBox) {
-        self.fonts = fonts; self.hyphenator = hyphenator; self.conventions = conventions; self.mathBox = mathBox
+    init(fonts: FontResolver, hyphenator: Hyphenator?, conventions: LanguageConventions,
+         mathPieces: @escaping (String, RunStyle) -> [MathPiece]) {
+        self.fonts = fonts; self.hyphenator = hyphenator; self.conventions = conventions; self.mathPieces = mathPieces
     }
 
     // MARK: Building
@@ -270,8 +271,14 @@ final class ParagraphSetter {
                     previousChar = c
                 }
             case .math(let tex, let style):
-                let box = mathBox(tex, style)
-                appendObject(box, fragment: .object(box, link: link))
+                // The formula's outer glue stretches and shrinks with the line; it breaks only at TeX's penalties.
+                for piece in mathPieces(tex, style) {
+                    switch piece {
+                    case .box(let box): appendObject(box, fragment: .object(box, link: link))
+                    case .glue(let g): b.items.append(.glue(g))
+                    case .penalty(let p): b.items.append(.penalty(p))
+                    }
+                }
                 previousChar = "x"
             case .footnote(let number, let style):
                 let box = footnoteMark(number, style)

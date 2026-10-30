@@ -4,7 +4,8 @@ import SuperConverterCore
 
 // MathKit's checks (WP-T): MathJax loads in JavaScriptCore and sets TeX as vector paths with TeX's metrics — scripts
 // raised and lowered, fractions with their rule on the axis, radicals, growing delimiters, limits in display style,
-// environments — with undefined macros and parse errors reported, and 200 formulas measured against ARCHITECTURE §12.6.
+// environments, at TeX's sizes; `\text` as text, the outer list's glue — with undefined macros and parse errors
+// reported, and 200 formulas measured against ARCHITECTURE §12.6.
 func registerMathKitTests() {
     SelfTest.cases.append(("MathKit.loads", { mathLoads() }))
     SelfTest.cases.append(("MathKit.layout", { mathLayout() }))
@@ -77,13 +78,37 @@ private func mathLayout() {
 
     let unknown = set(m, "x + \\frobnicate{y}")
     check(unknown.problems == ["\\frobnicate"], "undefined macros are reported: \(unknown.problems)")
-    check(unknown.nodes.contains { if case .path(_, .solid(let c)?, _, _) = $0 { return c.red > 0.9 && c.green < 0.1 }; return false },
+    check(unknown.nodes.contains { if case .text(let t) = $0, case .solid(let c) = t.fill { return t.text == "\\frobnicate" && c.red > 0.9 && c.green < 0.1 }; return false },
           "undefined macros are set in red")
     let broken = set(m, "\\frac{a}{b")
     check(broken.problems.first?.hasPrefix("Missing close brace") == true, "parse errors are reported: \(broken.problems)")
     check(broken.width > 10 && broken.nodes.count == 1, "a formula that does not parse shows its source")
+    texMetrics(m)
     check(set(m, "\\color{blue}{x}").nodes.contains { if case .path(_, .solid(let c)?, _, _) = $0 { return c.blue == 1 && c.red == 0 }; return false },
           "\\color reaches the paths")
+}
+
+/// Widths and heights against TeX's own (Tectonic, cmr/cmmi/cmsy at 10, 7 and 5 pt): the quality §3.7 parity fixtures
+/// break lines where LaTeX does only with these.
+private func texMetrics(_ m: MathJax) {
+    let cases: [(String, Bool, Double, Double)] = [
+        ("\\beta", false, 6.184, 8.889), ("f", false, 5.972, 8.889), ("y^{2}", false, 9.748, 10.084), ("z_{j}^{k}", false, 10.010, 12.454),
+        ("x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", false, 69.602, 13.888), ("\\sum_{i=1}^{n} i", false, 29.122, 11.042),
+        ("\\sqrt{x}", false, 14.049, 10.400), ("\\left( x \\right.", false, 10.804, 10.0),
+        ("\\begin{aligned} (a + b)^2 &= a^2 + 2ab + b^2 \\\\ (a - b)^2 &= a^2 - 2ab + b^2 \\end{aligned}", true, 104.968, 28.480),
+        ("|x| = \\begin{cases} x & \\text{if } x \\geq 0 \\\\ -x & \\text{otherwise} \\end{cases}", true, 98.543, 30.0),
+    ]
+    for (tex, display, width, total) in cases {
+        let r = set(m, tex, display: display)
+        check(abs(r.width - width) < 0.25, "\(tex) is TeX's \(width) pt wide (\(String(format: "%.3f", r.width)))")
+        check(abs(r.height + r.depth - total) < 0.6, "\(tex) is TeX's \(total) pt tall (\(String(format: "%.3f", r.height + r.depth)))")
+    }
+    let text = set(m, "\\text{otherwise}")
+    check(text.nodes.count == 1 && text.nodes.contains { if case .text(let t) = $0 { return t.text == "otherwise" }; return false },
+          "\\text{…} is a text run, not outlines")
+    let breaks = set(m, "ax^2 + bx = 0").breaks
+    check(breaks.map(\.penalty) == [10000, 700, 10000, 500] && abs(breaks[0].stretch - 10.0 / 9) < 0.01 && abs(breaks[2].stretch - 50.0 / 18) < 0.01,
+          "the outer list has TeX's glue and break penalties: \(breaks)")
 }
 
 private func mathEnvironments() {
@@ -104,7 +129,7 @@ private func mathEnvironments() {
     let rows = set(m, "a &= b \\\\ c &= d", display: true)
     check(rows.problems.isEmpty && rows.height + rows.depth > 22, "bare rows are set as aligned (\(rows.height + rows.depth) pt)")
     let cjk = set(m, "\\text{日本} x")
-    check(cjk.nodes.contains { if case .text(let t) = $0 { return t.text == "日" }; return false }, "characters MathJax lacks stay text")
+    check(cjk.nodes.contains { if case .text(let t) = $0 { return t.text.contains("日") }; return false }, "characters MathJax lacks stay text")
 }
 
 private func mathSource() {
