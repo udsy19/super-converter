@@ -76,6 +76,11 @@ public enum FormatCatalog {
     /// The 212 formats CloudConvert lists (the ones a person can drop).
     public static let inputs: [Format] = all.filter { !$0.isOutputOnly }
 
+    /// Type identifiers the catalog uses that macOS itself doesn't declare: other apps do (VLC, Keka, The Unarchiver), so
+    /// a clean Mac may not know them. The app imports these under their own names (Info.plist), so Open With and drops
+    /// work either way; every other identifier is declared by macOS (CI's clean runner checks).
+    public static let appDeclaredTypes: Set<String> = ["org.matroska.mkv", "org.xiph.ogg-video", "com.rarlab.rar-archive"]
+
     private static let byID: [FormatID: Format] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
     public static func format(_ id: FormatID) -> Format? { byID[id] }

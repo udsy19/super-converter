@@ -137,6 +137,15 @@ private func appInfoPlist() -> [String: Any] {
         return ["UTTypeIdentifier": importedTypeIdentifier(format), "UTTypeDescription": format.name,
                 "UTTypeConformsTo": ["public.data", "public.content"] + (broadType(format.category).map { [$0] } ?? []),
                 "UTTypeTagSpecification": tags]
+    } + FormatCatalog.inputs.flatMap { format in
+        // Types other apps declare (FormatCatalog.appDeclaredTypes), imported under their own names for a clean Mac.
+        format.utTypeIdentifiers.filter(FormatCatalog.appDeclaredTypes.contains).map { identifier -> [String: Any] in
+            var tags: [String: Any] = ["public.filename-extension": [format.id.rawValue]]
+            if !format.mimeTypes.isEmpty { tags["public.mime-type"] = format.mimeTypes }
+            return ["UTTypeIdentifier": identifier, "UTTypeDescription": format.name,
+                    "UTTypeConformsTo": ["public.data", "public.content"] + (broadType(format.category).map { [$0] } ?? []),
+                    "UTTypeTagSpecification": tags]
+        }
     }
     return [
         "CFBundleDevelopmentRegion": "en",

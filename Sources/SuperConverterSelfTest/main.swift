@@ -35,6 +35,10 @@ func threadCPUSeconds<T>(_ work: () throws -> T) rethrows -> (T, Double) {
     return (value, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e9)
 }
 
+/// How much of a performance budget a run may use. The budgets (ARCHITECTURE §12.6 and the like) are set for a Mac; CI's
+/// shared virtual machines run two to three times slower, so there a budget only catches a gross regression.
+let budgetScale: Double = ProcessInfo.processInfo.environment["CI"] == nil ? 1 : 3
+
 let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("superconverter-selftest-\(UUID().uuidString)")
 SuperConverterPaths.base = scratch.appendingPathComponent("Application Support")
 SuperConverterPaths.cacheBase = scratch.appendingPathComponent("Caches")

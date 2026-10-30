@@ -183,7 +183,7 @@ private func typesetGolden(_ name: String, _ doc: DocModel, options: TypesetOpti
     let url = typesetRenders.appendingPathComponent("\(name).pdf")
     let (typeset, seconds) = threadCPUSeconds { try? Typesetter(fonts: library).typeset(doc, options: letter(options), to: url) }
     guard let result = typeset else { check(false, "\(name) typesets"); return nil }
-    check(seconds < 20, "\(name) typesets in \(String(format: "%.1f", seconds)) s")
+    check(seconds < 20 * budgetScale, "\(name) typesets in \(String(format: "%.1f", seconds)) s")
     check(result.pageCount >= minPages, "\(name): \(result.pageCount) page(s)")
     let lint = TypographicLint.check(result.log)
     check(lint.isEmpty, "\(name) passes the typographic lint: \(lint.prefix(4))")

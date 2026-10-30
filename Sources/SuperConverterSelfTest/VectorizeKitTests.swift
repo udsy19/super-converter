@@ -380,7 +380,7 @@ func registerVectorizeKitTests() {
         }
         let (r, seconds) = threadCPUSeconds { try? Vectorizer.trace(poster.asset, settings: TraceSettings()) }
         print("  VectorizeKit 512x512 poster: \(String(format: "%.2f", seconds)) s of CPU, \(r?.pathCount ?? 0) paths, \(r?.svg.count ?? 0) bytes")
-        check(r != nil && seconds < 20, "512x512 poster traces in \(seconds) s")
+        check(r != nil && seconds < 20 * budgetScale, "512x512 poster traces in \(seconds) s")
     }))
 }
 

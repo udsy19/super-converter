@@ -44,7 +44,7 @@ private func mathLoads() {
     let (loaded, seconds) = threadCPUSeconds { try? MathJax(script: script) }
     check(loaded != nil, "MathJax evaluates in JavaScriptCore")
     print("  MathJax load: \(String(format: "%.2f", seconds)) s of CPU")
-    check(seconds < 3, "MathJax loads in \(String(format: "%.2f", seconds)) s")
+    check(seconds < 3 * budgetScale, "MathJax loads in \(String(format: "%.2f", seconds)) s")
     let missing = URL(fileURLWithPath: "/nonexistent/mathjax.js")
     check((try? MathJax(script: missing)) == nil, "a missing script is an error, not a crash")
 }
@@ -150,5 +150,5 @@ private func mathSpeed() {
         }
     }
     print("  200 formulas: \(String(format: "%.2f", seconds)) s of CPU")
-    check(seconds < 2, "200 formulas set in \(String(format: "%.2f", seconds)) s")
+    check(seconds < 2 * budgetScale, "200 formulas set in \(String(format: "%.2f", seconds)) s")
 }

@@ -73,10 +73,11 @@ private func coreFormats() {
 
 @MainActor
 private func coreFormatDetails() {
-    // Every declared type identifier must exist on this Mac (a wrong one would mislead Open With and drag-and-drop).
+    // Every declared type identifier must exist on this Mac (a wrong one would mislead Open With and drag-and-drop),
+    // unless it is one other apps declare, which the app imports itself.
     for format in FormatCatalog.all {
         for identifier in format.utTypeIdentifiers {
-            check(UTType(identifier) != nil, "\(format.id): \(identifier) is not a type macOS knows")
+            check(UTType(identifier) != nil || FormatCatalog.appDeclaredTypes.contains(identifier), "\(format.id): \(identifier) is not a type macOS knows")
         }
         for mime in format.mimeTypes {
             check(mime.contains("/") && !mime.contains(" "), "\(format.id): MIME type \(mime)")
