@@ -43,6 +43,17 @@ public enum SuperConverterPaths {
         ensure(cacheBase.appendingPathComponent(supportFolderName, isDirectory: true).appendingPathComponent("thumbnails", isDirectory: true))
     }
 
+    /// Where a folder of the app's bundled resources may be, in order: `Contents/Resources/<name>` in the bundle, then
+    /// the repository's `Resources/<name>` when running from a SwiftPM build (self-test, `sconv`, the bench).
+    public static func bundledResources(_ name: String) -> [URL] {
+        var candidates: [URL] = []
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent(name)) }
+        var source = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { source.deleteLastPathComponent() }   // <root>/Sources/SuperConverterCore/SuperConverterPaths.swift → <root>
+        candidates.append(source.appendingPathComponent("Resources").appendingPathComponent(name))
+        return candidates
+    }
+
     /// Free bytes for important use on the volume that holds `url`; `Int64.max` when the system can't say.
     public static func freeSpace(at url: URL) -> Int64 {
         (try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage ?? .max

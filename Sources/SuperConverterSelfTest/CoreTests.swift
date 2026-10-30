@@ -20,6 +20,7 @@ func registerCoreTests() {
     SelfTest.cases.append(("Core.defaultsRoundTrip", { coreDefaultsRoundTrip() }))
     SelfTest.cases.append(("Core.paths", { corePaths() }))
     SelfTest.cases.append(("Core.strings", { coreStrings() }))
+    SelfTest.cases.append(("Core.tableFit", { coreTableFit() }))
     SelfTest.cases.append(("Core.codable", { coreCodable() }))
     SelfTest.cases.append(("Core.contracts", { coreContracts() }))
     SelfTest.cases.append(("Core.moduleGraph", { coreModuleGraph() }))
@@ -429,6 +430,34 @@ private func corePaths() {
 }
 
 // MARK: - Strings (ux §7)
+
+/// The LaTeX look's rule for wide tables (quality §3.3), on made-up widths: two columns, 60 pt each at 10 pt and
+/// in proportion at 9 and 8 pt.
+@MainActor
+private func coreTableFit() {
+    func columns(_ natural: Double, _ minimum: Double = 20) -> (TableFit.Size) -> TableFit.Columns {
+        { size in
+            let scale = size == .normal ? 1 : size == .small ? 0.9 : 0.8
+            return TableFit.Columns(natural: [natural * scale, natural * scale], minimum: [minimum * scale, minimum * scale])
+        }
+    }
+    // Two columns take 24 pt of \tabcolsep.
+    let fits = TableFit.plan(textWidth: 144, landscapeWidth: 550, prose: false, columns: columns(60))
+    check(fits == TableFit(size: .normal, widths: [60, 60], wrap: false), "a table that fits keeps its size (\(fits))")
+    let small = TableFit.plan(textWidth: 134, landscapeWidth: 550, prose: false, columns: columns(60))
+    check(small.size == .small && !small.landscape && !small.wrap, "too wide by a little: \\small (\(small))")
+    let foot = TableFit.plan(textWidth: 124, landscapeWidth: 550, prose: false, columns: columns(60))
+    check(foot.size == .footnote && !foot.landscape, "then \\footnotesize (\(foot))")
+    let turned = TableFit.plan(textWidth: 100, landscapeWidth: 550, prose: false, columns: columns(60))
+    check(turned == TableFit(size: .normal, widths: [60, 60], wrap: false, landscape: true), "a wide table of figures turns, at its own size (\(turned))")
+    let wrapped = TableFit.plan(textWidth: 100, landscapeWidth: 550, prose: true, columns: columns(60))
+    check(wrapped.wrap && !wrapped.landscape && wrapped.size == .normal && abs(wrapped.widths.reduce(0, +) - 76) < 0.001, "one of sentences wraps to the measure (\(wrapped))")
+    let inList = TableFit.plan(textWidth: 100, landscapeWidth: nil, prose: false, columns: columns(60))
+    check(inList.wrap && !inList.landscape, "a table that may not turn wraps (\(inList))")
+    let squeezed = TableFit.plan(textWidth: 60, landscapeWidth: nil, prose: true, columns: columns(60, 40))
+    check(squeezed.squeezed && squeezed.size == .footnote && squeezed.widths.allSatisfy { abs($0 - 18) < 0.001 }, "too wide even wrapped: squeezed (\(squeezed))")
+    check(TableFit.isProse("one two three four five six") && !TableFit.isProse("en, em dashes"), "six words make a sentence")
+}
 
 @MainActor
 private func coreStrings() {

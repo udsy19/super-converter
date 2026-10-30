@@ -18,10 +18,10 @@ struct GridTable {
 }
 
 /// Booktabs tables (quality §3.2): `\toprule`, `\midrule`, `\bottomrule` and no vertical rules, `\tabcolsep` 6 pt,
-/// numbers right- and decimal-aligned. A table too wide for the measure steps down to `\small`, then `\footnotesize`,
-/// then gets landscape pages of its own (the text block turned: as wide as `\textheight`), and only a table too wide
-/// even for those wraps its text columns. Captioned tables that fit on a page float (`[tbp]`) with the caption above; others
-/// stay in the text and break across pages with the header repeated (longtable).
+/// numbers right- and decimal-aligned. A table too wide for the measure is fitted by Core's `TableFit` (which DocKit's
+/// LaTeX writes too): `\small`, then `\footnotesize`, then landscape pages of its own (the text block turned: as wide as
+/// `\textheight`) for a table of figures, wrapped columns for one of sentences. Captioned tables that fit on a page float
+/// (`[tbp]`) with the caption above; others stay in the text and break across pages with the header repeated (longtable).
 final class TableComposer {
     unowned let composer: Composer
     let ctx: BlockContext
@@ -113,20 +113,16 @@ final class TableComposer {
 
     // MARK: Layout
 
-    private struct Plan {
-        var size: SizeCommand
-        var widths: [Double]
-        var wrap: Bool
-        var landscape = false
-    }
-
     /// `allowLandscape`: a table of the document's main text (not a spreadsheet, list or column) may turn sideways.
     func layout(_ grid: GridTable, number: Int?, allowLandscape: Bool = false) -> Result {
         let measure = composer.lineWidth(ctx)
         let columns = grid.alignments.count
-        let sep = 6.0   // \tabcolsep
+        let sep = TableFit.tabcolsep
         let allRows = [grid.header].compactMap { $0 } + grid.body
-        func widths(_ size: SizeCommand) -> (natural: [Double], minimum: [Double]) {
+        let turns = allowLandscape && ctx.listDepth == 0 && style.geometry.columns == 1
+        let fit = TableFit.plan(textWidth: measure, landscapeWidth: turns ? style.geometry.textHeight : nil,
+                                prose: allRows.contains { $0.contains { TableFit.isProse($0.text) } }) { fitSize in
+            let size = Self.command(fitSize)
             var natural = [Double](repeating: 0, count: columns), minimum = natural
             for row in allRows {
                 var j = 0
@@ -138,41 +134,10 @@ final class TableComposer {
                     j += c.span
                 }
             }
-            return (natural, minimum)
+            return TableFit.Columns(natural: natural, minimum: minimum)
         }
-        let sizes: [SizeCommand] = [.normalsize, .small, .footnotesize]
-        let available = measure - 2 * sep * Double(columns)
-        var plan: Plan? = nil
-        for size in sizes {
-            let natural = widths(size).natural
-            if natural.reduce(0, +) <= available { plan = Plan(size: size, widths: natural, wrap: false); break }
-        }
-        let landscapeMeasure = style.geometry.textHeight - 2 * sep * Double(columns)
-        // A table of sentences wraps them (as a `p{}` column would); a wide table of figures and short labels turns.
-        let hasProse = allRows.contains { $0.contains { $0.text.split(whereSeparator: \.isWhitespace).count >= 6 } }
-        if plan == nil && allowLandscape && !hasProse && ctx.listDepth == 0 && style.geometry.columns == 1 {
-            for size in sizes {
-                let natural = widths(size).natural
-                if natural.reduce(0, +) <= landscapeMeasure { plan = Plan(size: size, widths: natural, wrap: false, landscape: true); break }
-            }
-        }
-        if plan == nil {
-            for size in sizes {
-                let (natural, minimum) = widths(size)
-                if minimum.reduce(0, +) <= available {
-                    plan = Plan(size: size, widths: distribute(natural: natural, minimum: minimum, available: available), wrap: true)
-                    break
-                }
-            }
-        }
-        if plan == nil {
-            // Still too wide: footnotesize columns squeezed to the measure; long words break where they must.
-            let natural = widths(.footnotesize).natural
-            let total = max(natural.reduce(0, +), 1)
-            plan = Plan(size: .footnotesize, widths: natural.map { max(12, $0 / total * available) }, wrap: true)
-            composer.noteTableSimplified()
-        }
-        let p = plan!
+        if fit.squeezed { composer.noteTableSimplified() }
+        let p = (size: Self.command(fit.size), widths: fit.widths, wrap: fit.wrap, landscape: fit.landscape)
         let leading = style.size(p.size).leading
         let fontSize = style.size(p.size).size
         let strutHeight = 0.7 * leading, strutDepth = 0.3 * leading
@@ -302,6 +267,14 @@ final class TableComposer {
         return s
     }
 
+    static func command(_ size: TableFit.Size) -> SizeCommand {
+        switch size {
+        case .normal: .normalsize
+        case .small: .small
+        case .footnote: .footnotesize
+        }
+    }
+
     /// The pieces at another size (`\small`, `\footnotesize`), keeping their other attributes.
     func resized(_ pieces: [InlinePiece], _ size: SizeCommand) -> [InlinePiece] {
         let ratio = style.size(size).size / style.normal.size
@@ -331,27 +304,6 @@ final class TableComposer {
         let s = cellStyle(size)
         let widest = c.text.split(whereSeparator: \.isWhitespace).map { composer.setter.natural([.text(String($0), s)]).width }.max() ?? 0
         return min(widest, 6 * style.size(size).size)
-    }
-
-    /// Widths that fit `available`: columns that need no wrapping keep their natural width; the rest share what is left
-    /// in proportion to their natural widths, never below their longest word.
-    private func distribute(natural: [Double], minimum: [Double], available: Double) -> [Double] {
-        var widths = natural
-        var fixed = Set<Int>()
-        for _ in natural.indices {
-            let flexible = natural.indices.filter { !fixed.contains($0) }
-            let rest = available - fixed.reduce(0.0) { $0 + widths[$1] }
-            let flexNatural = flexible.reduce(0.0) { $0 + natural[$1] }
-            var changed = false
-            for j in flexible {
-                let share = flexNatural > 0 ? rest * natural[j] / flexNatural : rest / Double(flexible.count)
-                if natural[j] <= share { widths[j] = natural[j]; fixed.insert(j); changed = true }
-                else if minimum[j] > share { widths[j] = minimum[j]; fixed.insert(j); changed = true }
-                else { widths[j] = share }
-            }
-            if !changed { break }
-        }
-        return widths
     }
 
     private func splitDecimal(_ s: String) -> (String, String) {
