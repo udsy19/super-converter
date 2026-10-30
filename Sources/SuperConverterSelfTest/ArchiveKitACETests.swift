@@ -7,14 +7,14 @@ import SuperConverterCore
 // encrypted and traversal archives were built with a bit-level encoder written for these tests, and every one of them
 // decodes to the stated size and checksum under acefile, the reference decoder the reader is a port of.
 
-private struct ACEFixture {
+struct ACEFixture {
     let base64: String
     let size: Int
     let crc: UInt32
     var data: Data { Data(base64Encoded: base64.filter { !$0.isWhitespace })! }
 }
 
-private enum ACEFixtures {
+enum ACEFixtures {
     static let license1 = ACEFixture(base64: """
         AdMxAAAAkCoqQUNFKioKFAIAiouJWw3clWQAAAAAFipVTlJFR0lTVEVSRUQgVkVSU0lPTirbNiYAAQGAcA8AAF0sAAANubBYIAAAAEP7ooQBAwoA
         VEUHAExJQ0VOU0XlphyJvVs3liLu3nyMazyfEwmCQmosyqG3YDFN43HcgMaiGsYO/ewsOYtD9P1+v1+EvPf7SwlJb0pJA1hRoBUAPXsIRf/lf5Rx

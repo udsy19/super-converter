@@ -222,6 +222,22 @@ private func akAlz(_ entries: [(name: [UInt8], data: [UInt8]?)]) -> Data {
     return Data(out)
 }
 
+/// Recomputes the CRC-16 of every ACE header that still fits in `bytes`, walking from the start past each header's data.
+private func akFixACEHeaderCRCs(_ bytes: inout [UInt8]) {
+    var offset = 0
+    while bytes.count - offset >= 7 {
+        let size = Int(bytes[offset + 2]) | Int(bytes[offset + 3]) << 8
+        let body = offset + 4
+        guard size >= 3, bytes.count - body >= size else { return }
+        let crc = ACECRC.crc16(Array(bytes[body..<body + size]))
+        bytes[offset] = UInt8(crc & 0xFF); bytes[offset + 1] = UInt8(crc >> 8)
+        let flags = Int(bytes[body + 1]) | Int(bytes[body + 2]) << 8
+        var packed = 0
+        if flags & 1 != 0, size >= 7 { packed = (0..<4).reduce(0) { $0 | Int(bytes[body + 3 + $1]) << (8 * $1) } }
+        offset = body + size + packed
+    }
+}
+
 private func akGzip(_ data: Data, in dir: URL) -> Data? {
     let file = dir.appendingPathComponent("gz-\(UUID().uuidString)")
     try? data.write(to: file)
@@ -926,4 +942,57 @@ func registerArchiveKitTests() {
             }
         }
     }
+
+    // Damaged archives fail cleanly through every in-process reader: libarchive (linked in), LZOKit, RZipKit, ACEKit, ARCKit
+    // and unalz. No runner, so nothing falls back to 7zz or hdiutil (those run out of process).
+    SelfTest.cases.append(("ArchiveKit.damagedInputNeverCrashes", {
+        let archives = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tests/Corpus/generated/archives")
+        let corpus = ["tree.tar", "link-escape.tar", "tree.zip", "cp437.zip", "zipcrypto.zip", "aes.zip", "tree.7z", "secret.7z", "tree.cpio",
+                      "stored.rar", "tree.lha", "tree.cab", "tree.iso", "tree.jar", "tool.deb", "tool.rpm", "tree.tar.7z", "tree.tar.gz",
+                      "tree.tar.xz", "tree.tar.bz2", "tree.tar.z", "hello.txt.bz", "hello.txt.gz", "hello.txt.lz", "hello.txt.lzma",
+                      "hello.txt.xz", "hello.txt.lzo", "tree.tar.lzo", "hello.txt.rz", "tree.ace", "tree.arc", "tree.alz"]
+        var seeds: [FuzzSeed] = corpus.compactMap { name in
+            guard let data = try? Data(contentsOf: archives.appendingPathComponent(name)) else { check(false, "corpus \(name)"); return nil }
+            let ext = name.hasPrefix("hello.txt.") ? String(name.dropFirst(10)) : String(name.drop { $0 != "." }.dropFirst())
+            return FuzzSeed(name: name, ext: ext, bytes: [UInt8](data))
+        }
+        for (name, base64) in akLzopFixtures.sorted(by: { $0.key < $1.key }) {
+            seeds.append(FuzzSeed(name: "lzop-\(name)", ext: "lzo", bytes: [UInt8](Data(base64Encoded: base64)!)))
+        }
+        let ace: [(String, ACEFixture)] = [("license1", ACEFixtures.license1), ("license2", ACEFixtures.license2), ("delta-exe", ACEFixtures.deltaExe),
+                                           ("sound16", ACEFixtures.sound16), ("sound32a", ACEFixtures.sound32a), ("pic3", ACEFixtures.pic3),
+                                           ("pic1", ACEFixtures.pic1ThenLZ)]
+        seeds += ace.map { item in
+            // Half of the damaged copies get their header checksums fixed, so the damage reaches the decoders.
+            let bytes = [UInt8](item.1.data)
+            return FuzzSeed(name: "ace-\(item.0)", ext: "ace", bytes: bytes, mutate: { rng in
+                var copy = Fuzz.mutate(bytes, using: &rng)
+                if Bool.random(using: &rng) { akFixACEHeaderCRCs(&copy) }
+                return copy
+            })
+        }
+        let arc: [(String, ARCFixture)] = [("stored", ARCFixtures.stored), ("cpm", ARCFixtures.cpm), ("crunch", ARCFixtures.crunch),
+                                           ("crunch2", ARCFixtures.crunch2), ("squashed", ARCFixtures.squashed)]
+        seeds += arc.map { FuzzSeed(name: "arc-\($0.0)", ext: "arc", bytes: [UInt8]($0.1.data)) }
+
+        let engines: [String: EngineID] = ["lzo": .lzoKit, "tar.lzo": .lzoKit, "rz": .rzipKit, "ace": .aceKit, "arc": .arcKit, "alz": .unalz]
+        let dir = akScratch("fuzz")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Inputs per seed by what one read costs (debug build): the one-file streams take under 3 ms, the 256 KiB lzop
+        // fixtures and the larger containers over 12 ms, the rest in between. That keeps the case within about 9 s.
+        let costly: Set<String> = ["lzop-lzo1x-1", "lzop-lzo1x-999", "tree.iso", "tool.deb", "tree.jar", "tree.cab", "tree.lha", "tree.cpio", "tree.zip"]
+        let cheap: Set<String> = ["hello.txt.bz", "hello.txt.gz", "hello.txt.lz", "hello.txt.lzma", "hello.txt.xz", "hello.txt.lzo", "hello.txt.rz",
+                                  "tree.tar.bz2", "tree.tar.xz", "secret.7z", "lzop-tar"]
+        var ran = 0
+        for (count, group) in [(100, seeds.filter { cheap.contains($0.name) }), (8, seeds.filter { costly.contains($0.name) }),
+                               (20, seeds.filter { !cheap.contains($0.name) && !costly.contains($0.name) })] {
+            ran += fuzzNeverCrashes("ArchiveKit.damagedInputNeverCrashes", seeds: group, count: count) { url, seed in
+                let root = dir.appendingPathComponent("out", isDirectory: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+                _ = try await Archives.read(ArchiveReadRequest(source: url, format: FormatID(seed.ext), root: root), engine: engines[seed.ext] ?? .libarchive)
+            }
+        }
+        check(ran == 1712, "every damaged input was handled without a crash (\(ran))")
+    }))
 }

@@ -13,6 +13,8 @@ struct DXFReadResult {
 enum DXFReader {
     typealias Point3 = CADDrawing.Point3
     typealias Entity = CADDrawing.Entity
+    /// The most copies one array INSERT (groups 70 × 71) makes.
+    static let maxArrayCells = 10_000
 
     static func read(_ data: Data) throws -> DXFReadResult {
         let groups = DXFGroups.parse(data)
@@ -157,7 +159,7 @@ enum DXFReader {
                     var w = record.double(44), h = record.double(45)
                     if record.int(72) == 0 && w > 0 { w *= 25.4; h *= 25.4 }
                     if record.int(73) & 1 == 1 { swap(&w, &h) }
-                    if w > 0 && h > 0 { layoutPaper[layoutName] = VectorSize(width: w, height: h) }
+                    if w > 0 && h > 0 && (w * h).isFinite { layoutPaper[layoutName] = VectorSize(width: w, height: h) }
                 case "IMAGEDEF":
                     if let handle = record.string(5), let path = record.string(1) { imageDefs[handle.uppercased()] = path }
                 default: break
@@ -296,9 +298,11 @@ enum DXFReader {
                 (start, end) = (180 - end, 180 - start)
                 return [.arc(centre: centre, radius: radius, startAngle: start, endAngle: end, layer: layer)]
             }
-            // Any other normal: the curve is tessellated in world space.
-            if end <= start { end += 360 }
-            let n = max(12, Int((end - start) / 5))
+            // Any other normal: the curve is tessellated in world space, one point per 5° of a sweep of at most a full turn.
+            var sweep = circle ? 360 : (end - start).truncatingRemainder(dividingBy: 360)
+            if sweep <= 0 { sweep += 360 }
+            end = start + sweep
+            let n = max(12, Int(sweep / 5))
             let pts = (0...n).map { k -> Point3 in
                 let a = (start + (end - start) * Double(k) / Double(n)) * .pi / 180
                 return ocs.world(Point3(c.x + radius * cos(a), c.y + radius * sin(a), c.z))
@@ -485,7 +489,12 @@ enum DXFReader {
                 at = ocs.world(at)
                 if ocs.isFlipped { scale.x = -scale.x; rotation = -rotation }
             }
-            let columns = max(r.int(70, 1), 1), rows = max(r.int(71, 1), 1)
+            var columns = max(r.int(70, 1), 1), rows = max(r.int(71, 1), 1)
+            // A damaged count can ask for billions of copies; the array is cut to `maxArrayCells`, rows first.
+            if columns * rows > DXFReader.maxArrayCells {
+                noteLoss("array INSERT cells")
+                columns = min(columns, DXFReader.maxArrayCells); rows = max(DXFReader.maxArrayCells / columns, 1)
+            }
             let dx = r.double(44), dy = r.double(45)
             var out: [Entity] = []
             let a = rotation * .pi / 180
@@ -516,7 +525,7 @@ enum DXFReader {
             // Skip to the boundary path count (91).
             while i < g.count, g[i].code != 91 { i += 1 }
             guard i < g.count else { return [] }
-            let pathCount = g[i].int; i += 1
+            let pathCount = max(g[i].int, 0); i += 1
             var loops: [[Point3]] = []
             for _ in 0..<pathCount {
                 while i < g.count, g[i].code != 92 { i += 1 }
@@ -539,7 +548,7 @@ enum DXFReader {
                     loop = flatten(verts.map { ($0.x, $0.y) }, bulges: verts.map(\.b), closed: closed).map { Point3($0.0, $0.1, elevation) }
                 } else {
                     var edgeCount = 0
-                    if peek()?.code == 93 { edgeCount = g[i].int; i += 1 }
+                    if peek()?.code == 93 { edgeCount = max(g[i].int, 0); i += 1 }
                     var pts: [(Double, Double)] = []
                     for _ in 0..<edgeCount {
                         guard peek()?.code == 72 else { break }
@@ -553,14 +562,17 @@ enum DXFReader {
                     }
                     loop = pts.map { Point3($0.0, $0.1, elevation) }
                 }
-                if peek()?.code == 97 { let n = g[i].int; i += 1; for _ in 0..<n where peek()?.code == 330 { i += 1 } }
+                if peek()?.code == 97 {
+                    var n = g[i].int; i += 1
+                    while n > 0, peek()?.code == 330 { i += 1; n -= 1 }
+                }
                 if loop.count >= 3 { loops.append(loop.map { ocs.world($0) }) }
             }
             // Pattern definition lines (stored final: scale and angle already applied).
             var lines: [CADDrawing.HatchLine] = []
             if let at = g[i...].firstIndex(where: { $0.code == 78 }) {
                 var k = at
-                let count = g[k].int; k += 1
+                let count = max(g[k].int, 0); k += 1
                 for _ in 0..<count {
                     guard k < g.count, g[k].code == 53 else { break }
                     let angle = g[k].double; k += 1
@@ -601,7 +613,7 @@ enum DXFReader {
             case 3:
                 let cx = one(10), cy = one(20), mx = one(11), my = one(21), ratio = one(40)
                 let ccw = (v[73]?.first ?? 1) != 0
-                var a0 = one(50) * .pi / 180, a1 = one(51) * .pi / 180
+                var a0 = one(50).truncatingRemainder(dividingBy: 360) * .pi / 180, a1 = one(51).truncatingRemainder(dividingBy: 360) * .pi / 180
                 if !ccw { swap(&a0, &a1) }
                 if a1 <= a0 { a1 += 2 * .pi }
                 let n = max(8, Int((a1 - a0) / (.pi / 36)))
@@ -615,7 +627,7 @@ enum DXFReader {
                 let xs = v[10] ?? [], ys = v[20] ?? []
                 let controls = zip(xs, ys).map { Point3($0, $1) }
                 guard controls.count >= 2 else { return [] }
-                let degree = Int(one(94))
+                let degree = DXFGroup.integer(one(94))
                 let knots = (v[40] ?? [])
                 let sampled = NURBS.sample(degree: max(degree, 1), controls: controls, knots: knots, weights: [], samples: max(controls.count * 8, 24))
                 return sampled.map { ($0.x, $0.y) }
@@ -623,8 +635,10 @@ enum DXFReader {
             }
         }
 
-        func arcPoints(_ cx: Double, _ cy: Double, _ r: Double, _ a0: Double, _ a1: Double) -> [(Double, Double)] {
-            var end = a1
+        func arcPoints(_ cx: Double, _ cy: Double, _ r: Double, _ start: Double, _ a1: Double) -> [(Double, Double)] {
+            // Angles reduced to one turn, so the sweep is at most 360° whatever the file says.
+            let a0 = start.truncatingRemainder(dividingBy: 360)
+            var end = a1.truncatingRemainder(dividingBy: 360)
             while end <= a0 { end += 360 }
             let n = max(4, Int((end - a0) / 5))
             return (0...n).map { k in

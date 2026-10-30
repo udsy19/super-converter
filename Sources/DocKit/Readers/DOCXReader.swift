@@ -127,7 +127,7 @@ enum DOCXReader {
                 for l in a.children("lvl") {
                     let format = l.child("numFmt")?.attr("val") ?? "decimal"
                     levels[Int(l.attr("ilvl") ?? "0") ?? 0] = Level(ordered: format != "bullet" && format != "none",
-                                                                    start: Int(l.child("start")?.attr("val") ?? "1") ?? 1)
+                                                                    start: ListAssembler.start(Int(l.child("start")?.attr("val") ?? "1")))
                 }
                 abstracts[id] = levels
             }
@@ -135,7 +135,7 @@ enum DOCXReader {
                 guard let id = n.attr("numId"), let abstract = n.child("abstractNumId")?.attr("val"), var levels = abstracts[abstract] else { continue }
                 for o in n.children("lvlOverride") {
                     if let level = Int(o.attr("ilvl") ?? ""), let start = o.child("startOverride")?.attr("val").flatMap(Int.init), levels[level] != nil {
-                        levels[level]?.start = start
+                        levels[level]?.start = ListAssembler.start(start)
                     }
                 }
                 numbering[id] = levels
@@ -180,7 +180,7 @@ enum DOCXReader {
             for s in chain(id) {
                 let name = s.name.lowercased()
                 if name.hasPrefix("heading "), let n = Int(name.dropFirst(8)), (1...9).contains(n) { return min(n, 6) }
-                if let level = s.pPr?.child("outlineLvl")?.attr("val").flatMap(Int.init), level < 9 { return min(level + 1, 6) }
+                if let level = s.pPr?.child("outlineLvl")?.attr("val").flatMap(Int.init), (0..<9).contains(level) { return min(level + 1, 6) }
             }
             return nil
         }
@@ -534,7 +534,7 @@ enum DOCXReader {
                 let rowIndex = rows.count
                 for tc in tr.children("tc") + tr.children("sdt").flatMap({ $0.child("sdtContent")?.children("tc") ?? [] }) {
                     let tcPr = tc.child("tcPr")
-                    let span = max(Int(tcPr?.child("gridSpan")?.attr("val") ?? "1") ?? 1, 1)
+                    let span = TableGrid.span(Int(tcPr?.child("gridSpan")?.attr("val") ?? "1"))
                     if let merge = tcPr?.child("vMerge"), merge.attr("val") != "restart" {
                         if let origin = open[column], origin.row < rowIndex {
                             rows[origin.row][origin.cell].rowSpan += 1

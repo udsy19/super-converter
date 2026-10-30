@@ -82,6 +82,9 @@ enum MarkupParser {
         "address", "article", "aside", "blockquote", "div", "dl", "fieldset", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5",
         "h6", "header", "hr", "main", "nav", "ol", "p", "pre", "section", "table", "ul"]
     private static let rawTextElements: Set<String> = ["script", "style"]
+    /// Elements open at once, as libxml2 allows: deeper ones are still read, as siblings at this depth, so damaged or
+    /// hostile nesting ("<div>" twenty thousand times) can't overflow the stack of the readers that walk the tree.
+    static let maxDepth = 256
 
     static func parse(_ text: String, html: Bool, lowercase: Bool? = nil) -> MarkupNode {
         let lower = lowercase ?? html
@@ -237,7 +240,7 @@ enum MarkupParser {
                 i = min(n, k + 1)
                 continue
             }
-            stack.append(node)
+            if stack.count <= maxDepth { stack.append(node) }
         }
         flushText()
         return root

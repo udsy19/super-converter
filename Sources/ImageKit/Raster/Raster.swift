@@ -194,13 +194,17 @@ struct Raster: @unchecked Sendable {
         return out
     }
 
-    /// Clamps colour components to 0…1 (and alpha always); extended rasters keep values above 1.
+    /// Clamps colour components to 0…1 (and alpha always); extended rasters keep values above 1. NaN (damaged float
+    /// pixels, which `min`/`max` pass through) becomes 0, so the integer conversions after this never see it.
     mutating func clamp() {
         let s = stride, comps = space.components, ext = extended, count = pixelCount
         data.withUnsafeMutableBufferPointer { d in
             for i in 0..<count {
-                for c in 0..<comps { d[i * s + c] = ext ? max(d[i * s + c], 0) : min(max(d[i * s + c], 0), 1) }
-                if s > comps { d[i * s + comps] = min(max(d[i * s + comps], 0), 1) }
+                for c in 0..<comps {
+                    let v = d[i * s + c].isNaN ? 0 : d[i * s + c]
+                    d[i * s + c] = ext ? max(v, 0) : min(max(v, 0), 1)
+                }
+                if s > comps { d[i * s + comps] = d[i * s + comps].isNaN ? 0 : min(max(d[i * s + comps], 0), 1) }
             }
         }
     }

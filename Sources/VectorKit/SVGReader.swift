@@ -33,8 +33,13 @@ final class SVGInterpreter {
     var lossNotes: Set<LossNote> = []
     var warnings: [String] = []
     var budget = 600_000
+    /// How many `use` instances the drawing may expand: nested `use` multiplies (ten uses of ten uses of … is a billion
+    /// elements), and even the element budget takes minutes to spend that way.
+    var useBudget = 20_000
     var depth = 0
     var useStack: [XNode] = []
+    /// Patterns whose tile is being rendered (a pattern can't paint inside itself).
+    var activePatterns: [XNode] = []
 
     init(root: XNode, baseURL: URL?) { self.root = root; self.baseURL = baseURL }
 
@@ -188,8 +193,12 @@ final class SVGInterpreter {
         // Resolve font-size to px so em/% in children compute against it.
         let parentSize = Double(parent["font-size"] ?? "16") ?? 16
         if let fs = props["font-size"] {
-            if let l = SVGValues.length(fs) { props["font-size"] = String(Self.px(l, fontSize: parentSize, percentBase: parentSize)) }
-            else {
+            if let l = SVGValues.length(fs) {
+                // A size past 100 000 px (or infinite, from "1e999") is damage: Core Text spends seconds laying out
+                // each run at such sizes, so it falls back to the parent's.
+                let size = Self.px(l, fontSize: parentSize, percentBase: parentSize)
+                props["font-size"] = String(size.isFinite && abs(size) <= 100_000 ? size : parentSize)
+            } else {
                 let keywords = ["xx-small": 9.0, "x-small": 10, "small": 13, "medium": 16, "large": 18, "x-large": 24, "xx-large": 32]
                 if let k = keywords[fs] { props["font-size"] = String(k) }
                 else if fs == "larger" { props["font-size"] = String(parentSize * 1.2) }
@@ -218,7 +227,9 @@ final class SVGInterpreter {
     func render(_ node: XNode, ctx parent: SVGContext, into out: inout [VectorNode]) {
         guard Self.graphicElements.contains(node.name) else { return }
         budget -= 1
-        guard budget > 0, depth < 128 else { return }
+        // Elements nest at most 64 deep: each level costs several large frames (render, nested viewport, the wrappers),
+        // and a reader runs on a 512 KB task stack, which 128 levels of nested `<svg>` overran.
+        guard budget > 0, depth < 64 else { return }
         depth += 1
         defer { depth -= 1 }
 
@@ -316,6 +327,8 @@ final class SVGInterpreter {
 
     func renderUse(_ node: XNode, ctx: SVGContext, into out: inout [VectorNode]) {
         guard let target = reference(node.attr("href")), !useStack.contains(where: { $0 === target }), useStack.count < 24 else { return }
+        guard useBudget > 0 else { note(.otherLoss, "Repeated copies past the first 20 000 were left out"); return }
+        useBudget -= 1
         // A `use` cannot instantiate an ancestor of itself.
         var ancestor: XNode? = node
         while let a = ancestor { if a === target { return }; ancestor = a.parent }

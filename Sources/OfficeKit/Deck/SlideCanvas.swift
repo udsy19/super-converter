@@ -315,6 +315,10 @@ final class SlideCanvas {
 
     // MARK: Tables
 
+    /// A cell's `gridSpan` or `rowSpan`, from 1 to the table's columns or rows: a damaged "9223372036854775807" would
+    /// overflow the index it is added to.
+    private static func span(_ cell: XMLNode, _ name: String, _ limit: Int) -> Int { min(max(Int(cell.attr(name) ?? "") ?? 1, 1), limit) }
+
     private func drawTable(_ table: XMLNode, at frame: CGRect, part: SlidePart) {
         let columns = (table.child("tblGrid")?.children("gridCol") ?? []).map { CGFloat(max(min((Double($0.attr("w") ?? "") ?? 0) / slideEMU, 14_400), 0)) }
         let rows = table.children("tr")
@@ -332,7 +336,7 @@ final class SlideCanvas {
         for (r, row) in rows.enumerated() {
             for (c, cell) in row.children("tc").prefix(columns.count).enumerated() {
                 guard !Self.isCovered(cell), Int(cell.attr("rowSpan") ?? "") ?? 1 <= 1, let body = cell.child("txBody") else { continue }
-                let span = max(Int(cell.attr("gridSpan") ?? "") ?? 1, 1)
+                let span = Self.span(cell, "gridSpan", columns.count)
                 let context = cellTextContext(cell, row: r, column: c, style: style)
                 heights[r] = max(heights[r], SlideText.height(body, width: cellWidth(c, span), context: context))
             }
@@ -343,8 +347,8 @@ final class SlideCanvas {
         var borders: [(CGPoint, CGPoint, SlideLine)] = []
         for (r, row) in rows.enumerated() {
             for (c, cell) in row.children("tc").prefix(columns.count).enumerated() where !Self.isCovered(cell) {
-                let span = max(Int(cell.attr("gridSpan") ?? "") ?? 1, 1)
-                let rowSpan = max(Int(cell.attr("rowSpan") ?? "") ?? 1, 1)
+                let span = Self.span(cell, "gridSpan", columns.count)
+                let rowSpan = Self.span(cell, "rowSpan", rows.count)
                 let rect = CGRect(x: xs[c], y: ys[r], width: cellWidth(c, span), height: ys[min(r + rowSpan, rows.count)] - ys[r])
                 let tcPr = cell.child("tcPr")
                 let fill = paint.fill(in: tcPr) ?? style.fill(row: r, column: c)

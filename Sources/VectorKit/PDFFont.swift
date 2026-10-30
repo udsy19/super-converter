@@ -67,22 +67,27 @@ final class PDFFont {
     // MARK: Widths and encodings
 
     private func parseSimpleWidths(_ dict: CGPDFDictionaryRef) {
-        guard let first = PDFObj.int(dict, "FirstChar"), let array = PDFObj.array(dict, "Widths") else { return }
-        for (i, w) in PDFObj.numbers(array).enumerated() { widths[first + i] = w }
+        guard let first = PDFObj.int(dict, "FirstChar"), (0..<256).contains(first), let array = PDFObj.array(dict, "Widths") else { return }
+        for (i, w) in PDFObj.numbers(array).prefix(256).enumerated() { widths[first + i] = w }
         hasWidths = true
     }
 
+    /// CIDs are 16-bit; the `W` array's runs are clipped to that range, and all of them together set at most a few full
+    /// ranges' worth of widths (a damaged array can repeat a 65 536-wide run endlessly).
     private func parseCIDWidths(_ dict: CGPDFDictionaryRef) {
         guard let w = PDFObj.array(dict, "W") else { return }
         var i = 0
+        var budget = 1 << 18
         let n = CGPDFArrayGetCount(w)
-        while i < n {
-            guard let first = PDFObj.numberElement(w, i) else { i += 1; continue }
+        func cid(_ v: Double) -> Int { v.isNaN ? -1 : Int(min(max(v, -1), 65_536)) }
+        while i < n, budget > 0 {
+            guard let firstNumber = PDFObj.numberElement(w, i) else { i += 1; continue }
+            let first = cid(firstNumber)
             if let list = PDFObj.arrayElement(w, i + 1) {
-                for (k, width) in PDFObj.numbers(list).enumerated() { widths[Int(first) + k] = width }
+                for (k, width) in PDFObj.numbers(list).enumerated() where first >= 0 && first + k < 65_536 { widths[first + k] = width; budget -= 1 }
                 i += 2
-            } else if let last = PDFObj.numberElement(w, i + 1), let width = PDFObj.numberElement(w, i + 2) {
-                if Int(last) - Int(first) < 70000 { for c in Int(first)...max(Int(first), Int(last)) { widths[c] = width } }
+            } else if let last = PDFObj.numberElement(w, i + 1).map(cid), let width = PDFObj.numberElement(w, i + 2) {
+                if first >= 0, first <= last { for c in first...min(last, 65_535) { widths[c] = width }; budget -= last - first + 1 }
                 i += 3
             } else { i += 1 }
         }
@@ -109,7 +114,8 @@ final class PDFFont {
         if let differences {
             var code = 0
             for i in 0..<CGPDFArrayGetCount(differences) {
-                if let n = PDFObj.numberElement(differences, i) { code = Int(n) }
+                // A code outside 0...255 (damage) names nothing until the next number.
+                if let n = PDFObj.numberElement(differences, i) { code = n >= 0 && n < 256 ? Int(n) : 256 }
                 else if let name = PDFObj.nameElement(differences, i) {
                     if code >= 0, code < 256 { encoding[code] = PDFFont.unicode(forGlyphName: name); encodingNames[code] = name }
                     code += 1
@@ -224,12 +230,15 @@ final class PDFFont {
             rest = rest[end.upperBound...]
         }
         rest = Substring(text)
-        while let r = rest.range(of: "beginbfrange") {
+        // Ranges together map at most a few full 16-bit code spaces: a damaged CMap can repeat a 65 536-code range endlessly.
+        var budget = 1 << 18
+        while budget > 0, let r = rest.range(of: "beginbfrange") {
             rest = rest[r.upperBound...]
             guard let end = rest.range(of: "endbfrange") else { break }
-            for line in rest[..<end.lowerBound].split(whereSeparator: { $0.isNewline }) {
+            for line in rest[..<end.lowerBound].split(whereSeparator: { $0.isNewline }) where budget > 0 {
                 let t = hexTokens(line)
                 guard t.count >= 3, let lo = Int(t[0], radix: 16), let hi = Int(t[1], radix: 16), hi >= lo, hi - lo < 65536 else { continue }
+                budget -= hi - lo + 1
                 if line.contains("[") {
                     for (k, h) in t.dropFirst(2).enumerated() where lo + k <= hi { map[lo + k] = utf16(h) }
                 } else {
@@ -366,7 +375,7 @@ final class PDFFont {
         if isType0 {
             let cid = glyph.code
             let gid = cidToGIDIdentity ? cid : (cid < (cidToGID?.count ?? 0) ? cidToGID![cid] : 0)
-            id = CGGlyph(gid)
+            id = CGGlyph(exactly: gid) ?? 0  // a 3- or 4-byte code names no glyph
         } else {
             if let name = glyph.glyphName { id = CTFontGetGlyphWithName(font, name as CFString) }
             if id == 0, let scalar = glyph.unicode.utf16.first { var u = scalar; var g: CGGlyph = 0; if CTFontGetGlyphsForCharacters(font, &u, &g, 1) { id = g } }

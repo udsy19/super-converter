@@ -188,7 +188,9 @@ struct DocModelBuilder {
             let ordered = isOrdered(items[index].marker)
             var group: [[DocBlock]] = []
             let start = startNumber(items[index].marker)
-            while index < items.count, items[index].level == base, isOrdered(items[index].marker) == ordered || group.isEmpty {
+            // A group always takes its first item, even one indented deeper than a later item (which makes `base` lower), so
+            // the loop always advances.
+            while index < items.count, group.isEmpty || (items[index].level == base && isOrdered(items[index].marker) == ordered) {
                 var item: [DocBlock] = [.paragraph(items[index].text, DocParagraphStyle())]
                 index += 1
                 var nested: [(level: Int, marker: String, text: DocText)] = []

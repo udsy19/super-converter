@@ -375,7 +375,10 @@ struct PackageWriter {
     }
 
     static func transcodeToPNG(_ data: Data) -> Data? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        // A picture past 100 megapixels is damage (a few bytes of BMP or TIFF header can claim billions), and decoding it
+        // would allocate them.
+        guard let size = MediaTypes.pixelSize(of: data), size.width <= 32_768, size.height <= 32_768, size.width * size.height <= 100_000_000,
+              let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(dest, image, nil)

@@ -219,3 +219,13 @@ public extension VectorColour {
     static let black = VectorColour(red: 0, green: 0, blue: 0)
     static let white = VectorColour(red: 1, green: 1, blue: 1)
 }
+
+extension Double {
+    /// The value as an Int when it is finite and in range, else nil: a damaged file can hold any number where a count, an
+    /// index or a mode belongs, and `Int(_:)` traps outside the range.
+    var checkedInt: Int? { isFinite && magnitude < 0x1p62 ? Int(self) : nil }
+}
+
+/// How deep the readers nest groups (clips, layers, saved states, containers): a damaged file can open thousands, and
+/// everything that walks the model (bounds, drawing, the writers) recurses through them.
+let maxGroupNesting = 128

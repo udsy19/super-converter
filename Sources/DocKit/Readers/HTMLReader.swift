@@ -240,7 +240,7 @@ enum HTMLReader {
 
         mutating func list(_ node: HTMLNode) -> DocBlock {
             let ordered = node.tag == "ol"
-            let start = Int(node.attr("start") ?? "1") ?? 1
+            let start = ListAssembler.start(Int(node.attr("start") ?? "1"))
             var items: [[DocBlock]] = []
             for child in node.children {
                 if child.tag == "li" { items.append(blocks(of: child.children)) }
@@ -283,8 +283,8 @@ enum HTMLReader {
                         let a = alignment(cell)
                         if a != .start { content = content.map { if case .paragraph(let t, var s) = $0, s.alignment == .start { s.alignment = a; return .paragraph(t, s) }; return $0 } }
                     }
-                    cells.append(DocTable.Cell(blocks: content, columnSpan: max(Int(cell.attr("colspan") ?? "1") ?? 1, 1),
-                                               rowSpan: max(Int(cell.attr("rowspan") ?? "1") ?? 1, 1), isHeader: cell.tag == "th" || inHead))
+                    cells.append(DocTable.Cell(blocks: content, columnSpan: TableGrid.span(Int(cell.attr("colspan") ?? "1")),
+                                               rowSpan: TableGrid.span(Int(cell.attr("rowspan") ?? "1")), isHeader: cell.tag == "th" || inHead))
                 }
                 if !cells.isEmpty { rows.append(cells) }
             }
@@ -413,7 +413,7 @@ enum HTMLReader {
             }
             if c.hasPrefix("rgb"), let open = c.firstIndex(of: "("), let close = c.firstIndex(of: ")") {
                 let parts = c[c.index(after: open)..<close].split(whereSeparator: { $0 == "," || $0 == " " || $0 == "/" }).compactMap { Double($0.trimmingCharacters(in: CharacterSet(charactersIn: "%"))) }
-                if parts.count >= 3 { return String(format: "#%02X%02X%02X", Int(parts[0]), Int(parts[1]), Int(parts[2])) }
+                if parts.count >= 3 { return String(format: "#%02X%02X%02X", Int(measure: min(max(parts[0], 0), 255)), Int(measure: min(max(parts[1], 0), 255)), Int(measure: min(max(parts[2], 0), 255))) }
             }
             let named: [String: String] = ["red": "#FF0000", "blue": "#0000FF", "green": "#008000", "black": "#000000", "white": "#FFFFFF", "gray": "#808080", "grey": "#808080", "orange": "#FFA500", "purple": "#800080", "yellow": "#FFFF00"]
             return named[c]

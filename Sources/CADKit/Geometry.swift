@@ -64,7 +64,10 @@ struct BulgeArc {
 enum Geometry {
     /// A unit-circle arc from angle `start` sweeping `sweep` radians (negative = clockwise) as cubic Béziers of at most 90°:
     /// (control 1, control 2, end) per piece, to be mapped by the caller's transform. The first point is (cos start, sin start).
-    static func unitArc(start: Double, sweep: Double) -> [(c1: (Double, Double), c2: (Double, Double), end: (Double, Double))] {
+    /// A sweep beyond a full turn only retraces the circle, so it is cut to one; a non-finite one draws nothing.
+    static func unitArc(start: Double, sweep given: Double) -> [(c1: (Double, Double), c2: (Double, Double), end: (Double, Double))] {
+        guard given.isFinite, start.isFinite else { return [] }
+        let sweep = min(max(given, -2 * .pi), 2 * .pi)
         let pieces = max(1, Int((abs(sweep) / (.pi / 2) - 1e-9).rounded(.up)))
         let step = sweep / Double(pieces)
         let k = 4.0 / 3.0 * tan(step / 4)
@@ -76,11 +79,14 @@ enum Geometry {
 }
 
 enum NURBS {
+    /// The highest degree evaluated: CAD kernels stop at 25 (AutoCAD at 11), and the cost grows with its square per sample.
+    static let maxDegree = 25
+
     /// Points along a (possibly rational) B-spline. Missing or inconsistent knots become a clamped uniform vector.
     static func sample(degree p: Int, controls: [CADDrawing.Point3], knots given: [Double], weights: [Double], samples: Int) -> [CADDrawing.Point3] {
         let n = controls.count
         guard n >= 2 else { return controls }
-        let degree = min(p, n - 1)
+        let degree = min(p, n - 1, maxDegree)
         var knots = given
         if knots.count != n + degree + 1 || !knots.starts(with: knots.sorted().prefix(0)) || zip(knots, knots.dropFirst()).contains(where: { $0 > $1 }) {
             knots = (0..<(n + degree + 1)).map { i in
@@ -113,9 +119,10 @@ enum NURBS {
             return N
         }
         var out: [CADDrawing.Point3] = []
+        // The samples run forward along the knots, so the span search carries on from the last sample's span.
+        var span = degree
         for s in 0...samples {
             let t = s == samples ? hi : lo + (hi - lo) * Double(s) / Double(samples)
-            var span = degree
             while span < n - 1 && t >= knots[span + 1] { span += 1 }
             let N = basis(span, t)
             var x = 0.0, y = 0.0, z = 0.0, ws = 0.0

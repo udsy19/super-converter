@@ -7,11 +7,20 @@ struct DXFGroup {
     var code: Int
     var text: String
 
-    var double: Double { Double(text.trimmingCharacters(in: .whitespaces)) ?? 0 }
+    /// A real value; "nan", "inf" and anything unreadable are 0, since every DXF real is finite.
+    var double: Double {
+        let v = Double(text.trimmingCharacters(in: .whitespaces)) ?? 0
+        return v.isFinite ? v : 0
+    }
+    /// An integer value. No group the reader uses holds more than 32 bits, so anything outside that range is damage and
+    /// reads as 0, which also keeps counts multiplied together (mesh M × N, array rows × columns) from overflowing.
     var int: Int {
         let t = text.trimmingCharacters(in: .whitespaces)
-        return Int(t) ?? Int(Double(t) ?? 0)
+        return Int(t).map(DXFGroup.integer) ?? DXFGroup.integer(Double(t) ?? 0)
     }
+
+    static func integer(_ v: Int) -> Int { Int32(exactly: v).map(Int.init) ?? 0 }
+    static func integer(_ v: Double) -> Int { Int32(exactly: v.rounded(.towardZero)).map(Int.init) ?? 0 }
 }
 
 enum DXFGroups {

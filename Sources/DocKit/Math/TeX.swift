@@ -3,8 +3,10 @@ import Foundation
 /// TeX math ↔ `MathNode`: the subset that articles use (fractions, roots, scripts, big operators, delimiters, matrices,
 /// accents, text, Greek and the usual symbols). What the parser does not know is kept as `.raw`, so TeX → TeX never loses it.
 enum TeX {
-    static func parse(_ source: String) -> MathNode {
-        var parser = Parser(Array(source))
+    static func parse(_ source: String) -> MathNode { parse(Array(source), depth: 0) }
+
+    private static func parse(_ chars: [Character], depth: Int) -> MathNode {
+        var parser = Parser(chars, depth: depth)
         let row = parser.parseRow(until: { _ in false })
         return MathNode.make(row)
     }
@@ -12,10 +14,15 @@ enum TeX {
     // MARK: Parsing
 
     private struct Parser {
+        /// Groups nested deeper than this keep the rest of the source as raw TeX: each group is a level of recursion, and a
+        /// damaged formula can open thousands of them.
+        static let maxDepth = 100
+
         let chars: [Character]
         var i = 0
+        var depth: Int
 
-        init(_ chars: [Character]) { self.chars = chars }
+        init(_ chars: [Character], depth: Int) { self.chars = chars; self.depth = depth }
 
         var atEnd: Bool { i >= chars.count }
 
@@ -23,6 +30,9 @@ enum TeX {
 
         /// Parses atoms until the end, a closing `}` / `&` / `\\` / `\right` / `\end` the caller handles (not consumed).
         mutating func parseRow(until stop: (inout Parser) -> Bool) -> [MathNode] {
+            guard depth < Self.maxDepth else { return [rest()] }
+            depth += 1
+            defer { depth -= 1 }
             var out: [MathNode] = []
             while true {
                 skipSpaces()
@@ -68,8 +78,17 @@ enum TeX {
             }
         }
 
+        /// What is left of the source, verbatim.
+        mutating func rest() -> MathNode {
+            defer { i = chars.count }
+            return .raw(String(chars[i...]))
+        }
+
         /// One argument: a `{group}` or a single atom.
         mutating func parseArgument() -> MathNode {
+            guard depth < Self.maxDepth else { return rest() }
+            depth += 1
+            defer { depth -= 1 }
             skipSpaces()
             guard !atEnd else { return .row([]) }
             if chars[i] == "{" {
@@ -166,10 +185,10 @@ enum TeX {
                 var index: MathNode?
                 if !atEnd, chars[i] == "[" {
                     i += 1
-                    var inner = ""
-                    while !atEnd, chars[i] != "]" { inner.append(chars[i]); i += 1 }
+                    let open = i
+                    while !atEnd, chars[i] != "]" { i += 1 }
+                    index = TeX.parse(Array(chars[open..<i]), depth: depth + 1)
                     if !atEnd { i += 1 }
-                    index = TeX.parse(inner)
                 }
                 return .sqrt(parseArgument(), index: index)
             case "left":
@@ -243,10 +262,11 @@ enum TeX {
     }
 
     private static func append(_ piece: String, to out: inout String) {
-        // `\alpha` followed by a letter would read as `\alphax`.
-        if let first = piece.first, first.isLetter, let backslash = out.lastIndex(of: "\\"),
-           out[out.index(after: backslash)...].allSatisfy({ $0.isLetter && $0.isASCII }), !out[out.index(after: backslash)...].isEmpty {
-            out += " "
+        // `\alpha` followed by a letter would read as `\alphax`. Only the trailing letters are looked at, so a long formula
+        // without commands stays linear to emit.
+        if let first = piece.first, first.isLetter {
+            let letters = out.reversed().prefix { $0.isLetter && $0.isASCII }.count
+            if letters > 0, out.dropLast(letters).last == "\\" { out += " " }
         }
         out += piece
     }

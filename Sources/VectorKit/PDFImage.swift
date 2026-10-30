@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import SuperConverterCore
 
 /// Image XObjects → ImageAsset (8-bit RGBA): raw samples in any colour space and depth, DCT/JPEG 2000 through ImageIO,
@@ -9,18 +8,21 @@ enum PDFImageDecoder {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
     static func decode(_ stream: CGPDFStreamRef, lookup: (String) -> CGPDFObjectRef?, fill: VectorColour) -> ImageAsset? {
-        guard let dict = PDFObj.streamDictionary(stream), let w = PDFObj.int(dict, "Width") ?? PDFObj.int(dict, "W"),
-              let h = PDFObj.int(dict, "Height") ?? PDFObj.int(dict, "H"), w > 0, h > 0, w * h <= 80_000_000 else { return nil }
+        guard let dict = PDFObj.streamDictionary(stream), var w = PDFObj.int(dict, "Width") ?? PDFObj.int(dict, "W"),
+              var h = PDFObj.int(dict, "Height") ?? PDFObj.int(dict, "H"), ImageBridge.plausible(width: w, height: h) else { return nil }
         let isMask = PDFObj.bool(dict, "ImageMask") ?? false
         guard let (data, format) = PDFObj.data(stream) else { return nil }
         var rgba: [UInt8]
         var hasAlpha = false
 
         if format != .raw {
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                  let pixels = drawn(image, width: w, height: h) else { return nil }
+            // The encoded picture knows its own size; a dictionary that disagrees is not trusted with the allocation.
+            guard let image = ImageBridge.image(decoding: data) else { return nil }
+            w = image.width; h = image.height
+            guard let pixels = drawn(image, width: w, height: h) else { return nil }
             rgba = pixels
         } else if isMask {
+            guard holds(data, width: w, height: h, components: 1, bits: 1) else { return nil }
             let invert = (PDFObj.numbers(dict, "Decode") ?? [0, 1]).first == 1
             let samples = unpack(data, width: w, height: h, components: 1, bits: 1)
             rgba = [UInt8](repeating: 0, count: w * h * 4)
@@ -34,7 +36,7 @@ enum PDFImageDecoder {
             let bits = PDFObj.int(dict, "BitsPerComponent") ?? PDFObj.int(dict, "BPC") ?? 8
             guard let csObject = PDFObj.object(dict, "ColorSpace") ?? PDFObj.object(dict, "CS"), let space = PDFColourSpace.parse(csObject, lookup: lookup) else { return nil }
             let n = space.components
-            guard n > 0 else { return nil }
+            guard n > 0, holds(data, width: w, height: h, components: n, bits: bits) else { return nil }
             var samples = unpack(data, width: w, height: h, components: n, bits: bits)
             // Colour-key mask is tested on the undecoded samples.
             var keyed: [Bool]?
@@ -72,9 +74,7 @@ enum PDFImageDecoder {
 
         // Soft mask or explicit mask: alpha from another image, resampled to this one.
         let softMask = PDFObj.stream(dict, "SMask")
-        if let maskStream = softMask ?? PDFObj.stream(dict, "Mask"), let maskDict = PDFObj.streamDictionary(maskStream),
-           let mw = PDFObj.int(maskDict, "Width"), let mh = PDFObj.int(maskDict, "Height"), mw > 0, mh > 0,
-           let alpha = decodeAlpha(maskStream, soft: softMask != nil) {
+        if let maskStream = softMask ?? PDFObj.stream(dict, "Mask"), let (alpha, mw, mh) = decodeAlpha(maskStream, soft: softMask != nil) {
             for y in 0..<h {
                 let my = min(mh - 1, y * mh / h)
                 for x in 0..<w { rgba[(y * w + x) * 4 + 3] = alpha[my * mw + min(mw - 1, x * mw / w)] }
@@ -94,23 +94,32 @@ enum PDFImageDecoder {
         return true
     }
 
-    /// Mask samples as alpha 0...255 (soft mask: gray level; explicit mask: 1-bit, 0 = opaque).
-    private static func decodeAlpha(_ stream: CGPDFStreamRef, soft: Bool) -> [UInt8]? {
+    /// Mask samples as alpha 0...255 (soft mask: gray level; explicit mask: 1-bit, 0 = opaque), with the mask's size.
+    private static func decodeAlpha(_ stream: CGPDFStreamRef, soft: Bool) -> (alpha: [UInt8], width: Int, height: Int)? {
         guard let dict = PDFObj.streamDictionary(stream), let w = PDFObj.int(dict, "Width"), let h = PDFObj.int(dict, "Height"),
-              let (data, format) = PDFObj.data(stream) else { return nil }
+              ImageBridge.plausible(width: w, height: h), let (data, format) = PDFObj.data(stream) else { return nil }
         if format != .raw {
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                  let rgba = drawn(image, width: w, height: h) else { return nil }
-            return (0..<(w * h)).map { rgba[$0 * 4] }
+            guard let image = ImageBridge.image(decoding: data), let rgba = drawn(image, width: image.width, height: image.height) else { return nil }
+            return ((0..<(image.width * image.height)).map { rgba[$0 * 4] }, image.width, image.height)
         }
         let bits = soft ? (PDFObj.int(dict, "BitsPerComponent") ?? 8) : 1
+        guard holds(data, width: w, height: h, components: 1, bits: bits) else { return nil }
         let samples = unpack(data, width: w, height: h, components: 1, bits: bits)
         let inverted = (PDFObj.numbers(dict, "Decode") ?? [0, 1]).first == 1
         if soft {
             let m = bits < 8 ? Double((1 << bits) - 1) : 255
-            return samples.map { let v = UInt8(min(255, (Double($0) / m * 255).rounded())); return inverted ? 255 - v : v }
+            return (samples.map { let v = UInt8(min(255, (Double($0) / m * 255).rounded())); return inverted ? 255 - v : v }, w, h)
         }
-        return samples.map { (($0 == 0) != inverted) ? 255 : 0 }
+        return (samples.map { (($0 == 0) != inverted) ? 255 : 0 }, w, h)
+    }
+
+    /// Whether raw sample data of `components` × `bits` fits the declared size: the depth is one PDF allows, and the data
+    /// holds at least half the rows (a short stream keeps its missing rows blank, but a header claiming far more pixels
+    /// than the data holds is damage, and would be a runaway allocation).
+    private static func holds(_ data: Data, width: Int, height: Int, components: Int, bits: Int) -> Bool {
+        guard [1, 2, 4, 8, 16].contains(bits) else { return false }
+        let rowBytes = (width * components * bits + 7) / 8
+        return data.count / rowBytes >= (height + 1) / 2
     }
 
     /// Unpacks samples of any depth to bytes (raw values for depths below 8; 16-bit takes the high byte).

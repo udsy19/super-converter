@@ -123,8 +123,8 @@ enum HWPXReader {
                     var content: [DocBlock] = []
                     for p in cell.all("p") { content += blocks(p, resources: &resources) }
                     if content.isEmpty { content = [.paragraph([], DocParagraphStyle())] }
-                    cells.append(DocTable.Cell(blocks: content, columnSpan: max(Int(span?.attr("colSpan") ?? "1") ?? 1, 1),
-                                               rowSpan: max(Int(span?.attr("rowSpan") ?? "1") ?? 1, 1),
+                    cells.append(DocTable.Cell(blocks: content, columnSpan: TableGrid.span(Int(span?.attr("colSpan") ?? "1")),
+                                               rowSpan: TableGrid.span(Int(span?.attr("rowSpan") ?? "1")),
                                                isHeader: r == 0 && table.attr("repeatHeader") == "1"))
                 }
                 rows.append(cells)

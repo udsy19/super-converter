@@ -32,11 +32,12 @@ enum ODSReader {
 
         var sheets: [Sheet] = []
         var truncated = false
+        var budget = XLSXReader.maxCells
         for table in content.first("spreadsheet")?.children("table") ?? [] {
             var sheet = Sheet(name: table.attr("table:name") ?? "Sheet\(sheets.count + 1)")
             if let style = table.attr("table:style-name"), styles.tableHidden.contains(style) { sheet.isHidden = true }
             sheet.printArea = table.attr("table:print-ranges").flatMap(printRange)
-            truncated = read(table, into: &sheet, styles: styles) || truncated
+            truncated = read(table, into: &sheet, styles: styles, budget: &budget) || truncated
             sheets.append(sheet)
         }
         if sheets.isEmpty { throw ConversionError.damaged(FormatID("ods")) }
@@ -58,8 +59,15 @@ enum ODSReader {
 
     // MARK: Sheets
 
-    /// Fills `sheet`; true when rows or columns past the limits were left out.
-    private static func read(_ table: XMLNode, into sheet: inout Sheet, styles: StyleSheet) -> Bool {
+    /// A repeat or span count, from 1 to `limit`: a damaged "-1" or "2147483647" must neither run a loop backwards nor
+    /// overflow the index it moves.
+    private static func count(_ node: XMLNode, _ name: String, limit: Int) -> Int {
+        min(max(node.attr(name).flatMap(Int.init) ?? 1, 1), limit)
+    }
+
+    /// Fills `sheet`, spending `budget` (the cells the sheet's rows hold, `XLSXReader.maxCells` for the workbook); true
+    /// when rows or columns past the limits were left out.
+    private static func read(_ table: XMLNode, into sheet: inout Sheet, styles: StyleSheet, budget: inout Int) -> Bool {
         var truncated = false
         // Columns: widths and default cell styles by index.
         var columnDefaults: [Int: String] = [:]
@@ -68,12 +76,12 @@ enum ODSReader {
             for child in node.children {
                 switch child.name {
                 case "table-column":
-                    let repeated = min(child.attr("table:number-columns-repeated").flatMap(Int.init) ?? 1, maxColumns)
+                    let repeated = Self.count(child, "table:number-columns-repeated", limit: maxColumns)
                     for c in column..<min(column + repeated, maxColumns) {
                         if let style = child.attr("table:style-name"), let width = styles.columnWidths[style] { sheet.columnWidths[c] = width }
                         if let style = child.attr("table:default-cell-style-name") { columnDefaults[c] = style }
                     }
-                    column += repeated
+                    column = min(column + repeated, maxColumns)
                 case "table-column-group", "table-header-columns", "table-columns": columns(in: child)
                 default: break
                 }
@@ -89,12 +97,12 @@ enum ODSReader {
                 switch child.name {
                 case "table-row-group", "table-header-rows", "table-rows": readRows(in: child)
                 case "table-row":
-                    let repeated = child.attr("table:number-rows-repeated").flatMap(Int.init) ?? 1
+                    let repeated = Self.count(child, "table:number-rows-repeated", limit: maxRows)
                     var cells: [Cell] = []
                     var columnIndex = 0
                     var hasContent = false
                     for cellNode in child.children where cellNode.name == "table-cell" || cellNode.name == "covered-table-cell" {
-                        let times = cellNode.attr("table:number-columns-repeated").flatMap(Int.init) ?? 1
+                        let times = Self.count(cellNode, "table:number-columns-repeated", limit: maxColumns)
                         guard cellNode.name == "table-cell" else { columnIndex += times; continue }
                         let cell = Self.cell(cellNode, styles: styles, defaultStyle: columnDefaults[columnIndex])
                         let isEmpty = cell.value == .empty && cell.formula == nil && cell.style == CellStyle() && cell.numberFormat == nil
@@ -106,8 +114,8 @@ enum ODSReader {
                         for k in 0..<count {
                             cells.append(cell)
                             if k == 0 {
-                                let spanColumns = cellNode.attr("table:number-columns-spanned").flatMap(Int.init) ?? 1
-                                let spanRows = cellNode.attr("table:number-rows-spanned").flatMap(Int.init) ?? 1
+                                let spanColumns = Self.count(cellNode, "table:number-columns-spanned", limit: maxColumns)
+                                let spanRows = Self.count(cellNode, "table:number-rows-spanned", limit: maxRows)
                                 if spanColumns > 1 || spanRows > 1 {
                                     merges.append(CellRange(firstRow: rowIndex, firstColumn: columnIndex, lastRow: rowIndex + spanRows - 1,
                                                             lastColumn: columnIndex + spanColumns - 1))
@@ -118,7 +126,8 @@ enum ODSReader {
                     }
                     if !hasContent { rowIndex += repeated; continue }
                     for _ in 0..<min(repeated, repeatLimit) {
-                        if rowIndex >= maxRows { truncated = true; return }
+                        if rowIndex >= maxRows || cells.count > budget { truncated = true; return }
+                        budget -= cells.count
                         if rows.count < rowIndex { rows += [[Cell]](repeating: [], count: rowIndex - rows.count) }
                         rows.append(cells)
                         rowIndex += 1
@@ -187,7 +196,8 @@ enum ODSReader {
             case .text(let t): return t
             case .element(let child):
                 switch child.name {
-                case "s": return String(repeating: " ", count: child.attr("text:c").flatMap(Int.init) ?? 1)
+                // At most a thousand spaces a run: a damaged count must not become a string of billions.
+                case "s": return String(repeating: " ", count: min(max(child.attr("text:c").flatMap(Int.init) ?? 1, 0), 1_000))
                 case "tab": return "\t"
                 case "line-break": return "\n"
                 default: return runs(child)
@@ -199,12 +209,15 @@ enum ODSReader {
     /// "2024-03-15" or "2024-03-15T10:30:00[.5]" (UTC; a trailing zone is ignored).
     private static func parseDate(_ iso: String) -> Date? {
         let halves = iso.split(separator: "T", maxSplits: 1).map(String.init)
-        let day = halves[0].split(separator: "-").compactMap { Int($0) }
+        guard let first = halves.first else { return nil }
+        let day = first.split(separator: "-").compactMap { Int($0) }
         guard day.count == 3 else { return nil }
         var parts = DateComponents(year: day[0], month: day[1], day: day[2])
         var seconds = 0.0
         if halves.count > 1 {
             let clock = halves[1].prefix { $0.isNumber || $0 == ":" || $0 == "." }.split(separator: ":").compactMap { Double($0) }
+            // Hours, minutes and seconds become Ints: a damaged "99999999999999999999" is not a time.
+            guard clock.allSatisfy({ $0 < 1_000_000 }) else { return nil }
             parts.hour = clock.count > 0 ? Int(clock[0]) : 0
             parts.minute = clock.count > 1 ? Int(clock[1]) : 0
             let second = clock.count > 2 ? clock[2] : 0

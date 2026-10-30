@@ -56,6 +56,6 @@ enum RTFPictures {
     static func group(_ data: Data, width: Double, height: Double) -> String {
         let kind = ImageSniff.commonType(data) == "jpeg" ? "jpegblip" : "pngblip"
         let hex = data.map { String(format: "%02x", $0) }.joined()
-        return "{\\pict\\\(kind)\\picwgoal\(Int(width * 20))\\pichgoal\(Int(height * 20)) \(hex)}"
+        return "{\\pict\\\(kind)\\picwgoal\(Int(measure: width * 20))\\pichgoal\(Int(measure: height * 20)) \(hex)}"
     }
 }

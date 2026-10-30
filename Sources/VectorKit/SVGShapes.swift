@@ -279,7 +279,9 @@ extension SVGInterpreter {
     }
 
     /// Repeats or mirrors `stops` over [floor(tMin), ceil(tMax)] (capped), returning the new stops and the integer range.
+    /// A degenerate gradient (a near-singular transform, huge coordinates) can give any t, even NaN: then it doesn't repeat.
     static func spreadStops(_ stops: [GradientStop], tMin: Double, tMax: Double, reflect: Bool) -> ([GradientStop], Double, Double) {
+        guard abs(tMin) < 1e9, abs(tMax) < 1e9 else { return (stops, 0, 1) }
         var k0 = Int(floor(tMin)), k1 = Int(ceil(tMax))
         if k1 <= k0 { k1 = k0 + 1 }
         if k1 - k0 > 64 { let mid = (k0 + k1) / 2; k0 = mid - 32; k1 = mid + 32 }
@@ -330,7 +332,12 @@ extension SVGInterpreter {
         var content = viewBoxTransform(viewBox: vb, preserveAspectRatio: attr("preserveAspectRatio"), width: w, height: h)
         if vb == nil, contentObjectBox { content = VectorTransform(a: bw, b: 0, c: 0, d: bh, tx: 0, ty: 0) }
 
-        // Render the tile's content once, in tile-local coordinates.
+        // Render the tile's content once, in tile-local coordinates. Content that paints with the pattern being drawn (an
+        // inherited `fill="url(#p)"` is enough) is an error (SVG 1.1 §14.3.1): it would recurse once per nesting level
+        // until the stack runs out, so it is drawn without that paint.
+        guard !activePatterns.contains(where: { $0 === holder }) else { return [] }
+        activePatterns.append(holder)
+        defer { _ = activePatterns.popLast() }
         var tileProps = computeProps(holder, parent: ctx.props)
         tileProps["opacity"] = nil
         var tileContent: [VectorNode] = []
@@ -342,16 +349,18 @@ extension SVGInterpreter {
         guard let inverse = patternTransform.inverted else { return [] }
         let corners = [VectorPoint(bx, by), VectorPoint(bx + bw, by), VectorPoint(bx, by + bh), VectorPoint(bx + bw, by + bh)].map { inverse.apply($0) }
         let minX = corners.map(\.x).min()!, maxX = corners.map(\.x).max()!, minY = corners.map(\.y).min()!, maxY = corners.map(\.y).max()!
-        let i0 = Int(floor((minX - x) / w)), i1 = Int(ceil((maxX - x) / w))
-        let j0 = Int(floor((minY - y) / h)), j1 = Int(ceil((maxY - y) / h))
+        // Tile indices are counted in Double first: a tiny tile or a degenerate transform gives numbers no Int holds (or
+        // NaN, which counts as no tiles).
+        let i0 = floor((minX - x) / w), i1 = ceil((maxX - x) / w)
+        let j0 = floor((minY - y) / h), j1 = ceil((maxY - y) / h)
         let count = max(0, i1 - i0) * max(0, j1 - j0)
         guard count > 0 else { return [] }
-        guard count <= 20_000 else { note(.shadingRasterised, "A pattern with too many tiles was left out"); return [] }
+        guard count <= 20_000, abs(i0) < 1e9, abs(j0) < 1e9 else { note(.shadingRasterised, "A pattern with too many tiles was left out"); return [] }
         let clip = PathBuilder.rect(x: 0, y: 0, width: w, height: h)
         var out: [VectorNode] = []
-        out.reserveCapacity(count)
-        for j in j0..<j1 {
-            for i in i0..<i1 {
+        out.reserveCapacity(Int(count))
+        for j in Int(j0)..<Int(j1) {
+            for i in Int(i0)..<Int(i1) {
                 let t = VectorTransform.translation(x + Double(i) * w, y + Double(j) * h).then(patternTransform).then(leaf)
                 out.append(.group(tileContent, transform: t, clip: clip, opacity: 1))
             }

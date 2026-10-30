@@ -408,6 +408,62 @@ func registerMediaKitTests() {
         let left = (try? FileManager.default.contentsOfDirectory(atPath: cancelFolder.path)) ?? []
         check(left == ["long.mkv"], "no partial output is left (\(left))")
     }))
+
+    // The in-process readers only: the SoundFont reader with the SFZ and WAV it writes, and the ffprobe JSON parse (damaged
+    // JSON stands for what ffprobe prints about a hostile file; FFmpeg itself is never run on damaged media here).
+    SelfTest.cases.append(("MediaKit.damagedInputNeverCrashes", {
+        guard let sf2 = try? Data(contentsOf: media.appendingPathComponent("sample.sf2")) else { check(false, "the SoundFont fixture is there"); return }
+        let bank = [UInt8](sf2)
+        // The hydra (`pdta`: presets, bags, generators, sample headers) damaged in place, so the RIFF sizes still hold and
+        // the damage reaches the indices and offsets rather than the chunk walk.
+        let hydra = (0..<(bank.count - 4)).first { bank[$0..<$0 + 4].elementsEqual("pdta".utf8) } ?? 0
+        let damageHydra: (inout FuzzRandom) -> [UInt8] = { rng in
+            let tail = Array(bank[hydra...])
+            var damaged = Fuzz.mutate(tail, using: &rng)
+            while damaged.count != tail.count { damaged = Fuzz.mutate(tail, using: &rng) }
+            return Array(bank[..<hydra]) + damaged
+        }
+        let constructed = """
+            {"streams": [{"index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "width": 1920, "height": 1080,
+              "pix_fmt": "yuv420p10le", "color_range": "tv", "color_space": "bt2020nc", "color_transfer": "smpte2084", "color_primaries": "bt2020",
+              "field_order": "progressive", "sample_aspect_ratio": "1:1", "r_frame_rate": "24000/1001", "avg_frame_rate": "24000/1001",
+              "bits_per_raw_sample": "10", "duration": "4.004000", "bit_rate": "1200000", "disposition": {"default": 1, "attached_pic": 0},
+              "tags": {"language": "eng", "rotate": "90"},
+              "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90},
+                {"side_data_type": "Mastering display metadata", "red_x": "34000/50000", "red_y": "16000/50000", "green_x": "13250/50000",
+                 "green_y": "34500/50000", "blue_x": "7500/50000", "blue_y": "3000/50000", "white_point_x": "15635/50000",
+                 "white_point_y": "16450/50000", "min_luminance": "50/10000", "max_luminance": "10000000/10000"},
+                {"side_data_type": "Content light level metadata", "max_content": 1000, "max_average": 400}]},
+              {"index": 1, "codec_name": "aac", "codec_type": "audio", "sample_fmt": "fltp", "sample_rate": "48000", "channels": 2,
+               "channel_layout": "stereo", "bits_per_sample": 0, "duration": 4.0, "tags": {"title": "Main"}},
+              {"index": 2, "codec_name": "subrip", "codec_type": "subtitle", "tags": {"language": "und"}}],
+             "chapters": [{"id": 0, "start_time": "0.000000", "end_time": "2.000000", "tags": {"title": "One"}}],
+             "format": {"format_name": "matroska,webm", "duration": "4.004000", "bit_rate": "1300000", "tags": {"ENCODER": "Lavf"}}}
+            """
+        let nesting = ["{\"a\":[", "[", "{\"streams\":[{\"side_data_list\":["]
+        var seeds = [FuzzSeed(name: "sf2", ext: "sf2", bytes: bank),
+                     FuzzSeed(name: "sf2-hydra", ext: "sf2", bytes: bank, mutate: damageHydra),
+                     FuzzSeed(name: "probe", ext: "json", bytes: Array(constructed.utf8), nesting: nesting)]
+        // What the bundled ffprobe really prints for the HDR clip, when Vendor/Tools is there.
+        if tools.availability == .available,
+           let captured = try? complete(60, { try await tools.probeJSON(media.appendingPathComponent("hdr-pq.mkv"), workFolder: work("probe-json")) })?.get() {
+            seeds.append(FuzzSeed(name: "ffprobe", ext: "json", bytes: [UInt8](captured), nesting: nesting))
+        }
+        check(MediaProbe(json: Data(constructed.utf8))?.mainVideo?.colour.isHDR == true, "the constructed probe JSON reads")
+        let ran = fuzzNeverCrashes("MediaKit.damagedInputNeverCrashes", seeds: seeds, count: 1000) { url, seed in
+            let data = try Data(contentsOf: url)
+            if seed.ext == "sf2" {
+                let font = try SoundFont.read(data)
+                let writer = SFZWriter(font: font)
+                for sample in font.samples { _ = writer.wavData(sample) }
+                for preset in font.presets { _ = writer.sfzText(for: preset) { "Samples/\($0).wav" } }
+            } else if let probe = MediaProbe(json: data) {
+                _ = (probe.mainVideo?.bitDepth, probe.audio.count, probe.coverArt.count, probe.subtitles.map(\.isTextSubtitle))
+                _ = probe.duration.map(MediaTime.clock)
+            }
+        }
+        check(ran == 1000 * seeds.count, "every damaged input was handled without a crash (\(ran))")
+    }))
 }
 
 private final class Box: @unchecked Sendable {

@@ -177,7 +177,7 @@ enum HWPReader {
                 if record.tag == Record.listHeader, record.data.count >= 16 {
                     let count = Int(record.data.u16(0))
                     let column = Int(record.data.u16(6)), row = Int(record.data.u16(8))
-                    let colSpan = max(Int(record.data.u16(10)), 1), rowSpan = max(Int(record.data.u16(12)), 1)
+                    let colSpan = TableGrid.span(Int(record.data.u16(10))), rowSpan = TableGrid.span(Int(record.data.u16(12)))
                     let cellLevel = record.level
                     position += 1
                     let content = blocks(level: cellLevel, count: count)
@@ -227,14 +227,18 @@ struct CompoundFile {
         // The FAT: sector numbers from the header's DIFAT, then the DIFAT chain.
         var fatSectors: [UInt32] = []
         for i in 0..<109 { let s = data.u32(76 + i * 4); if s != Self.free { fatSectors.append(s) } }
+        // No chain or table can be longer than the file has sectors: a FAT loop or a repeated sector is damage, and
+        // following it would read (and allocate) without end.
+        let sectorCount = data.count / sectorSize
         var difat = data.u32(68)
         var guardCount = 0
-        while difat != Self.free, difat != Self.endOfChain, guardCount < 10_000 {
+        while difat != Self.free, difat != Self.endOfChain, guardCount < sectorCount {
             guardCount += 1
             guard let sector = Self.sector(data, difat, sectorSize) else { return nil }
             for i in 0..<(sectorSize / 4 - 1) { let s = sector.u32(i * 4); if s != Self.free { fatSectors.append(s) } }
             difat = sector.u32(sectorSize - 4)
         }
+        guard fatSectors.count <= sectorCount else { return nil }
         for s in fatSectors {
             guard let sector = Self.sector(data, s, sectorSize) else { return nil }
             for i in 0..<(sectorSize / 4) { fat.append(sector.u32(i * 4)) }
@@ -266,7 +270,7 @@ struct CompoundFile {
         var out = Data()
         var s = start
         var steps = 0
-        while s != Self.endOfChain, s != Self.free, Int(s) < fat.count, steps < 1_000_000 {
+        while s != Self.endOfChain, s != Self.free, Int(s) < fat.count, steps < data.count / sectorSize {
             guard let sector = Self.sector(data, s, sectorSize) else { break }
             out.append(sector)
             s = fat[Int(s)]
@@ -288,7 +292,7 @@ struct CompoundFile {
             var out = Data()
             var s = entry.start
             var steps = 0
-            while s != Self.endOfChain, s != Self.free, Int(s) < miniFat.count, steps < 1_000_000 {
+            while s != Self.endOfChain, s != Self.free, Int(s) < miniFat.count, steps < miniStream.count / miniSectorSize {
                 let start = Int(s) * miniSectorSize
                 guard start + miniSectorSize <= miniStream.count else { break }
                 out.append(miniStream.subdata(in: miniStream.startIndex + start..<miniStream.startIndex + start + miniSectorSize))

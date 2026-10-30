@@ -103,6 +103,9 @@ public enum FB2Reader {
         var notes: [String: MarkupNode] = [:]
         var referenced: [String] = []
         var losses: Set<LossNote.Kind> = []
+        /// Blocks and inlines read inside one another, held to `ContentReader.maxDepth` as the content reader is (the
+        /// stack is half a megabyte); deeper branches are kept as their text.
+        var nesting = 0
 
         func titleText(_ title: MarkupNode) -> String {
             title.elements.map(\.plainText).filter { !$0.isEmpty }.joined(separator: " ").nonEmpty ?? title.plainText
@@ -115,6 +118,13 @@ public enum FB2Reader {
         }
 
         mutating func section(_ node: MarkupNode, depth: Int, into out: inout [DocBlock]) {
+            guard nesting < ContentReader.maxDepth else {
+                let text = ContentReader.plainText([node])
+                if !text.isEmpty { out.append(.paragraph([.text(text)], DocParagraphStyle())) }
+                return
+            }
+            nesting += 1
+            defer { nesting -= 1 }
             for child in node.elements {
                 switch child.name {
                 case "title":
@@ -127,6 +137,13 @@ public enum FB2Reader {
         }
 
         mutating func blocks(of node: MarkupNode, depth: Int, into out: inout [DocBlock]) {
+            guard nesting < ContentReader.maxDepth else {
+                let text = ContentReader.plainText([node])
+                if !text.isEmpty { out.append(.paragraph([.text(text)], DocParagraphStyle())) }
+                return
+            }
+            nesting += 1
+            defer { nesting -= 1 }
             switch node.name {
             case "p":
                 let text = ContentReader.normalise(inline(node.children))
@@ -171,7 +188,8 @@ public enum FB2Reader {
                     for c in tr.elements where c.name == "td" || c.name == "th" {
                         let text = ContentReader.normalise(inline(c.children))
                         cells.append(DocTable.Cell(blocks: text.isEmpty ? [] : [.paragraph(text, DocParagraphStyle())],
-                                                   columnSpan: Int(c.attribute("colspan") ?? "") ?? 1, rowSpan: Int(c.attribute("rowspan") ?? "") ?? 1,
+                                                   columnSpan: ContentReader.span(c.attribute("colspan"), limit: 1_000),
+                                                   rowSpan: ContentReader.span(c.attribute("rowspan"), limit: 65_534),
                                                    isHeader: c.name == "th"))
                     }
                     if !cells.isEmpty { rows.append(cells) }
@@ -183,6 +201,9 @@ public enum FB2Reader {
         }
 
         mutating func inline(_ nodes: [MarkupNode]) -> DocText {
+            guard nesting < ContentReader.maxDepth else { return [.text(ContentReader.plainText(nodes))] }
+            nesting += 1
+            defer { nesting -= 1 }
             var out: DocText = []
             for node in nodes {
                 if let t = node.text { out.append(.text(ContentReader.collapse(t))); continue }

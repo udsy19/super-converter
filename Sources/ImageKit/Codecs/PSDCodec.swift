@@ -15,13 +15,13 @@ enum PSDCodec {
     private struct Reader {
         let bytes: [UInt8]
         var i = 0
-        mutating func u8() throws -> Int { guard i < bytes.count else { throw ConversionError.damaged("psd") }; i += 1; return Int(bytes[i - 1]) }
+        mutating func u8() throws -> Int { guard i >= 0, i < bytes.count else { throw ConversionError.damaged("psd") }; i += 1; return Int(bytes[i - 1]) }
         mutating func u16() throws -> Int { try u8() << 8 | u8() }
         mutating func u32() throws -> Int { try u16() << 16 | u16() }
         mutating func u64() throws -> Int { try u32() << 32 | u32() }
-        mutating func skip(_ n: Int) throws { guard n >= 0, i + n <= bytes.count else { throw ConversionError.damaged("psd") }; i += n }
+        mutating func skip(_ n: Int) throws { guard i >= 0, n >= 0, n <= bytes.count - i else { throw ConversionError.damaged("psd") }; i += n }
         mutating func take(_ n: Int) throws -> ArraySlice<UInt8> {
-            guard n >= 0, i + n <= bytes.count else { throw ConversionError.damaged("psd") }
+            guard i >= 0, n >= 0, n <= bytes.count - i else { throw ConversionError.damaged("psd") }
             defer { i += n }
             return bytes[i..<(i + n)]
         }
@@ -69,6 +69,8 @@ enum PSDCodec {
         }
         r.i = resourcesEnd
         let layerSectionLength = version == 2 ? try r.u64() : try r.u32()
+        // A PSB length is 64-bit: a damaged one can be negative here or past the end of the file.
+        guard r.i >= 0, layerSectionLength >= 0, layerSectionLength <= bytes.count - r.i else { throw ConversionError.damaged("psd") }
         let layerSectionEnd = r.i + layerSectionLength
         var layerCount = 0
         var singleLayer: [Int: Range<Int>]?
@@ -81,7 +83,9 @@ enum PSDCodec {
                     var lengths: [(Int, Int)] = []
                     for _ in 0..<(try r.u16()) {
                         let id = Int(Int16(truncatingIfNeeded: try r.u16()))
-                        lengths.append((id, version == 2 ? try r.u64() : try r.u32()))
+                        let length = version == 2 ? try r.u64() : try r.u32()
+                        guard length >= 0, length <= bytes.count else { return nil }
+                        lengths.append((id, length))
                     }
                     try r.skip(4)
                     let blend = String(decoding: try r.take(4), as: UTF8.self)
@@ -103,7 +107,10 @@ enum PSDCodec {
     static func decode(_ data: Data) throws -> Decoded {
         let bytes = [UInt8](data)
         let h = try header(bytes)
-        guard h.width > 0, h.height > 0, h.width * h.height < 1 << 31, [1, 8, 16, 32].contains(h.depth) else { throw ConversionError.damaged("psd") }
+        // 300,000 pixels a side is the PSB maximum (30,000 for PSD).
+        guard (1...300_000).contains(h.width), (1...300_000).contains(h.height), h.width * h.height < 1 << 31, [1, 8, 16, 32].contains(h.depth) else {
+            throw ConversionError.damaged("psd")
+        }
         let bytesPerSample = h.depth == 1 ? 0 : h.depth / 8
         let rowBytes = h.depth == 1 ? (h.width + 7) / 8 : h.width * bytesPerSample
         let planeBytes = rowBytes * h.height
@@ -191,13 +198,18 @@ enum PSDCodec {
         case 1:
             var counts: [Int] = []
             for _ in 0..<(count * height) { counts.append(version == 2 ? try r.u32() : try r.u16()) }
+            // PackBits makes at most 64 bytes of every byte it reads (128 from a two-byte run), so rows that cannot fill the
+            // canvas they claim are damage, not a reason to allocate it.
+            guard planeBytes * count <= 64 * counts.reduce(0, +) else { throw ConversionError.damaged("psd") }
             return try (0..<count).map { c in
                 var plane = [UInt8](); plane.reserveCapacity(planeBytes)
                 for y in 0..<height { plane += unpackBits(try r.take(counts[c * height + y]), expected: rowBytes) }
                 return plane
             }
         case 2, 3:
-            guard let all = Zlib.decompress(Data(r.bytes[r.i...]), expectedSize: planeBytes * count) else { throw ConversionError.damaged("psd") }
+            // Deflate expands at most 1032 : 1.
+            guard planeBytes * count <= (r.bytes.count - r.i) * 1032,
+                  let all = Zlib.decompress(Data(r.bytes[r.i...]), expectedSize: planeBytes * count) else { throw ConversionError.damaged("psd") }
             return (0..<count).map { c in
                 var plane = [UInt8](all[(c * planeBytes)..<((c + 1) * planeBytes)])
                 if compression == 3 { undoPrediction(&plane, rowBytes: rowBytes, height: height, bytesPerSample: bytesPerSample) }

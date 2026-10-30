@@ -389,6 +389,26 @@ private func ebHandEPUB2() -> URL {
     ], named: "old.epub")
 }
 
+/// A FictionBook with every element the reader knows, declared in `encoding` (the caller encodes it).
+private func ebFB2(encoding: String) -> String {
+    let pngBase64 = ebCover.base64EncodedString(options: .lineLength76Characters)
+    return """
+    <?xml version="1.0" encoding="\(encoding)"?>
+    <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+    <description><title-info><genre>prose</genre>
+    <author><first-name>Лев</first-name><middle-name>Николаевич</middle-name><last-name>Толстой</last-name></author><author><nickname>Anon</nickname></author>
+    <book-title>Война и мир</book-title><annotation><p>Роман.</p></annotation><date value="1869-01-01">1869</date><coverpage><image l:href="#cover.png"/></coverpage><lang>ru</lang></title-info></description>
+    <body><title><p>Том первый</p></title><epigraph><p>Эпиграф</p><text-author>Автор</text-author></epigraph>
+    <section id="s1"><title><p>Глава</p><p>первая</p></title><p>Первый <emphasis>абзац</emphasis> и <strong>жирный</strong>, <strikethrough>зачёркнутый</strikethrough>, H<sub>2</sub>O<a l:href="#n1" type="note">[1]</a>.</p>
+    <empty-line/><p>Второй <a l:href="http://example.com">ссылка</a>.</p><image l:href="#cover.png"/>
+    <poem><stanza><v>Строка раз</v><v>Строка два</v></stanza><text-author>Поэт</text-author></poem>
+    <section><title><p>Подраздел</p></title><cite><p>Цитата</p></cite><p>Вложенный.</p></section></section>
+    <section id="s2"><title><p>Глава вторая</p></title><p>Конец.</p><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></section></body>
+    <body name="notes"><section id="n1"><title><p>1</p></title><p>Примечание.</p></section></body>
+    <binary id="cover.png" content-type="image/png">\(pngBase64)</binary></FictionBook>
+    """
+}
+
 // MARK: - Cases
 
 func registerEbookKitTests() {
@@ -417,6 +437,7 @@ func registerEbookKitTests() {
     SelfTest.cases.append(("EbookKit.documentBridge", ebookDocumentBridge))
     SelfTest.cases.append(("EbookKit.converters", ebookConverters))
     SelfTest.cases.append(("EbookKit.routesCovered", ebookRoutesCovered))
+    SelfTest.cases.append(("EbookKit.damagedInputNeverCrashes", ebookDamagedInputNeverCrashes))
 }
 
 @MainActor private func ebookZip() {
@@ -661,30 +682,12 @@ func registerEbookKitTests() {
 }
 
 @MainActor private func ebookFB2() {
-    let pngBase64 = ebCover.base64EncodedString(options: .lineLength76Characters)
-    func fb2(encoding: String) -> String {
-        """
-        <?xml version="1.0" encoding="\(encoding)"?>
-        <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
-        <description><title-info><genre>prose</genre>
-        <author><first-name>Лев</first-name><middle-name>Николаевич</middle-name><last-name>Толстой</last-name></author><author><nickname>Anon</nickname></author>
-        <book-title>Война и мир</book-title><annotation><p>Роман.</p></annotation><date value="1869-01-01">1869</date><coverpage><image l:href="#cover.png"/></coverpage><lang>ru</lang></title-info></description>
-        <body><title><p>Том первый</p></title><epigraph><p>Эпиграф</p><text-author>Автор</text-author></epigraph>
-        <section id="s1"><title><p>Глава</p><p>первая</p></title><p>Первый <emphasis>абзац</emphasis> и <strong>жирный</strong>, <strikethrough>зачёркнутый</strikethrough>, H<sub>2</sub>O<a l:href="#n1" type="note">[1]</a>.</p>
-        <empty-line/><p>Второй <a l:href="http://example.com">ссылка</a>.</p><image l:href="#cover.png"/>
-        <poem><stanza><v>Строка раз</v><v>Строка два</v></stanza><text-author>Поэт</text-author></poem>
-        <section><title><p>Подраздел</p></title><cite><p>Цитата</p></cite><p>Вложенный.</p></section></section>
-        <section id="s2"><title><p>Глава вторая</p></title><p>Конец.</p><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></section></body>
-        <body name="notes"><section id="n1"><title><p>1</p></title><p>Примечание.</p></section></body>
-        <binary id="cover.png" content-type="image/png">\(pngBase64)</binary></FictionBook>
-        """
-    }
     let dir = ebDirectory()
     do {
         // windows-1251 declared and encoded
         let cp1251 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringConvertIANACharSetNameToEncoding("windows-1251" as CFString)))
         let url = dir.appendingPathComponent("book.fb2")
-        try fb2(encoding: "windows-1251").data(using: cp1251)!.write(to: url)
+        try ebFB2(encoding: "windows-1251").data(using: cp1251)!.write(to: url)
         let r = try FB2Reader.read(url: url)
         let p = r.publication
         check(p.metadata.title == "Война и мир" && p.metadata.authors == ["Лев Николаевич Толстой", "Anon"] && p.metadata.language == "ru", "FB2 metadata (cp1251): \(p.metadata)")
@@ -707,8 +710,8 @@ func registerEbookKitTests() {
         check(ebPlain(docs[2].doc.blocks).contains("a|b") && ebPlain(docs[2].doc.blocks).contains("1|2"), "table")
         // The same book as UTF-8 inside a zip (.fb2.zip) and via EPUB
         let utf = dir.appendingPathComponent("u.fb2")
-        try ebData(fb2(encoding: "utf-8")).write(to: utf)
-        let z = ebZip([("u.fb2", ebData(fb2(encoding: "utf-8")))], named: "u.fb2.zip", in: dir)
+        try ebData(ebFB2(encoding: "utf-8")).write(to: utf)
+        let z = ebZip([("u.fb2", ebData(ebFB2(encoding: "utf-8")))], named: "u.fb2.zip", in: dir)
         check((try? FB2Reader.read(url: z))?.publication.metadata.title == "Война и мир", "zipped FB2")
         let epub = dir.appendingPathComponent("fb2.epub")
         try EPUBWriter.write(try FB2Reader.read(url: utf).publication, to: epub)
@@ -724,7 +727,8 @@ func registerEbookKitTests() {
     } catch { check(false, "fb2: \(error)") }
 }
 
-@MainActor private func ebookHTMLZ() {
+/// An HTMLZ: index.html with headings, styled text and a picture, metadata.opf with a cover.
+private func ebHTMLZ() -> URL {
     let opf = """
     <?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>Zipped</dc:title><dc:creator>Zed</dc:creator><dc:language>de</dc:language><dc:identifier id="id">x</dc:identifier></metadata>
@@ -735,7 +739,11 @@ func registerEbookKitTests() {
     <h1>Eins</h1><p>Erster Absatz mit <em>Betonung</em> und Bild <img src="images/x.png" alt="x"/>.</p>
     <h1>Zwei</h1><p style="text-align:right">Rechts.</p><p><img src="images/x.png" alt="solo"/></p></body></html>
     """
-    let url = ebZip([("index.html", ebData(html)), ("metadata.opf", ebData(opf)), ("cover.png", ebCover), ("images/x.png", ebPNG)], named: "b.htmlz")
+    return ebZip([("index.html", ebData(html)), ("metadata.opf", ebData(opf)), ("cover.png", ebCover), ("images/x.png", ebPNG)], named: "b.htmlz")
+}
+
+@MainActor private func ebookHTMLZ() {
+    let url = ebHTMLZ()
     do {
         let p = try HTMLZReader.read(url: url).publication
         check(p.metadata.title == "Zipped" && p.metadata.authors == ["Zed"] && p.metadata.language == "de", "HTMLZ metadata")
@@ -751,7 +759,8 @@ func registerEbookKitTests() {
     } catch { check(false, "htmlz: \(error)") }
 }
 
-@MainActor private func ebookTXTZ() {
+/// A TXTZ: light Markdown with every construct the reader knows, metadata.opf and a picture.
+private func ebTXTZ() -> URL {
     let text = """
     # Capítulo uno
 
@@ -776,7 +785,11 @@ func registerEbookKitTests() {
     Fin con 2 * 3 * 4 sin énfasis.
     """
     let opf = "<?xml version=\"1.0\"?><package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>Texto</dc:title><dc:language>es</dc:language></metadata></package>"
-    let url = ebZip([("index.txt", ebData(text)), ("metadata.opf", ebData(opf)), ("pics/a.png", ebPNG)], named: "t.txtz")
+    return ebZip([("index.txt", ebData(text)), ("metadata.opf", ebData(opf)), ("pics/a.png", ebPNG)], named: "t.txtz")
+}
+
+@MainActor private func ebookTXTZ() {
+    let url = ebTXTZ()
     do {
         let p = try TXTZReader.read(url: url).publication
         check(p.metadata.title == "Texto" && p.metadata.language == "es", "TXTZ metadata")
@@ -1100,4 +1113,99 @@ private enum MediaTypesProbe {
             }
         }
     }
+}
+
+// MARK: - Damaged input
+
+/// A fuzz seed for a ZIP package (EPUB, OEB, HTMLZ, TXTZ, CBZ…): three inputs in four damage one entry, unpacked with
+/// EbookKit's ZipArchive and re-zipped with its ZipWriter, so the damage reaches the markup readers; the rest damage the
+/// package's own bytes for the ZIP reader.
+private func ebPackageSeed(_ name: String, _ ext: String, _ url: URL, nesting: [String] = ["<div>"]) -> FuzzSeed? {
+    guard let data = try? Data(contentsOf: url), let zip = try? ZipArchive(data: data) else { check(false, "\(name) fixture"); return nil }
+    let bytes = [UInt8](data)
+    let entries = zip.entries.compactMap { entry in (try? zip.data(for: entry)).map { (path: entry.name, bytes: [UInt8]($0)) } }
+    let rezipped = ebDirectory("fuzz-zip").appendingPathComponent("package.zip")
+    return FuzzSeed(name: name, ext: ext, bytes: bytes, mutate: { rng in
+        guard Int.random(in: 0..<4, using: &rng) != 0 else { return Fuzz.mutate(bytes, nesting: nesting, using: &rng) }
+        let damaged = Fuzz.mutateEntries(entries, nesting: nesting, using: &rng)
+        try? FileManager.default.removeItem(at: rezipped)
+        guard let writer = try? ZipWriter(url: rezipped) else { return bytes }
+        for entry in damaged { try? writer.add(entry.path, Data(entry.bytes), compress: entry.path == "mimetype" ? false : nil) }
+        try? writer.finish()
+        return (try? Data(contentsOf: rezipped)).map { [UInt8]($0) } ?? bytes
+    }, nesting: nesting)
+}
+
+/// Books whose structure is hostile where the readers recurse, search or size things, each read once as it is by the
+/// fuzz case: 50,000 nested elements, a chain of 5,000 notes each citing the next, 20,000 nested Markdown quotes, a line
+/// of 20,000 unclosed "[" and "*", and a ZIP64 end record pointing near Int.max.
+private func ebHostileBooks() -> [(name: String, ext: String, url: URL)] {
+    let notes = (0..<5_000).map { ##"<aside epub:type="footnote" id="n\##($0)"><p>Note <a epub:type="noteref" href="#n\##($0 + 1)">\##($0 + 1)</a></p></aside>"## }.joined()
+    let html = ##"<html><body><p>Start <a epub:type="noteref" href="#n0">0</a></p>"## + String(repeating: "<div>", count: 50_000) + "deep" + notes
+        + #"<table><tr><td colspan="9223372036854775807" rowspan="-4">x</td></tr></table></body></html>"#
+    let htmlz = ebZip([("index.html", ebData(html))], named: "hostile.htmlz")
+    let text = String(repeating: "> ", count: 20_000) + "quoted\n\n" + String(repeating: "[*", count: 20_000) + "\n"
+    let txtz = ebZip([("index.txt", ebData(text))], named: "hostile.txtz")
+    // ZIP64: the end record's count says "see the ZIP64 record", and a locator before it points that record near Int.max.
+    var zip64 = (try? Data(contentsOf: ebHandEPUB2())) ?? Data()
+    if zip64.count > 22 {
+        let eocd = zip64.count - 22
+        zip64[eocd + 10] = 0xFF; zip64[eocd + 11] = 0xFF
+        let locator: [UInt8] = [0x50, 0x4B, 0x06, 0x07, 0, 0, 0, 0, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 1, 0, 0, 0]
+        zip64.insert(contentsOf: locator, at: eocd)
+    }
+    let epub = ebDirectory("hostile").appendingPathComponent("zip64.epub")
+    try? zip64.write(to: epub)
+    return [("hostile-htmlz", "htmlz", htmlz), ("hostile-txtz", "txtz", txtz), ("hostile-zip64", "epub", epub)]
+}
+
+/// Every in-process reader on its format; a thrown error is a clean failure, only a trap or a hang is not. CHM's archive
+/// engine is out of process: a stand-in unpacks the input as the book's sitemap next to one page.
+private func ebReadAny(_ url: URL, _ ext: String, work: URL) async {
+    switch ext {
+    case "epub": _ = try? EPUBReader.read(url: url)
+    case "oeb": _ = try? OEBReader.read(url: url)
+    case "fb2", "zip": _ = try? FB2Reader.read(url: url)
+    case "htmlz": _ = try? HTMLZReader.read(url: url)
+    case "txtz": _ = try? TXTZReader.read(url: url)
+    case "chm":
+        let unpack: ArchiveExtractor = { source, destination in
+            try FileManager.default.copyItem(at: source, to: destination.appendingPathComponent("toc.hhc"))
+            try Data(#"<html><body><h1>Page</h1><p>Text <img src="pic.png"></body></html>"#.utf8).write(to: destination.appendingPathComponent("page.htm"))
+        }
+        _ = try? await CHMReader.read(url: url, workFolder: work, extractor: unpack)
+    default: _ = try? await ComicReader.read(url: url, format: FormatID(ext), workFolder: work, extractor: nil)
+    }
+}
+
+@MainActor private func ebookDamagedInputNeverCrashes() {
+    let dir = ebDirectory("fuzz-seeds")
+    let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Tests/Corpus/generated")
+    let epub3 = dir.appendingPathComponent("written.epub"), oeb = dir.appendingPathComponent("written.oeb")
+    _ = try? EPUBWriter.write(ebSamplePublication(), to: epub3)
+    _ = try? OEBWriter.write(ebSamplePublication(), to: oeb)
+    let fb2 = ebFB2(encoding: "utf-8")
+    let cbz = corpus.appendingPathComponent("sample.cbz")
+    let cbc = ebZip([("one.cbz", (try? Data(contentsOf: cbz)) ?? Data()), ("two.cbz", (try? Data(contentsOf: cbz)) ?? Data()),
+                     ("comics.txt", ebData("two.cbz:Second\none.cbz:First\n"))], named: "set.cbc", in: dir)
+    let hhc = #"<html><body><ul><li><object type="text/sitemap"><param name="Name" value="Page"><param name="Local" value="page.htm"></object>"#
+        + #"<ul><li><object type="text/sitemap"><param name="Name" value="Again"><param name="Local" value="page.htm#a"></object></ul></ul></body></html>"#
+    let packages: [FuzzSeed?] = [
+        ebPackageSeed("epub-written", "epub", epub3), ebPackageSeed("epub3-hand", "epub", ebHandEPUB3()), ebPackageSeed("epub2-hand", "epub", ebHandEPUB2()),
+        ebPackageSeed("epub-corpus", "epub", corpus.appendingPathComponent("sample.epub")), ebPackageSeed("oeb", "oeb", oeb),
+        ebPackageSeed("fb2-zip", "zip", ebZip([("book.fb2", ebData(fb2))], named: "book.fb2.zip", in: dir), nesting: ["<section>"]),
+        ebPackageSeed("htmlz", "htmlz", ebHTMLZ(), nesting: ["<div>", "<b>"]), ebPackageSeed("txtz", "txtz", ebTXTZ(), nesting: ["> ", "[", "**"]),
+        ebPackageSeed("cbz", "cbz", cbz, nesting: ["<ComicInfo>"]), ebPackageSeed("cbc", "cbc", cbc),
+    ]
+    let seeds = packages.compactMap { $0 } + [
+        FuzzSeed(name: "fb2", ext: "fb2", bytes: Array(fb2.utf8), nesting: ["<section>", "<emphasis>"]),
+        FuzzSeed(name: "chm-sitemap", ext: "chm", bytes: Array(hhc.utf8), nesting: ["<ul><li>"]),
+    ]
+    let work = ebDirectory("fuzz-work")
+    for book in ebHostileBooks() {
+        check(complete(30, { await ebReadAny(book.url, book.ext, work: work) }) != nil, "\(book.name) is read in time")
+    }
+    let ran = fuzzNeverCrashes("EbookKit.damagedInputNeverCrashes", seeds: seeds, count: 90) { url, seed in await ebReadAny(url, seed.ext, work: work) }
+    check(ran == 90 * 12 && seeds.count == 12, "every damaged input was handled without a crash (\(ran))")
 }

@@ -24,6 +24,16 @@ func registerRenderKitTests() {
         check(PageSelection.indices("x", pageCount: 3).isEmpty, "garbage selects nothing")
     }))
 
+    SelfTest.cases.append(("RenderKit.damagedPageSizes", {
+        // A damaged document's page can be NaN, infinite or astronomically large: sizing must not trap, and the raster is refused.
+        for size in [CGSize(width: CGFloat.nan, height: 100), CGSize(width: CGFloat.infinity, height: 1e300), CGSize(width: 1e30, height: -1e30)] {
+            let (w, h) = Rasterizer.pixelSize(of: size, dpi: 600, width: nil, height: nil)
+            check((1...1_000_000).contains(w) && (1...1_000_000).contains(h), "\(size) sizes to \(w) x \(h)")
+            check(w * h <= Rasterizer.maxPixels || (try? Rasterizer.bitmapContext(width: w, height: h, space: CGColorSpace(name: CGColorSpace.sRGB)!)) == nil,
+                  "an oversized raster is refused")
+        }
+    }))
+
     SelfTest.cases.append(("RenderKit.rendersAtRequestedDPI", {
         let pdf = fixturePDF(pages: [fixtureRedRectPage, fixtureRedRectPage])
         guard let one = render(pdf, options: OptionValues(["pixelDensity": 72, "pages": "2"])) else { return }

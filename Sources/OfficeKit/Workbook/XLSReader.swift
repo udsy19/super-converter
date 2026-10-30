@@ -22,7 +22,8 @@ enum XLSReader {
         let sheets = try book.sheets()
         var notes: [LossNote] = []
         if book.sawFormula { notes.append(LossNote(.otherLoss, detail: "Formulas were replaced by their results.")) }
-        return XLSXReader.Result(workbook: Workbook(sheets: sheets), lossNotes: notes, warnings: [])
+        return XLSXReader.Result(workbook: Workbook(sheets: sheets), lossNotes: notes,
+                                 warnings: book.truncated ? ["This workbook is very large, so only its first rows were read."] : [])
     }
 }
 
@@ -37,6 +38,9 @@ struct OLEContainer {
     private var miniFAT: [UInt32] = []
     private var entries: [(name: String, type: UInt8, start: UInt32, size: Int)] = []
     private var miniStream = Data()
+    /// The sectors the file holds: no chain or table can be longer, so a longer one loops (damage), and following it
+    /// would fill memory.
+    private let sectorCount: Int
 
     private static let endOfChain: UInt32 = 0xFFFF_FFFE
 
@@ -48,14 +52,15 @@ struct OLEContainer {
         sectorSize = 1 << shift
         miniSectorSize = 1 << miniShift
         miniCutoff = Int(data.u32(0x38))
+        sectorCount = (data.count - 512) / sectorSize
 
         // FAT: the sector numbers in the header's DIFAT, then the DIFAT chain.
         var fatSectors: [UInt32] = []
         for i in 0..<109 { let s = data.u32(0x4C + i * 4); if s < Self.endOfChain { fatSectors.append(s) } }
         var difat = data.u32(0x44)
         var guardCount = 0
-        while difat < Self.endOfChain, guardCount < 10_000 {
-            guard let sector = sectorData(difat) else { return nil }
+        while difat < Self.endOfChain {
+            guard let sector = sectorData(difat), guardCount < sectorCount, fatSectors.count <= sectorCount else { return nil }
             for i in 0..<(sectorSize / 4 - 1) { let s = sector.u32(i * 4); if s < Self.endOfChain { fatSectors.append(s) } }
             difat = sector.u32(sectorSize - 4)
             guardCount += 1
@@ -83,7 +88,8 @@ struct OLEContainer {
             var out = Data()
             var s = entry.start
             var steps = 0
-            while s < Self.endOfChain, steps < 1_000_000 {
+            while s < Self.endOfChain {
+                guard steps <= miniStream.count / miniSectorSize else { return nil }
                 let offset = Int(s) * miniSectorSize
                 guard offset + miniSectorSize <= miniStream.count else { return nil }
                 out.append(miniStream.subdata(in: miniStream.startIndex + offset..<miniStream.startIndex + offset + miniSectorSize))
@@ -107,7 +113,7 @@ struct OLEContainer {
         var s = start
         var steps = 0
         while s < Self.endOfChain {
-            guard let sector = sectorData(s), steps < 4_000_000 else { return nil }
+            guard let sector = sectorData(s), steps < sectorCount else { return nil }
             out.append(sector)
             guard Int(s) < fat.count else { return nil }
             s = fat[Int(s)]
@@ -138,6 +144,9 @@ private struct BIFFBook {
     var palette: [Int: SheetRGB] = [:]
     var date1904 = false
     var sawFormula = false
+    /// Rows past `XLSXReader.maxCells` were left out.
+    var truncated = false
+    private var cellBudget = XLSXReader.maxCells
 
     init(_ stream: Data) throws {
         self.stream = stream
@@ -305,12 +314,7 @@ private struct BIFFBook {
             default: break
             }
         }
-        if let lastRow = cells.keys.max() {
-            sheet.rows = (0...lastRow).map { r in
-                guard let row = cells[r], let lastColumn = row.keys.max() else { return [] }
-                return (0...lastColumn).map { row[$0] ?? Cell() }
-            }
-        }
+        sheet.rows = XLSXReader.rows(cells, budget: &cellBudget, truncated: &truncated) { $0 }
         return sheet
     }
 

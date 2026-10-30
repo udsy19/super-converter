@@ -357,7 +357,8 @@ enum SVGValues {
             var depth = 1
             var j = text.index(after: open)
             while j < text.endIndex, depth > 0 { if text[j] == "{" { depth += 1 } else if text[j] == "}" { depth -= 1 }; j = text.index(after: j) }
-            let body = String(text[text.index(after: open)..<text.index(before: j)])
+            // An unterminated block (the sheet ends inside it) runs to the end; otherwise it ends before its `}`.
+            let body = String(text[text.index(after: open)..<(depth > 0 ? j : text.index(before: j))])
             i = j
             if selectorText.hasPrefix("@") { continue }
             let decls = declarations(body)

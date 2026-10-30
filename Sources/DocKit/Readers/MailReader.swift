@@ -199,10 +199,13 @@ struct MIMEPart {
         return parts
     }
 
+    /// Compiled once: every header lookup decodes words, and a message can have thousands of parts.
+    private static let encodedWord = try! NSRegularExpression(pattern: #"=\?([^?]+)\?([bBqQ])\?([^?]*)\?="#)
+
     /// RFC 2047 encoded words: "=?utf-8?B?…?=" and "=?iso-8859-1?Q?…?=".
     static func decodeWords(_ text: String) -> String {
-        let pattern = #"=\?([^?]+)\?([bBqQ])\?([^?]*)\?="#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        guard text.contains("=?") else { return text }
+        let regex = encodedWord
         var result = ""
         var last = text.startIndex
         var previousWasWord = false

@@ -116,7 +116,10 @@ enum RZipKit {
             let at = chunkStart + next
             let header = try input.read(at: at, count: Int(RZipKit.streamHeaderSize))
             let packedLength = Int(le32(header, 1)), length = Int(le32(header, 5))
-            guard length <= RZipKit.maxBlock else { throw ArchiveError.damaged("An rzip block is impossibly large.") }
+            // The packed bytes must be in the file before a buffer is made for them.
+            guard length <= RZipKit.maxBlock, UInt64(packedLength) <= input.size - min(input.size, at + RZipKit.streamHeaderSize) else {
+                throw ArchiveError.damaged("An rzip block is impossibly large.")
+            }
             var packed = try input.read(at: at + RZipKit.streamHeaderSize, count: packedLength)
             switch header[0] {
             case 3:

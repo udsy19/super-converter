@@ -382,13 +382,15 @@ final class XPSPageReader {
         let mode = (n.attr("TileMode") ?? "None").lowercased()
         var offsets: [(Double, Double)] = [(0, 0)]
         if mode != "none" {
-            let i0 = Int(floor((bounds.minX - viewport.minX) / viewport.width)), i1 = Int(ceil((bounds.maxX - viewport.minX) / viewport.width))
-            let j0 = Int(floor((bounds.minY - viewport.minY) / viewport.height)), j1 = Int(ceil((bounds.maxY - viewport.minY) / viewport.height))
+            // Tile indices are counted in Double first: a tiny viewport gives numbers no Int holds (or NaN, which is no
+            // tiling either).
+            let i0 = floor(Double((bounds.minX - viewport.minX) / viewport.width)), i1 = ceil(Double((bounds.maxX - viewport.minX) / viewport.width))
+            let j0 = floor(Double((bounds.minY - viewport.minY) / viewport.height)), j1 = ceil(Double((bounds.maxY - viewport.minY) / viewport.height))
             if mode != "tile" { shared.note(.otherLoss, "Mirrored picture tiles were drawn unmirrored") }
-            if brushTransform.isIdentity, (i1 - i0) * (j1 - j0) <= 400, i1 > i0, j1 > j0 {
+            if brushTransform.isIdentity, (i1 - i0) * (j1 - j0) <= 400, i1 > i0, j1 > j0, abs(i0) < 1e9, abs(j0) < 1e9 {
                 offsets = []
-                for j in j0..<j1 { for i in i0..<i1 { offsets.append((Double(i) * Double(viewport.width), Double(j) * Double(viewport.height))) } }
-            } else if !brushTransform.isIdentity || (i1 - i0) * (j1 - j0) > 400 { shared.note(.otherLoss, "A tiled picture was drawn once") }
+                for j in Int(j0)..<Int(j1) { for i in Int(i0)..<Int(i1) { offsets.append((Double(i) * Double(viewport.width), Double(j) * Double(viewport.height))) } }
+            } else if !brushTransform.isIdentity || !((i1 - i0) * (j1 - j0) <= 400) { shared.note(.otherLoss, "A tiled picture was drawn once") }
         }
         var nodes: [VectorNode] = []
         for (dx, dy) in offsets {
@@ -402,7 +404,7 @@ final class XPSPageReader {
     // MARK: Glyphs
 
     func renderGlyphs(_ node: XNode, into out: inout [VectorNode]) {
-        guard (node.attr("Visibility") ?? "Visible") != "Hidden", let text = node.attr("UnicodeString"), let em = node.attr("FontRenderingEmSize").flatMap({ Double($0) }), em > 0 else { return }
+        guard (node.attr("Visibility") ?? "Visible") != "Hidden", let text = node.attr("UnicodeString"), let em = node.attr("FontRenderingEmSize").flatMap({ Double($0) }), em > 0, em.isFinite else { return }
         let ox = Double(node.attr("OriginX") ?? "0") ?? 0, oy = Double(node.attr("OriginY") ?? "0") ?? 0
         guard let spec = brushSpec(node, "Fill") else { return }
         let box = CGRect(x: ox, y: oy - em, width: Double(text.count) * em * 0.6, height: em * 1.3)
@@ -421,14 +423,14 @@ final class XPSPageReader {
             let chars = Array(text.utf16)
             var glyphs = [CGGlyph](repeating: 0, count: chars.count)
             _ = CTFontGetGlyphsForCharacters(ct, chars, &glyphs, chars.count)
-            // Indices: "gid,advance,uOff,vOff;…" (advance and offsets in 1/100 em).
+            // Indices: "gid,advance,uOff,vOff;…" (advance and offsets in 1/100 em); a glyph index outside 16 bits names none.
             var entries: [(gid: Int?, advance: Double?, du: Double, dv: Double)] = []
             if let indices = node.attr("Indices"), !indices.isEmpty {
                 for raw in indices.split(separator: ";", omittingEmptySubsequences: false).prefix(200_000) {
                     var item = String(raw)
                     if item.hasPrefix("("), let close = item.firstIndex(of: ")") { item = String(item[item.index(after: close)...]) }
                     let f = item.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
-                    entries.append((f.indices.contains(0) ? Int(f[0]) : nil, f.indices.contains(1) ? Double(f[1]) : nil,
+                    entries.append((f.indices.contains(0) ? Int(f[0]).flatMap { CGGlyph(exactly: $0) }.map(Int.init) : nil, f.indices.contains(1) ? Double(f[1]) : nil,
                                     f.indices.contains(2) ? Double(f[2]) ?? 0 : 0, f.indices.contains(3) ? Double(f[3]) ?? 0 : 0))
                 }
             } else {

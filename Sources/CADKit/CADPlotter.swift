@@ -135,6 +135,11 @@ private struct Plot {
     var shxFonts = Set<String>()
     var imagesSkipped = 0
     var foreground: VectorColour
+    /// Entities left to draw. Nested and arrayed inserts multiply (ten inserts of a block of ten inserts, twelve levels
+    /// deep), so a small damaged file could otherwise ask for more geometry than memory holds; the rest is left out.
+    static let maxEntities = 1_000_000
+    var entityBudget = Plot.maxEntities
+    var entitiesLeftOut = false
 
     init(drawing: CADDrawing, options: CADPlotOptions) {
         self.drawing = drawing
@@ -167,6 +172,7 @@ private struct Plot {
         if !shxFonts.isEmpty {
             notes.append(LossNote(.fontsReplaced, detail: "\(shxFonts.count) CAD font\(shxFonts.count == 1 ? "" : "s") → Helvetica"))
         }
+        if entitiesLeftOut { notes.append(LossNote(.otherLoss, detail: "Not drawn: the blocks expand to more than \(Plot.maxEntities) entities")) }
         if imagesSkipped > 0 { notes.append(LossNote(.imagesDropped, detail: "\(imagesSkipped) attached image\(imagesSkipped == 1 ? "" : "s") drawn as outlines")) }
         return CADPlotter.Result(document: VectorDocument(pages: pages), lossNotes: notes)
     }
@@ -204,7 +210,8 @@ private struct Plot {
             let n = xs.count
             let lo = options.autoZoom ? Int(Double(n - 1) * 0.001) : 0
             let hi = options.autoZoom ? Int((Double(n - 1) * 0.999).rounded(.up)) : n - 1
-            minX = xs[lo]; maxX = xs[hi]; minY = ys[lo]; maxY = ys[hi]
+            // Coordinates near the limit of a Double can span more than one: such extents fall back to the default sheet.
+            if (xs[hi] - xs[lo]).isFinite && (ys[hi] - ys[lo]).isFinite { minX = xs[lo]; maxX = xs[hi]; minY = ys[lo]; maxY = ys[hi] }
         }
         let width = max(maxX - minX, 1e-9), height = max(maxY - minY, 1e-9)
         // Page size: a named paper, or the drawing's shape with the long side fixed.
@@ -237,7 +244,7 @@ private struct Plot {
     }
 
     private func collect(_ prim: Prim, _ xs: inout [Double], _ ys: inout [Double]) {
-        func add(_ p: (Double, Double)) { xs.append(p.0); ys.append(p.1) }
+        func add(_ p: (Double, Double)) { if p.0.isFinite && p.1.isFinite { xs.append(p.0); ys.append(p.1) } }
         switch prim {
         case .path(let segments, _, _):
             for s in segments {
@@ -340,8 +347,10 @@ private struct Plot {
             let tProj = corners.map { $0.0 * n.0 + $0.1 * n.1 }, sProj = corners.map { $0.0 * d.0 + $0.1 * d.1 }
             let baseN = family.base.0 * n.0 + family.base.1 * n.1, baseD = family.base.0 * d.0 + family.base.1 * d.1
             let k0 = (tProj.min()! - baseN) / stepN, k1 = (tProj.max()! - baseN) / stepN
-            let kLow = Int(min(k0, k1).rounded(.down)), kHigh = Int(max(k0, k1).rounded(.up))
-            guard kHigh - kLow < budget else { return solid(0.35) }
+            // More lines than the budget (or a range past what an Int holds) is a tint as well.
+            let kMin = min(k0, k1).rounded(.down), kMax = max(k0, k1).rounded(.up)
+            guard kMax - kMin < Double(budget), abs(kMin) < 1e15 else { return solid(0.35) }
+            let kLow = Int(kMin), kHigh = Int(kMax)
             let sMin = sProj.min()!, sMax = sProj.max()!
             let period = family.dashes.reduce(0) { $0 + abs($1) }
             for k in kLow...kHigh {
@@ -360,12 +369,14 @@ private struct Plot {
                     var position = origin + ((sMin - origin) / period).rounded(.down) * period
                     budget -= 1
                     outer: while position < sMax {
+                        // Far from the origin a whole period can be below a Double's resolution: the line stops there.
+                        let cycleStart = position
                         for item in family.dashes {
                             if item > 0 { line(position, position + item) }
                             position += abs(item)
                             if position >= sMax { break outer }
                         }
-                        if segments.count > 40_000 { break }
+                        if segments.count > 40_000 || position == cycleStart { break }
                     }
                 }
             }
@@ -463,6 +474,8 @@ private struct Plot {
     }
 
     private mutating func generate(_ entity: CADDrawing.Entity, _ context: Context) -> [Prim] {
+        guard entityBudget > 0 else { entitiesLeftOut = true; return [] }
+        entityBudget -= 1
         let (e, appearance) = unwrap(entity)
         let layerName = effectiveLayer(layerOf(e), context)
         guard isVisible(layerName, context) else { return [] }

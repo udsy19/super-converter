@@ -47,13 +47,15 @@ enum HDR {
             }
         }
         var out = raster
-        let s = out.stride
+        let s = out.stride, comps = out.space.components
         for i in 0..<out.pixelCount {
-            let r = out.data[i * s], g = out.data[i * s + 1], b = out.data[i * s + 2]
-            let l = 0.2627 * r + 0.6780 * g + 0.0593 * b
+            // Luminance from RGB (BT.2100 weights); a grey (or any non-RGB) raster uses the mean of its components.
+            let l: Float
+            if comps == 3 { l = 0.2627 * out.data[i * s] + 0.6780 * out.data[i * s + 1] + 0.0593 * out.data[i * s + 2] }
+            else { l = (0..<comps).reduce(0) { $0 + out.data[i * s + $1] } / Float(comps) }
             guard l > 0 else { continue }
             let k = (1 + l / (headroom * headroom)) / (1 + l)
-            for c in 0..<3 { out.data[i * s + c] *= k }
+            for c in 0..<comps { out.data[i * s + c] *= k }
         }
         out.extended = false
         out.clamp()

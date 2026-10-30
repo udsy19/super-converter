@@ -107,11 +107,11 @@ struct ZipArchive {
         var directoryOffset = Int(data.u32(eocd + 16))
         // Zip64: the locator just before the end record points at the Zip64 end record.
         if count == 0xFFFF || directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF, eocd >= 20, data.u32(eocd - 20) == 0x0706_4B50 {
-            let record = Int(data.u64(eocd - 12))
+            let record = data.u64Size(eocd - 12)
             guard record + 56 <= data.count, data.u32(record) == 0x0606_4B50 else { throw ZipError.damaged("zip64 end record") }
-            count = Int(data.u64(record + 32))
-            directorySize = Int(data.u64(record + 40))
-            directoryOffset = Int(data.u64(record + 48))
+            count = data.u64Size(record + 32)
+            directorySize = data.u64Size(record + 40)
+            directoryOffset = data.u64Size(record + 48)
         }
         guard count <= maxEntries else { throw ZipError.tooLarge }
         guard directoryOffset >= 0, directoryOffset + directorySize <= data.count else { throw ZipError.damaged("central directory") }
@@ -136,9 +136,9 @@ struct ZipArchive {
                 let tag = data.u16(e), length = Int(data.u16(e + 2))
                 if tag == 0x0001 {
                     var f = e + 4
-                    if size == 0xFFFF_FFFF, f + 8 <= extraEnd { size = Int(data.u64(f)); f += 8 }
-                    if compressed == 0xFFFF_FFFF, f + 8 <= extraEnd { compressed = Int(data.u64(f)); f += 8 }
-                    if offset == 0xFFFF_FFFF, f + 8 <= extraEnd { offset = Int(data.u64(f)) }
+                    if size == 0xFFFF_FFFF, f + 8 <= extraEnd { size = data.u64Size(f); f += 8 }
+                    if compressed == 0xFFFF_FFFF, f + 8 <= extraEnd { compressed = data.u64Size(f); f += 8 }
+                    if offset == 0xFFFF_FFFF, f + 8 <= extraEnd { offset = data.u64Size(f) }
                 }
                 e += 4 + length
             }
@@ -218,6 +218,9 @@ extension Data {
 
     func u32(_ offset: Int) -> UInt32 { UInt32(u16(offset)) | UInt32(u16(offset + 2)) << 16 }
     func u64(_ offset: Int) -> UInt64 { UInt64(u32(offset)) | UInt64(u32(offset + 4)) << 32 }
+    /// A Zip64 size, count or offset as an `Int`, held to 2⁴⁸ so a damaged one can't trap the conversion or the sums it
+    /// goes into; the range checks after it reject anything past the end of the file.
+    func u64Size(_ offset: Int) -> Int { Int(Swift.min(u64(offset), 1 << 48)) }
 
     mutating func le16(_ value: UInt16) { append(UInt8(value & 0xFF)); append(UInt8(value >> 8)) }
     mutating func le32(_ value: UInt32) { le16(UInt16(value & 0xFFFF)); le16(UInt16(value >> 16)) }

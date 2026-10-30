@@ -435,8 +435,9 @@ final class SlideExtractor {
                     }.joined()
                 }
                 let blocks: [DocBlock] = paragraphs.filter { !$0.isEmpty }.map { .paragraph([.text($0)], DocParagraphStyle()) }
-                cells.append(DocTable.Cell(blocks: blocks, columnSpan: max(Int(cell.attr("gridSpan") ?? "") ?? 1, 1),
-                                           rowSpan: max(Int(cell.attr("rowSpan") ?? "") ?? 1, 1), isHeader: headerRow && r == 0))
+                // Spans are held to the grid: a damaged "2147483647" would overflow whatever lays the table out.
+                cells.append(DocTable.Cell(blocks: blocks, columnSpan: min(max(Int(cell.attr("gridSpan") ?? "") ?? 1, 1), columns),
+                                           rowSpan: min(max(Int(cell.attr("rowSpan") ?? "") ?? 1, 1), rows.count), isHeader: headerRow && r == 0))
             }
             out.append(cells)
         }

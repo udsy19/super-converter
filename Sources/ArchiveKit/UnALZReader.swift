@@ -5,7 +5,7 @@ import UnALZ
 /// ALZip archives through unalz (zlib licence, formats §3.3), whose C shim extracts one entry into a buffer.
 enum UnALZReader {
     static func read(_ request: ArchiveReadRequest) throws -> ArchiveTree {
-        try validateStructure(request.source)
+        let records = try validateStructure(request.source)
         var code: Int32 = 0
         guard let alz = sc_alz_open(request.source.path, &code) else {
             throw ArchiveError.damaged(String(cString: sc_alz_error_string(code)))
@@ -15,6 +15,7 @@ enum UnALZReader {
 
         let extractor = try request.extractor(windowsSeparators: true)
         let count = sc_alz_count(alz)
+        guard count == records.count else { throw ArchiveError.damaged("This ALZ archive is damaged or cut short.") }
         var wasEncrypted = false
         for index in 0..<count {
             if request.isCancelled() { throw ArchiveError.cancelled }
@@ -28,6 +29,8 @@ enum UnALZReader {
             if encrypted && request.password == nil { throw ArchiveError.passwordRequired }
             let size = sc_alz_size(alz, index)
             guard size >= 0, size <= Int64(Int32.max) else { throw ArchiveError.unsupported("A file in this archive is larger than 2 GB, which the ALZ reader can’t unpack.") }
+            // unalz unpacks into one buffer of the stated size, so a size the packed bytes can't produce is damage, not a 2 GB buffer.
+            guard size <= records[Int(index)].largestSize else { throw ArchiveError.damaged("A file in this ALZ archive claims more than its data holds.") }
             guard let sink = try extractor.file(name, size: size) else { continue }
             do {
                 var buffer = [UInt8](repeating: 0, count: Int(size))
@@ -46,8 +49,9 @@ enum UnALZReader {
 
     /// unalz reads past the end of a truncated archive (a NULL file handle inside `fread`), so the container is walked first
     /// the way unalz walks it: every header, name and data run must lie inside the file, and the file must end on a record
-    /// boundary. Whatever fails here is damaged; whatever passes cannot send unalz past the end.
-    static func validateStructure(_ url: URL) throws {
+    /// boundary. Whatever fails here is damaged; whatever passes cannot send unalz past the end. Returns the file records
+    /// in order, as unalz lists them.
+    static func validateStructure(_ url: URL) throws -> [Record] {
         let damaged = ArchiveError.damaged("This ALZ archive is damaged or cut short.")
         guard let handle = try? FileHandle(forReadingFrom: url) else { throw ArchiveError.failed("The archive couldn’t be opened.") }
         defer { try? handle.close() }
@@ -62,6 +66,7 @@ enum UnALZReader {
         }
         func le(_ bytes: ArraySlice<UInt8>) -> Int64 { bytes.reversed().reduce(0) { $0 << 8 | Int64($1) } }
         guard size >= 8 else { throw damaged }
+        var records: [Record] = []
         while position < size {
             switch le(try read(4)[...]) {
             case 0x015A_4C41: _ = try read(4)                                    // "ALZ\1" and one unknown word
@@ -72,9 +77,9 @@ enum UnALZReader {
                 let nameLength = Int(le(head[0..<2])), descriptor = Int(head[7])
                 let sizeBytes = descriptor / 0x10
                 guard [0, 1, 2, 4, 8].contains(sizeBytes), nameLength > 0, nameLength < 0x8000 else { throw damaged }
-                var compressed: Int64 = 0
+                var compressed: Int64 = 0, method: UInt8 = 0
                 if sizeBytes > 0 {
-                    _ = try read(6)                                              // method, unknown, CRC
+                    method = try read(6)[0]                                      // method, unknown, CRC
                     compressed = le(try read(sizeBytes)[...])
                     _ = try read(sizeBytes)
                 }
@@ -82,7 +87,26 @@ enum UnALZReader {
                 if descriptor & 1 != 0 { _ = try read(12) }                      // the password check bytes
                 guard compressed >= 0, position + compressed <= size else { throw damaged }
                 position += compressed
+                records.append(Record(method: method, compressed: compressed))
             default: throw damaged
+            }
+        }
+        return records
+    }
+
+    /// A file record's packed size and method.
+    struct Record {
+        var method: UInt8
+        var compressed: Int64
+
+        /// The most its packed bytes can unpack to: stored as is, deflate at most 1032 to 1, bzip2 (and anything else unalz
+        /// may reject) about 1.4 million to 1, rounded up.
+        var largestSize: Int64 {
+            let packed = min(compressed, Int64(Int32.max))   // the reader takes nothing larger anyway
+            switch method {
+            case 0: return packed
+            case 2: return packed * 1032 + 1024
+            default: return packed * (1 << 21) + 1024
             }
         }
     }

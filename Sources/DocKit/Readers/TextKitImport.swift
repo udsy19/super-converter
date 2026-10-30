@@ -15,12 +15,29 @@ enum TextKitImport {
         let text: NSAttributedString
         // TextKit's RTF reader ignores `\pict`: pictures come out first and return as markers.
         let (source, pictures) = format.rawValue == "rtf" ? RTFPictures.extract(data) : (data, [])
+        if type == .docFormat, !plausibleWord97(data) { throw ConversionError.damaged(format) }
         do {
             text = try NSAttributedString(data: source, options: [.documentType: type], documentAttributes: &attributes)
         } catch {
             throw ConversionError.damaged(format)
         }
         return convert(text, attributes: attributes as? [NSAttributedString.DocumentAttributeKey: Any] ?? [:], pictures: pictures)
+    }
+
+    /// AppKit's Word 97 importer trusts the file: a 25 KB `.doc` with a damaged compound-file directory made it allocate
+    /// 9 GB in two seconds. So before it runs, the container and the File Information Block ([MS-DOC] 2.5.1) must hold
+    /// together: a `WordDocument` stream with the Word signature, its table stream, the piece table (Clx) inside that, and
+    /// no more text than the stream has bytes.
+    static func plausibleWord97(_ data: Data) -> Bool {
+        guard let file = CompoundFile(data), let word = file.stream("WordDocument"), word.count >= 0x200, word.u16(0) == 0xA5EC,
+              let table = file.stream(word.u16(10) & 0x200 != 0 ? "1Table" : "0Table") else { return false }
+        // FibBase (32 bytes), then the 16-bit and 32-bit value arrays, each after its count, then the (fc, lcb) pairs.
+        let longs = 34 + Int(word.u16(32)) * 2
+        let pairs = longs + 2 + Int(word.u16(longs)) * 4
+        guard Int(word.u16(longs)) > 3, Int(word.u16(pairs)) > 33, pairs + 2 + 34 * 8 <= word.count else { return false }
+        let ccpText = Int(Int32(bitPattern: word.u32(longs + 2 + 3 * 4)))
+        let fcClx = Int(word.u32(pairs + 2 + 33 * 8)), lcbClx = Int(word.u32(pairs + 2 + 33 * 8 + 4))
+        return (0...word.count).contains(ccpText) && lcbClx > 0 && fcClx <= table.count && lcbClx <= table.count - fcClx
     }
 
     static func convert(_ text: NSAttributedString, attributes: [NSAttributedString.DocumentAttributeKey: Any], pictures: [Data] = []) -> DocReadResult {
@@ -108,7 +125,7 @@ enum TextKitImport {
                     inline = trimmed(inline)
                     let format = list.markerFormat.rawValue
                     let ordered = format.contains("decimal") || format.contains("alpha") || format.contains("roman") || format.contains("Alpha") || format.contains("Roman")
-                    listEntries.append(ListAssembler.Entry(level: (style?.textLists.count ?? 1) - 1, ordered: ordered, start: list.startingItemNumber,
+                    listEntries.append(ListAssembler.Entry(level: (style?.textLists.count ?? 1) - 1, ordered: ordered, start: ListAssembler.start(list.startingItemNumber),
                                                            blocks: [.paragraph(inline, paragraphStyle(style))], listID: "\(ObjectIdentifier(style!.textLists.first!).hashValue)"))
                     continue
                 }

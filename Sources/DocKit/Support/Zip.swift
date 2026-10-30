@@ -62,11 +62,13 @@ struct ZipArchive {
 
     func data(for entry: Entry) throws -> Data {
         guard entry.flags & 1 == 0 else { throw ZipError.unsupported("encrypted entry") }
-        guard entry.size <= Self.maxEntrySize, entry.size <= max(entry.compressedSize, 1) * Self.maxRatio else { throw ZipError.tooLarge }
+        // Sizes and offsets are the file's word, up to 64 bits: each is checked against the data before any arithmetic.
+        guard (0...data.count).contains(entry.compressedSize) else { throw ZipError.damaged("size of \(entry.path)") }
+        guard (0...Self.maxEntrySize).contains(entry.size), entry.size <= max(entry.compressedSize, 1) * Self.maxRatio else { throw ZipError.tooLarge }
         let local = entry.localHeaderOffset
-        guard local >= 0, local + 30 <= data.count, data.u32(local) == 0x0403_4B50 else { throw ZipError.damaged("local header of \(entry.path)") }
+        guard local >= 0, local <= data.count - 30, data.u32(local) == 0x0403_4B50 else { throw ZipError.damaged("local header of \(entry.path)") }
         let start = local + 30 + Int(data.u16(local + 26)) + Int(data.u16(local + 28))
-        guard start + entry.compressedSize <= data.count else { throw ZipError.damaged("data of \(entry.path)") }
+        guard start <= data.count - entry.compressedSize else { throw ZipError.damaged("data of \(entry.path)") }
         let raw = data.subdata(in: start..<start + entry.compressedSize)
         let bytes: Data
         switch entry.method {
@@ -102,14 +104,15 @@ struct ZipArchive {
         var directoryOffset = Int(data.u32(eocd + 16))
         // Zip64: the locator just before the end record points at the Zip64 end record.
         if count == 0xFFFF || directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF, eocd >= 20, data.u32(eocd - 20) == 0x0706_4B50 {
-            let record = Int(data.u64(eocd - 12))
-            guard record + 56 <= data.count, data.u32(record) == 0x0606_4B50 else { throw ZipError.damaged("zip64 end record") }
-            count = Int(data.u64(record + 32))
-            directorySize = Int(data.u64(record + 40))
-            directoryOffset = Int(data.u64(record + 48))
+            guard let record = Int(exactly: data.u64(eocd - 12)), record <= data.count - 56, data.u32(record) == 0x0606_4B50,
+                  let zip64Count = Int(exactly: data.u64(record + 32)), let zip64Size = Int(exactly: data.u64(record + 40)),
+                  let zip64Offset = Int(exactly: data.u64(record + 48)) else { throw ZipError.damaged("zip64 end record") }
+            count = zip64Count
+            directorySize = zip64Size
+            directoryOffset = zip64Offset
         }
         guard count <= maxEntries else { throw ZipError.tooLarge }
-        guard directoryOffset >= 0, directoryOffset + directorySize <= data.count else { throw ZipError.damaged("central directory") }
+        guard (0...data.count).contains(directoryOffset), directorySize <= data.count - directoryOffset else { throw ZipError.damaged("central directory") }
         var entries: [Entry] = []
         entries.reserveCapacity(count)
         var p = directoryOffset
@@ -130,10 +133,12 @@ struct ZipArchive {
             while e + 4 <= extraEnd {
                 let tag = data.u16(e), length = Int(data.u16(e + 2))
                 if tag == 0x0001 {
+                    // A value past Int's range is damage; -1 fails every later bounds check.
+                    func field(_ f: Int) -> Int { Int(exactly: data.u64(f)) ?? -1 }
                     var f = e + 4
-                    if size == 0xFFFF_FFFF, f + 8 <= extraEnd { size = Int(data.u64(f)); f += 8 }
-                    if compressed == 0xFFFF_FFFF, f + 8 <= extraEnd { compressed = Int(data.u64(f)); f += 8 }
-                    if offset == 0xFFFF_FFFF, f + 8 <= extraEnd { offset = Int(data.u64(f)) }
+                    if size == 0xFFFF_FFFF, f + 8 <= extraEnd { size = field(f); f += 8 }
+                    if compressed == 0xFFFF_FFFF, f + 8 <= extraEnd { compressed = field(f); f += 8 }
+                    if offset == 0xFFFF_FFFF, f + 8 <= extraEnd { offset = field(f) }
                 }
                 e += 4 + length
             }

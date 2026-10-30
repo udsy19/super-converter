@@ -16,7 +16,7 @@ enum PDFObj {
     static func int(_ d: CGPDFDictionaryRef, _ key: String) -> Int? {
         var v: CGPDFInteger = 0
         if CGPDFDictionaryGetInteger(d, key, &v) { return Int(v) }
-        return number(d, key).map { Int($0) }
+        return number(d, key)?.checkedInt
     }
     static func bool(_ d: CGPDFDictionaryRef, _ key: String) -> Bool? {
         var v: CGPDFBoolean = 0
@@ -111,9 +111,12 @@ indirect enum PDFFunction {
     case calculator(domain: [Double], range: [Double], program: [PSToken])
     case array([PDFFunction])
 
-    static func parse(_ object: CGPDFObjectRef) -> PDFFunction? {
+    /// The function `object` describes; nil when it is malformed. `depth` bounds the nesting of arrays and stitching
+    /// functions, which a damaged file can make refer to themselves.
+    static func parse(_ object: CGPDFObjectRef, depth: Int = 0) -> PDFFunction? {
+        guard depth < 8 else { return nil }
         if let a = PDFObj.asArray(object) {
-            let fns = (0..<CGPDFArrayGetCount(a)).compactMap { i in PDFObj.objectElement(a, i).flatMap(parse) }
+            let fns = (0..<CGPDFArrayGetCount(a)).compactMap { i in PDFObj.objectElement(a, i).flatMap { parse($0, depth: depth + 1) } }
             return fns.isEmpty ? nil : .array(fns)
         }
         var dict: CGPDFDictionaryRef?
@@ -122,18 +125,25 @@ indirect enum PDFFunction {
         guard let d = dict, let type = PDFObj.int(d, "FunctionType") else { return nil }
         let domain = PDFObj.numbers(d, "Domain") ?? [0, 1]
         let range = PDFObj.numbers(d, "Range") ?? []
+        // Every type reads at least one input's interval.
+        guard domain.count >= 2 else { return nil }
         switch type {
         case 0:
             guard let stream, let loaded = PDFObj.data(stream), let sizeNumbers: [Double] = PDFObj.numbers(d, "Size"), let bps = PDFObj.int(d, "BitsPerSample"),
-                  !range.isEmpty else { return nil }
+                  !range.isEmpty, [1, 2, 4, 8, 12, 16, 24, 32].contains(bps) else { return nil }
             let bytes = loaded.0
-            let sizes = sizeNumbers.map { Int($0) }
             let m = domain.count / 2, n = range.count / 2
+            // Sizes are positive counts whose product (times the outputs) stays under the sample cap.
+            var sizes: [Int] = []
+            var total = n
+            for s in sizeNumbers {
+                guard let size = s.checkedInt, size >= 1, size < 4_000_000, total * size < 4_000_000 else { return nil }
+                sizes.append(size); total *= size
+            }
             let defaultEncode: [Double] = sizes.flatMap { (s: Int) -> [Double] in [0, Double(s - 1)] }
             let encode: [Double] = PDFObj.numbers(d, "Encode") ?? defaultEncode
             let decode = PDFObj.numbers(d, "Decode") ?? range
-            let total = sizes.reduce(1, *) * n
-            guard total > 0, total < 4_000_000, m == sizes.count else { return nil }
+            guard total > 0, m == sizes.count, encode.count >= 2 * m, decode.count >= 2 * n else { return nil }
             var samples = [Double](repeating: 0, count: total)
             let maxValue = Double((1 << bps) - 1)
             var bitPos = 0
@@ -152,10 +162,12 @@ indirect enum PDFFunction {
             return .exponential(domain: domain, c0: PDFObj.numbers(d, "C0") ?? [0], c1: PDFObj.numbers(d, "C1") ?? [1], n: PDFObj.number(d, "N") ?? 1)
         case 3:
             guard let fa = PDFObj.array(d, "Functions") else { return nil }
-            let fns = (0..<CGPDFArrayGetCount(fa)).compactMap { i in PDFObj.objectElement(fa, i).flatMap(parse) }
+            let fns = (0..<CGPDFArrayGetCount(fa)).compactMap { i in PDFObj.objectElement(fa, i).flatMap { parse($0, depth: depth + 1) } }
             guard fns.count == CGPDFArrayGetCount(fa), !fns.isEmpty else { return nil }
             let defaultEncode: [Double] = fns.flatMap { _ -> [Double] in [0.0, 1.0] }
-            return .stitching(domain: domain, functions: fns, bounds: PDFObj.numbers(d, "Bounds") ?? [], encode: PDFObj.numbers(d, "Encode") ?? defaultEncode)
+            let encode = PDFObj.numbers(d, "Encode") ?? defaultEncode
+            guard encode.count >= 2 * fns.count else { return nil }
+            return .stitching(domain: domain, functions: fns, bounds: PDFObj.numbers(d, "Bounds") ?? [], encode: encode)
         case 4:
             guard let stream, let loaded = PDFObj.data(stream) else { return nil }
             guard let program = PSToken.parse(String(decoding: loaded.0, as: UTF8.self)) else { return nil }
@@ -208,7 +220,7 @@ indirect enum PDFFunction {
             }
             return result
         case .calculator(let domain, let range, let program):
-            var stack = input.enumerated().map { clamp($0.element, domain[2 * $0.offset], domain[2 * $0.offset + 1]) }
+            var stack = input.enumerated().map { 2 * $0.offset + 1 < domain.count ? clamp($0.element, domain[2 * $0.offset], domain[2 * $0.offset + 1]) : $0.element }
             PSToken.run(program, &stack)
             let n = range.count / 2
             var out = Array(stack.suffix(n))
@@ -217,7 +229,8 @@ indirect enum PDFFunction {
         }
     }
 
-    private func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
+    /// `v` within [lo, hi]; NaN (from a damaged operand) becomes `lo`, so sample indices stay in range.
+    private func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { v.isNaN ? lo : min(max(v, lo), hi) }
 }
 
 /// PostScript calculator tokens (function type 4).
@@ -236,11 +249,13 @@ indirect enum PSToken {
         }
         if !current.isEmpty { tokens.append(current) }
         var i = 0
-        func block() -> [PSToken]? {
+        // Blocks nest only as deep as `if` / `ifelse` bodies sensibly do; deeper is damage.
+        func block(depth: Int) -> [PSToken]? {
+            guard depth < 32 else { return nil }
             var out: [PSToken] = []
             while i < tokens.count {
                 let t = tokens[i]; i += 1
-                if t == "{" { guard let inner = block() else { return nil }; out.append(.block(inner)) }
+                if t == "{" { guard let inner = block(depth: depth + 1) else { return nil }; out.append(.block(inner)) }
                 else if t == "}" { return out }
                 else if let n = Double(t) { out.append(.number(n)) } else { out.append(.op(t)) }
             }
@@ -248,13 +263,18 @@ indirect enum PSToken {
         }
         guard i < tokens.count, tokens[i] == "{" else { return nil }
         i += 1
-        return block()
+        return block(depth: 0)
     }
+
+    /// The operand stack's limit (PDF 32000-1 §7.10.5.1); `copy` and pushes past it stop the program.
+    static let stackLimit = 100
 
     static func run(_ program: [PSToken], _ stack: inout [Double]) {
         var pc = 0
         func pop() -> Double { stack.popLast() ?? 0 }
-        while pc < program.count {
+        /// An integer operand: PostScript integers are 32-bit, and a non-finite value (damage) counts as 0.
+        func popInt() -> Int { let v = pop(); return v.isFinite ? Int(min(max(v, -2_147_483_648), 2_147_483_647)) : 0 }
+        while pc < program.count, stack.count <= stackLimit {
             let token = program[pc]; pc += 1
             switch token {
             case .number(let n): stack.append(n)
@@ -274,8 +294,8 @@ indirect enum PSToken {
                 case "sub": let b = pop(), a = pop(); stack.append(a - b)
                 case "mul": let b = pop(), a = pop(); stack.append(a * b)
                 case "div": let b = pop(), a = pop(); stack.append(b == 0 ? 0 : a / b)
-                case "idiv": let b = Int(pop()), a = Int(pop()); stack.append(b == 0 ? 0 : Double(a / b))
-                case "mod": let b = Int(pop()), a = Int(pop()); stack.append(b == 0 ? 0 : Double(a % b))
+                case "idiv": let b = popInt(), a = popInt(); stack.append(b == 0 ? 0 : Double(a / b))
+                case "mod": let b = popInt(), a = popInt(); stack.append(b == 0 ? 0 : Double(a % b))
                 case "neg": stack.append(-pop())
                 case "atan": let d = pop(), n = pop(); var a = atan2(n, d) * 180 / .pi; if a < 0 { a += 360 }; stack.append(a)
                 case "ceiling": stack.append(ceil(pop()))
@@ -289,11 +309,11 @@ indirect enum PSToken {
                 case "ln": stack.append(log(max(pop(), 1e-300)))
                 case "log": stack.append(log10(max(pop(), 1e-300)))
                 case "sqrt": stack.append(max(0, pop()).squareRoot())
-                case "and": let b = Int(pop()), a = Int(pop()); stack.append(Double(a & b))
-                case "or": let b = Int(pop()), a = Int(pop()); stack.append(Double(a | b))
-                case "xor": let b = Int(pop()), a = Int(pop()); stack.append(Double(a ^ b))
-                case "not": let a = pop(); stack.append(a == 0 ? 1 : (a == 1 ? 0 : Double(~Int(a))))
-                case "bitshift": let s = Int(pop()), a = Int(pop()); stack.append(Double(s >= 0 ? a << min(s, 62) : a >> min(-s, 62)))
+                case "and": let b = popInt(), a = popInt(); stack.append(Double(a & b))
+                case "or": let b = popInt(), a = popInt(); stack.append(Double(a | b))
+                case "xor": let b = popInt(), a = popInt(); stack.append(Double(a ^ b))
+                case "not": let a = popInt(); stack.append(a == 0 ? 1 : (a == 1 ? 0 : Double(~a)))
+                case "bitshift": let s = popInt(), a = popInt(); stack.append(Double(s >= 0 ? a << min(s, 62) : a >> min(-s, 62)))
                 case "eq": let b = pop(), a = pop(); stack.append(a == b ? 1 : 0)
                 case "ne": let b = pop(), a = pop(); stack.append(a != b ? 1 : 0)
                 case "gt": let b = pop(), a = pop(); stack.append(a > b ? 1 : 0)
@@ -305,10 +325,10 @@ indirect enum PSToken {
                 case "pop": _ = pop()
                 case "dup": if let t = stack.last { stack.append(t) }
                 case "exch": if stack.count >= 2 { stack.swapAt(stack.count - 1, stack.count - 2) }
-                case "copy": let n = Int(pop()); if n > 0, n <= stack.count { stack.append(contentsOf: stack.suffix(n)) }
-                case "index": let n = Int(pop()); if n >= 0, n < stack.count { stack.append(stack[stack.count - 1 - n]) }
+                case "copy": let n = popInt(); if n > 0, n <= stack.count { stack.append(contentsOf: stack.suffix(n)) }
+                case "index": let n = popInt(); if n >= 0, n < stack.count { stack.append(stack[stack.count - 1 - n]) }
                 case "roll":
-                    let j = Int(pop()), n = Int(pop())
+                    let j = popInt(), n = popInt()
                     if n > 0, n <= stack.count {
                         var top = Array(stack.suffix(n))
                         let k = ((j % n) + n) % n
@@ -385,7 +405,9 @@ final class PDFColourSpace {
         case "DeviceCMYK", "CMYK": return deviceCMYK
         case "Lab":
             let d = PDFObj.dictElement(array, 1)
-            return PDFColourSpace(.lab(white: d.flatMap { PDFObj.numbers($0, "WhitePoint") } ?? [0.9642, 1, 0.8249], range: d.flatMap { PDFObj.numbers($0, "Range") } ?? [-100, 100, -100, 100]))
+            let white = d.flatMap { PDFObj.numbers($0, "WhitePoint") }.flatMap { $0.count >= 3 ? $0 : nil } ?? [0.9642, 1, 0.8249]
+            let range = d.flatMap { PDFObj.numbers($0, "Range") }.flatMap { $0.count >= 4 ? $0 : nil } ?? [-100, 100, -100, 100]
+            return PDFColourSpace(.lab(white: white, range: range))
         case "ICCBased":
             guard let stream = PDFObj.streamElement(array, 1), let dict = PDFObj.streamDictionary(stream) else { return nil }
             let n = PDFObj.int(dict, "N") ?? 3
@@ -431,7 +453,8 @@ final class PDFColourSpace {
     }
 
     func toRGB(_ raw: [Double]) -> VectorColour {
-        func c(_ i: Int) -> Double { i < raw.count ? min(max(raw[i], 0), 1) : 0 }
+        // A component in 0...1; a NaN one (damage) counts as 0.
+        func c(_ i: Int) -> Double { i < raw.count && !raw[i].isNaN ? min(max(raw[i], 0), 1) : 0 }
         switch kind {
         case .gray: return VectorColour(red: c(0), green: c(0), blue: c(0))
         case .rgb: return VectorColour(red: c(0), green: c(1), blue: c(2))
@@ -451,7 +474,8 @@ final class PDFColourSpace {
             func gamma(_ v: Double) -> Double { let x = min(max(v, 0), 1); return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1 / 2.4) - 0.055 }
             return VectorColour(red: gamma(r), green: gamma(g), blue: gamma(bl))
         case .indexed(let base, let hival, let lookup):
-            let idx = min(max(Int(raw.first ?? 0), 0), hival)
+            let first = raw.first ?? 0
+            let idx = first.isNaN ? 0 : Int(min(max(first, 0), Double(hival)))
             let n = base.components
             var comps: [Double] = []
             for k in 0..<n { let o = idx * n + k; comps.append(o < lookup.count ? Double(lookup[o]) / 255 : 0) }

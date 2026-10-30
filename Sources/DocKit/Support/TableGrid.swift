@@ -13,8 +13,15 @@ enum TableGrid {
         var covered = Covered.none
     }
 
+    /// The widest span a reader keeps and the most columns a grid has (HTML's own colspan limit): the writers allocate a slot
+    /// per position, and a damaged file can claim a span of billions.
+    static let maxSpan = 1_000
+
+    /// A span read from a file: at least 1, at most `maxSpan`.
+    static func span(_ value: Int?) -> Int { min(max(value ?? 1, 1), maxSpan) }
+
     static func columnCount(_ table: DocTable) -> Int {
-        max(table.rows.map { $0.reduce(0) { $0 + $1.columnSpan } }.max() ?? 1, 1)
+        min(max(table.rows.map { $0.reduce(0) { $0 + span($1.columnSpan) } }.max() ?? 1, 1), maxSpan)
     }
 
     /// Rows of exactly `columns` slots; a spanning cell sits in its first slot and the slots it covers say which way: `above`

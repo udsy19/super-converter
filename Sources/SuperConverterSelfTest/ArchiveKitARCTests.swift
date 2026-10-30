@@ -7,12 +7,12 @@ import SuperConverterCore
 // clear code; the squashed ones fill their table but never clear it). The old stored method (1), the unsupported methods
 // and the damaged variants are built here from the header layout.
 
-private struct ARCFixture {
+struct ARCFixture {
     let base64: String
     var data: Data { Data(base64Encoded: base64.filter { !$0.isWhitespace })! }
 }
 
-private enum ARCFixtures {
+enum ARCFixtures {
     static let stored = ARCFixture(base64: """
         GgJ0LnR4dAAAAFgVQAACAgAAAFZCEnaXFQIAAAA0MhoCdDIudHh0AABYFUAAAgIAAABWQhR2lxUCAAAANDIaAA==
         """)

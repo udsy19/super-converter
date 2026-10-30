@@ -126,6 +126,15 @@ final class PDFInterpreter {
         if budget > 0 { levels[levels.count - 1].nodes.append(node) }
     }
 
+    /// Opens a clip or opacity level, unless levels are already nested `maxGroupNesting` deep (a clip without a matching
+    /// `Q`, repeated); then the level is left out, with a note. Whether it was opened.
+    @discardableResult
+    func openLevel(_ level: Level) -> Bool {
+        guard levels.count < maxGroupNesting else { note(.otherLoss, "Clips nested too deep were left out"); return false }
+        levels.append(level)
+        return true
+    }
+
     func closeLevel() {
         guard levels.count > 1 else { return }
         let level = levels.removeLast()
@@ -196,7 +205,7 @@ final class PDFInterpreter {
         reg("Tw") { s, i in if let v = popNumber(s) { me(i).gs.wordSpace = v } }
         reg("Tz") { s, i in if let v = popNumber(s) { me(i).gs.hScale = v / 100 } }
         reg("TL") { s, i in if let v = popNumber(s) { me(i).gs.leading = v } }
-        reg("Tr") { s, i in if let v = popNumber(s) { me(i).gs.renderMode = Int(v) } }
+        reg("Tr") { s, i in if let v = popNumber(s) { me(i).gs.renderMode = v.checkedInt ?? 0 } }
         reg("Ts") { s, i in if let v = popNumber(s) { me(i).gs.rise = v } }
         reg("Tf") { s, i in me(i).opFont(s) }
         reg("Td") { s, i in me(i).opTd(s, setLeading: false) }
@@ -379,7 +388,7 @@ final class PDFInterpreter {
                 if let strokeSpec { emit(.path(segments, fill: nil, stroke: strokeSpec, rule: rule)) }
             }
         }
-        if pendingClip { levels.append(Level(clip: segments, opacity: 1, nodes: [])) }
+        if pendingClip { openLevel(Level(clip: segments, opacity: 1, nodes: [])) }
     }
 
     // MARK: Patterns and shadings
@@ -440,14 +449,18 @@ final class PDFInterpreter {
         let bx = Double(bounds.minX), by = Double(bounds.minY), bw = Double(bounds.width), bh = Double(bounds.height)
         let corners = [VectorPoint(bx, by), VectorPoint(bx + bw, by), VectorPoint(bx, by + bh), VectorPoint(bx + bw, by + bh)].map { inverse.apply($0) }
         let minX = corners.map(\.x).min()!, maxX = corners.map(\.x).max()!, minY = corners.map(\.y).min()!, maxY = corners.map(\.y).max()!
-        let i0 = Int(floor((minX - bbox[2]) / xstep)), i1 = Int(ceil((maxX - bbox[0]) / xstep))
-        let j0 = Int(floor((minY - bbox[3]) / ystep)), j1 = Int(ceil((maxY - bbox[1]) / ystep))
+        // Tile indices are counted in Double first: a tiny step or a degenerate matrix gives numbers no Int holds (or NaN,
+        // which fails the test too).
+        let i0 = floor((minX - bbox[2]) / xstep), i1 = ceil((maxX - bbox[0]) / xstep)
+        let j0 = floor((minY - bbox[3]) / ystep), j1 = ceil((maxY - bbox[1]) / ystep)
         let lo0 = min(i0, i1), hi0 = max(i0, i1), lo1 = min(j0, j1), hi1 = max(j0, j1)
-        guard (hi0 - lo0) * (hi1 - lo1) <= 20_000 else { note(.shadingRasterised, "A pattern with too many tiles was left out"); return [] }
+        guard max(hi0 - lo0, 1) * max(hi1 - lo1, 1) <= 20_000, abs(lo0) < 1e9, abs(lo1) < 1e9 else {
+            note(.shadingRasterised, "A pattern with too many tiles was left out"); return []
+        }
         let clip = PathBuilder.rect(x: bbox[0], y: bbox[1], width: bbox[2] - bbox[0], height: bbox[3] - bbox[1])
         var out: [VectorNode] = []
-        for j in lo1..<max(hi1, lo1 + 1) {
-            for i in lo0..<max(hi0, lo0 + 1) {
+        for j in Int(lo1)..<max(Int(hi1), Int(lo1) + 1) {
+            for i in Int(lo0)..<max(Int(hi0), Int(lo0) + 1) {
                 let t = VectorTransform.translation(Double(i) * xstep, Double(j) * ystep).then(matrix)
                 out.append(.group(content, transform: t, clip: clip, opacity: 1))
             }
@@ -470,6 +483,7 @@ final class PDFInterpreter {
         }
         guard let coords = PDFObj.numbers(d, "Coords"), let fnObject = PDFObj.object(d, "Function"), let fn = PDFFunction.parse(fnObject) else { return nil }
         let domain = PDFObj.numbers(d, "Domain") ?? [0, 1]
+        guard domain.count >= 2 else { return nil }
         let n = 48
         var stops: [GradientStop] = []
         for k in 0...n {
@@ -568,11 +582,11 @@ final class PDFInterpreter {
         }
         let groupAlpha = gs.fillAlpha
         let startLevels = levels.count
-        if PDFObj.dict(d, "Group") != nil, groupAlpha < 0.999 { levels.append(Level(clip: nil, opacity: groupAlpha, nodes: [])); gs.fillAlpha = 1; gs.strokeAlpha = 1 }
+        if PDFObj.dict(d, "Group") != nil, groupAlpha < 0.999, openLevel(Level(clip: nil, opacity: groupAlpha, nodes: [])) { gs.fillAlpha = 1; gs.strokeAlpha = 1 }
         if let bbox = PDFObj.numbers(d, "BBox"), bbox.count == 4 {
             let a = gs.ctm.apply(VectorPoint(bbox[0], bbox[1])), b = gs.ctm.apply(VectorPoint(bbox[2], bbox[1]))
             let c = gs.ctm.apply(VectorPoint(bbox[2], bbox[3])), e = gs.ctm.apply(VectorPoint(bbox[0], bbox[3]))
-            levels.append(Level(clip: [.move(a), .line(b), .line(c), .line(e), .close], opacity: 1, nodes: []))
+            openLevel(Level(clip: [.move(a), .line(b), .line(c), .line(e), .close], opacity: 1, nodes: []))
         }
         let savedPath = path, savedPending = pendingClip
         path = []; pendingClip = false
@@ -733,7 +747,7 @@ final class PDFInterpreter {
             if t.isEmpty { continue }
             let trm = first.trm
             let s = hypot(trm.c, trm.d)
-            guard s > 1e-6 else { continue }
+            guard s > 1e-6, s.isFinite else { continue }
             let isFlat = abs(trm.b) < 1e-9 * s && abs(trm.c) < 1e-9 * s && abs(trm.a / s - 1) < 1e-6 && trm.d > 0
             if isFlat {
                 emit(.text(VectorTextRun(text: t, fontName: fontName, size: s, origin: VectorPoint(trm.tx, trm.ty), fill: fill, fontData: program)))

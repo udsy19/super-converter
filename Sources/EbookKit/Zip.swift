@@ -60,7 +60,9 @@ public struct ZipArchive: Sendable {
         guard data.count >= 22 else { throw ZipError.notAZip }
         func u16(_ i: Int) -> Int { Int(data[i]) | Int(data[i + 1]) << 8 }
         func u32(_ i: Int) -> Int { u16(i) | u16(i + 2) << 16 }
-        func u64(_ i: Int) -> Int { u32(i) | u32(i + 4) << 32 }
+        /// ZIP64 sizes, counts and offsets, held to 2⁴⁸ so a damaged one can't go negative or overflow the sums it goes
+        /// into; the range checks after it reject anything past the end of the file.
+        func u64(_ i: Int) -> Int { min((u32(i) | u32(i + 4) << 32) & Int.max, 1 << 48) }
 
         var eocd = -1
         var i = data.count - 22
@@ -139,6 +141,9 @@ public struct ZipArchive: Sendable {
         let start = p + 30 + u16(p + 26) + u16(p + 28)
         guard start >= 0, entry.compressedSize >= 0, start + entry.compressedSize <= b.count else { throw ZipError.corrupt(entry.name) }
         guard entry.size <= Self.entryLimit else { throw ZipError.tooLarge }
+        // DEFLATE expands at most 1,032 times: a 100-byte entry claiming two gigabytes is damage, and its buffer would be
+        // allocated before inflating found out.
+        guard entry.method != 8 || entry.size <= max(entry.compressedSize, 1) * 1_032 else { throw ZipError.corrupt(entry.name) }
         let raw = b.subdata(in: start..<start + entry.compressedSize)
         let out: Data
         switch entry.method {

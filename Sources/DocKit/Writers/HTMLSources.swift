@@ -130,7 +130,7 @@ enum HTMLSources {
         var defs = ""
         var gradients = 0
         var clips = 0
-        func colour(_ c: VectorColour) -> String { String(format: "#%02X%02X%02X", Int((c.red * 255).rounded()), Int((c.green * 255).rounded()), Int((c.blue * 255).rounded())) }
+        func colour(_ c: VectorColour) -> String { String(format: "#%02X%02X%02X", Int(measure: min(max(c.red, 0), 1) * 255), Int(measure: min(max(c.green, 0), 1) * 255), Int(measure: min(max(c.blue, 0), 1) * 255)) }
         func opacity(_ c: VectorColour) -> String { c.alpha < 1 ? " fill-opacity=\"\(num(c.alpha))\"" : "" }
         func pathData(_ segments: [PathSegment]) -> String {
             segments.map { s -> String in

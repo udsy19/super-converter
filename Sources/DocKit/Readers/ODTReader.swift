@@ -256,7 +256,7 @@ enum ODTReader {
                 case .text(let t): out += t
                 case .element(let e):
                     switch e.name {
-                    case "s": out += String(repeating: " ", count: Int(e.attr("c") ?? "1") ?? 1)
+                    case "s": out += spaces(e)
                     case "tab": out += "\t"
                     case "line-break": out += "\n"
                     default: out += rawText(e)
@@ -292,7 +292,7 @@ enum ODTReader {
                         var f = format
                         f.link = e.attr("href")
                         walk(e, format: self.format(forStyle: e.attr("style-name"), base: f), into: &builder)
-                    case "s": builder.add(String(repeating: " ", count: Int(e.attr("c") ?? "1") ?? 1), format)
+                    case "s": builder.add(spaces(e), format)
                     case "tab": builder.add("\t", format)
                     case "line-break": builder.add(.lineBreak)
                     case "frame": frame(e, link: format.link, into: &builder)
@@ -360,7 +360,7 @@ enum ODTReader {
             defer { listStack.removeLast() }
             let levelStyle = listStyles[styleName]?.children.first { $0.attr("level") == String(listStack.count) }
             let ordered = levelStyle?.name == "list-level-style-number"
-            let start = Int(node.child("list-item")?.attr("start-value") ?? levelStyle?.attr("start-value") ?? "1") ?? 1
+            let start = ListAssembler.start(Int(node.child("list-item")?.attr("start-value") ?? levelStyle?.attr("start-value") ?? "1"))
             let items = node.children.filter { $0.name == "list-item" || $0.name == "list-header" }.map { blocks($0.children) }
             return .list(ordered: ordered, start: start, items: items)
         }
@@ -374,7 +374,7 @@ enum ODTReader {
                     switch child.name {
                     case "table-row":
                         let row = tableRow(child, header: header)
-                        let repeated = min(Int(child.attr("number-rows-repeated") ?? "1") ?? 1, 100)
+                        let repeated = min(max(Int(child.attr("number-rows-repeated") ?? "1") ?? 1, 1), 100)
                         let isBlank = row.allSatisfy { $0.blocks == [.paragraph([], DocParagraphStyle())] }
                         for _ in 0..<(isBlank ? 1 : repeated) { rows.append(row) }
                     case "table-header-rows": addRows(child, header: true)
@@ -399,11 +399,11 @@ enum ODTReader {
         func tableRow(_ row: XMLNode, header: Bool) -> [DocTable.Cell] {
             var cells: [DocTable.Cell] = []
             for cell in row.children where cell.name == "table-cell" {
-                let repeated = min(Int(cell.attr("number-columns-repeated") ?? "1") ?? 1, 64)
-                let span = max(Int(cell.attr("number-columns-spanned") ?? "1") ?? 1, 1)
+                let repeated = min(max(Int(cell.attr("number-columns-repeated") ?? "1") ?? 1, 1), 64)
+                let span = TableGrid.span(Int(cell.attr("number-columns-spanned") ?? "1"))
                 var blocks = self.blocks(cell.children)
                 if blocks.isEmpty { blocks = [.paragraph([], DocParagraphStyle())] }
-                let rowSpan = max(Int(cell.attr("number-rows-spanned") ?? "1") ?? 1, 1)
+                let rowSpan = TableGrid.span(Int(cell.attr("number-rows-spanned") ?? "1"))
                 for _ in 0..<repeated { cells.append(DocTable.Cell(blocks: blocks, columnSpan: span, rowSpan: rowSpan, isHeader: header)) }
             }
             return cells
@@ -413,4 +413,10 @@ enum ODTReader {
 
 private extension String {
     var nilIfEmpty: String? { let t = trimmed; return t.isEmpty ? nil : t }
+}
+
+/// The spaces a `text:s` stands for: its count is the file's word, so a negative one (a trap) or one in the billions (a
+/// runaway allocation) is damage; no real document runs a thousand spaces together.
+private func spaces(_ node: XMLNode) -> String {
+    String(repeating: " ", count: min(max(Int(node.attr("c") ?? "1") ?? 1, 0), 1_000))
 }

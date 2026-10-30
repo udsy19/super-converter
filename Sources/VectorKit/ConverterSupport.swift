@@ -47,11 +47,18 @@ public enum ConverterSupport {
         return url
     }
 
-    /// Reader step: file in, model out.
+    /// The longest page side a reader step hands on, in points (about 350 m).
+    static let maxPageSide = 1e6
+
+    /// Reader step: file in, model out. Page sides are kept within 1 pt ... `maxPageSide`: a damaged file can declare any
+    /// size, even NaN or infinite, and the steps after this one compute pixel sizes from it.
     public static func reader(_ id: EngineID, from formats: Set<FormatID>, read: @escaping @Sendable (URL) throws -> VectorReadResult) -> VectorConverter {
         VectorConverter(id: id, handles: [StepPattern(from: .formats(formats), to: .model(.vectorDocument))]) { _, input, _ in
             let result = try read(try fileURL(input))
-            return StepOutput(.vector(result.document), lossNotes: result.lossNotes, warnings: result.warnings)
+            func side(_ v: Double) -> Double { v.isNaN ? 1 : min(max(v, 1), maxPageSide) }
+            var document = result.document
+            for i in document.pages.indices { document.pages[i].size = VectorSize(width: side(document.pages[i].size.width), height: side(document.pages[i].size.height)) }
+            return StepOutput(.vector(document), lossNotes: result.lossNotes, warnings: result.warnings)
         }
     }
 

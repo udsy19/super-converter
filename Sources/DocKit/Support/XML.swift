@@ -97,6 +97,10 @@ final class XMLNode {
 enum XML {
     struct ParseError: Error { var message: String }
 
+    /// Elements nested deeper than this make the document unreadable (libxml2's own default limit): the readers walk the tree
+    /// by recursion, and a damaged file can nest without end.
+    static let maxDepth = 256
+
     /// Parses a document; whitespace-only text between elements is dropped unless `keepWhitespace`.
     static func parse(_ data: Data, keepWhitespace: Bool = false) throws -> XMLNode {
         let builder = Builder(keepWhitespace: keepWhitespace)
@@ -104,7 +108,8 @@ enum XML {
         parser.shouldProcessNamespaces = false
         parser.shouldResolveExternalEntities = false
         parser.delegate = builder
-        guard parser.parse(), let root = builder.root else {
+        guard parser.parse(), !builder.tooDeep, let root = builder.root else {
+            if builder.tooDeep { throw ParseError(message: "elements nested more than \(maxDepth) deep") }
             throw ParseError(message: parser.parserError?.localizedDescription ?? "unreadable XML")
         }
         return root
@@ -134,11 +139,13 @@ enum XML {
         let keepWhitespace: Bool
         var root: XMLNode?
         var stack: [XMLNode] = []
+        var tooDeep = false
 
         init(keepWhitespace: Bool) { self.keepWhitespace = keepWhitespace }
 
         func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?,
                     attributes: [String: String] = [:]) {
+            guard stack.count < XML.maxDepth else { tooDeep = true; parser.abortParsing(); return }
             let node = XMLNode(elementName, attributes: attributes)
             if let top = stack.last { top.append(node) } else { root = node }
             stack.append(node)

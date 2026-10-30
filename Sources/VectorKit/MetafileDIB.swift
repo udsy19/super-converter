@@ -88,21 +88,21 @@ enum MetafileDIB {
         if comp == 3, size >= 52 { masks = [bmi.u32(40), bmi.u32(44), bmi.u32(48)] }
         let alphaMask = comp == 3 && size >= 56 ? bmi.u32(52) : (bpp == 32 ? 0xFF000000 : 0)
 
-        var out = [UInt8](repeating: 255, count: width * height * 4)
-        var hasAlpha = false
         let reader = ByteReader(bytes: bits)
 
         // RLE → indices (bottom-up rows of `width`).
         var indices: [UInt8]?
         if comp == 1 || comp == 2 {
-            guard bpp == (comp == 1 ? 8 : 4) else { return nil }
+            guard bpp == (comp == 1 ? 8 : 4), width * height / ImageBridge.maxPixelsPerByte <= bits.count else { return nil }
             indices = rle(bits, width: width, height: height, fourBit: comp == 2)
         }
         let stride = ((width * bpp + 31) / 32) * 4
-        if indices == nil, reader.count < stride * height {
-            // Truncated pixel data: decode what is there, the rest stays white.
-            if reader.count < stride { return nil }
-        }
+        // Truncated pixel data decodes what is there (the rest stays white), but the bits must hold at least half the
+        // rows, and run-length data no more pixels than its bytes can describe: a header claiming far more is damage,
+        // and would be a runaway allocation.
+        if indices == nil, reader.count / stride < (height + 1) / 2 { return nil }
+        var out = [UInt8](repeating: 255, count: width * height * 4)
+        var hasAlpha = false
 
         func shiftScale(_ mask: Int) -> (Int, Double) {
             guard mask != 0 else { return (0, 0) }

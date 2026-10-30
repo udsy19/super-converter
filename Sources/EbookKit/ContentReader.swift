@@ -20,6 +20,14 @@ final class ContentReader {
     private(set) var losses: Set<LossNote.Kind> = []
     private var footnoteSources: [String: MarkupNode] = [:]
     private var footnoteDone: Set<String> = []
+    /// Notes being converted inside one another: a chain of notes each citing the next is lifted only this deep, so
+    /// thousands of them can't overflow the stack.
+    private var footnoteDepth = 0
+    private static let maxFootnoteDepth = 8
+    /// Blocks and inlines converted inside one another. Readers run on threads with half a megabyte of stack, and each
+    /// level costs kilobytes, so past this depth (far beyond any real book's) the rest of a branch is kept as its text.
+    private var depth = 0
+    static let maxDepth = 40
 
     init(documentPath: String, footnotePrefix: String, images: @escaping ImageLookup, links: @escaping LinkLookup) {
         self.documentPath = documentPath; self.footnotePrefix = footnotePrefix; self.images = images; self.links = links
@@ -87,10 +95,13 @@ final class ContentReader {
               let source = footnoteSources[frag] else { return nil }
         let id = footnotePrefix + frag
         if !footnoteDone.contains(frag) {
+            guard footnoteDepth < Self.maxFootnoteDepth else { return nil }
             footnoteDone.insert(frag)
             var inner: [DocBlock] = []
             let content = source.children.filter { !isBacklink($0) }
+            footnoteDepth += 1
             convert(content, into: &inner)
+            footnoteDepth -= 1
             if inner.isEmpty { return nil }
             footnotes.append(.footnote(id: id, inner))
         }
@@ -107,6 +118,13 @@ final class ContentReader {
     // MARK: Blocks
 
     private func convert(_ nodes: [MarkupNode], into blocks: inout [DocBlock]) {
+        guard depth < Self.maxDepth else {
+            let text = Self.plainText(nodes)
+            if !text.isEmpty { blocks.append(.paragraph([.text(text)], DocParagraphStyle())) }
+            return
+        }
+        depth += 1
+        defer { depth -= 1 }
         var run: DocText = []
         func flush() {
             let normalised = Self.normalise(run)
@@ -223,8 +241,8 @@ final class ContentReader {
                     for cell in child.elements where cell.name == "td" || cell.name == "th" {
                         var inner: [DocBlock] = []
                         convert(cell.children, into: &inner)
-                        cells.append(DocTable.Cell(blocks: inner, columnSpan: max(1, Int(cell.attribute("colspan") ?? "") ?? 1),
-                                                   rowSpan: max(1, Int(cell.attribute("rowspan") ?? "") ?? 1), isHeader: cell.name == "th"))
+                        cells.append(DocTable.Cell(blocks: inner, columnSpan: Self.span(cell.attribute("colspan"), limit: 1_000),
+                                                   rowSpan: Self.span(cell.attribute("rowspan"), limit: 65_534), isHeader: cell.name == "th"))
                         if rows.isEmpty { alignments.append(Self.alignment(of: cell)) }
                     }
                     if !cells.isEmpty { rows.append(cells) }
@@ -236,9 +254,16 @@ final class ContentReader {
         return .table(DocTable(rows: rows, caption: caption, alignments: alignments))
     }
 
+    /// A `colspan` or `rowspan`, from 1 to HTML's own limits (1,000 columns, 65,534 rows): a damaged "9223372036854775807"
+    /// would overflow whatever lays the table out.
+    static func span(_ text: String?, limit: Int) -> Int { min(max(Int(text ?? "") ?? 1, 1), limit) }
+
     // MARK: Inline
 
     private func inlines(_ nodes: [MarkupNode]) -> DocText {
+        guard depth < Self.maxDepth else { return [.text(Self.plainText(nodes))] }
+        depth += 1
+        defer { depth -= 1 }
         var out: DocText = []
         for node in nodes {
             if let t = node.text { out.append(.text(Self.collapse(t))) }
@@ -304,6 +329,11 @@ final class ContentReader {
     }
 
     // MARK: Text helpers
+
+    /// The text of `nodes`, for a branch too deep to convert.
+    static func plainText(_ nodes: [MarkupNode]) -> String {
+        nodes.map { $0.text ?? $0.plainText }.joined(separator: " ").collapsingWhitespace()
+    }
 
     static func collapse(_ s: String) -> String {
         var out = ""

@@ -34,6 +34,7 @@ func registerImageKitTests() {
     SelfTest.cases.append(("ImageKit.raw", { imageKitRAW() }))
     SelfTest.cases.append(("ImageKit.libRaw", { imageKitLibRaw() }))
     SelfTest.cases.append(("ImageKit.codecs", { imageKitCodecs() }))
+    SelfTest.cases.append(("ImageKit.damagedInputNeverCrashes", { imageKitDamagedInput() }))
 }
 
 // MARK: - Harness
@@ -1268,4 +1269,74 @@ private func imageKitCodecs() {
         check(data[25] == 3, "≤ 256 colours → palette PNG (colour type \(data[25]))")
         check(ikSamples(a, bits: 8) == ikSamples(b, bits: 8), "palette PNG is exact, transparency kept")
     } else { check(false, "palette PNG") }
+}
+
+/// A damaged copy of `bytes`, a third of the time with a header dimension (big-endian 32-bit at `big`, little-endian 16-bit
+/// at `little`) replaced by a huge or hostile value, so a canvas the data cannot hold is claimed; else `Fuzz.mutate`'s damage.
+/// `crc` names a PNG chunk (its type's offset) whose CRC is recomputed after the change, so the claim gets past the check.
+private func ikMutateDimensions(_ bytes: [UInt8], big: [Int] = [], little: [Int] = [], crc: Int? = nil,
+                                using rng: inout FuzzRandom) -> [UInt8] {
+    guard Int.random(in: 0..<3, using: &rng) == 0, let at = (big + little).randomElement(using: &rng) else { return Fuzz.mutate(bytes, using: &rng) }
+    var copy = bytes
+    if big.contains(at) {
+        let v = [0xFFFF_FFFF, 0x7FFF_FFFF, 0x8000_0000, 300_000, 65_536, 46_341, 0].randomElement(using: &rng)!
+        copy.replaceSubrange(at..<(at + 4), with: ikBE32(v))
+    } else {
+        copy.replaceSubrange(at..<(at + 2), with: ikLE16([0xFFFF, 0x8000, 0].randomElement(using: &rng)!))
+    }
+    if let crc {
+        let length = Int(copy[crc - 4]) << 24 | Int(copy[crc - 3]) << 16 | Int(copy[crc - 2]) << 8 | Int(copy[crc - 1])
+        let value = copy.withUnsafeBufferPointer { Int(crc32(0, $0.baseAddress! + crc, uInt(4 + length))) }
+        copy.replaceSubrange((crc + 4 + length)..<(crc + 8 + length), with: ikBE32(value))
+    }
+    return copy
+}
+
+/// Damaged and hostile files through ImageKit's readers (Photoshop, PSB, XCF, Netpbm and the ImageIO formats whose sizes
+/// ImageKit allocates from), then the pipeline's decode to floats: each must fail cleanly or give a picture, never trap.
+@MainActor
+private func imageKitDamagedInput() {
+    let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Tests/Corpus/generated", isDirectory: true)
+    func bytes(_ url: URL?) -> [UInt8] { url.flatMap { try? Data(contentsOf: $0) }.map { [UInt8]($0) } ?? [] }
+    let png = ikURL("fuzz.png")
+    ikWrite(png, type: .png, width: 20, height: 12, components: 3, alpha: true, bits: 8, icc: ikSRGB) { x, y, c in c == 3 ? (x < 3 ? 0 : 255) : (x * 11 + y * 7 + c * 50) % 256 }
+    let psb = ikURL("fuzz.psb")
+    ikPSB(psb, width: 9, height: 5, bits: 8, icc: ikSRGB) { x, y, c in (x * 31 + y * 17 + c * 70) % 256 }
+    let xcf = ikURL("fuzz.xcf")
+    ikXCF(xcf, width: 40, height: 40, compression: 1, layers: [(2, 1, 10, 8, 200, 3, (0..<(10 * 8 * 4)).map { UInt8($0 % 251) }),
+                                                            (0, 0, 40, 40, 255, 0, [UInt8](repeating: 90, count: 40 * 40 * 4))])
+    var seeds: [FuzzSeed] = []
+    func add(_ name: String, _ ext: String, _ data: [UInt8], big: [Int] = [], little: [Int] = [], crc: Int? = nil) {
+        guard !data.isEmpty else { check(false, "fuzz seed \(name) was made"); return }
+        seeds.append(FuzzSeed(name: name, ext: ext, bytes: data, mutate: { ikMutateDimensions(data, big: big, little: little, crc: crc, using: &$0) }))
+    }
+    let header = [14, 18]   // PSD/PSB height, width; XCF width, height
+    add("psd", "psd", bytes(ikConvert(png, to: "psd").url), big: header)
+    add("psb", "psb", bytes(psb), big: header)
+    add("psb-corpus", "psb", bytes(corpus.appendingPathComponent("sample.psb")), big: header)
+    add("xcf", "xcf", bytes(xcf), big: header)
+    add("xcf-corpus", "xcf", bytes(corpus.appendingPathComponent("sample.xcf")), big: header)
+    add("png", "png", bytes(png), big: [16, 20], crc: 12)
+    add("gif", "gif", bytes(corpus.appendingPathComponent("animated-3.gif")), little: [6, 8])
+    add("ico", "ico", bytes(ikConvert(png, to: "ico", options: ["sizes": "16,24"]).url))
+    add("icns", "icns", bytes(ikConvert(png, to: "icns", options: ["sizes": "16,32"]).url))
+    for (name, text) in [("p3", "P3\n# c\n2 2\n255\n255 0 0  0 255 0\n0 0 255  10 20 30\n"), ("p1", "P1\n3 2\n0 1 0\n1 0 1\n"),
+                         ("p7", "P7\nWIDTH 2\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n\u{1}\u{2}\u{3}\u{FF}\u{20}\u{40}\u{60}\u{80}")] {
+        seeds.append(FuzzSeed(name: name, ext: "ppm", bytes: Array(text.utf8)))
+    }
+    seeds.append(FuzzSeed(name: "p6", ext: "ppm", bytes: Array("P6\n3 1\n65535\n".utf8) + (0..<18).map { UInt8($0 * 13) }))
+    seeds.append(FuzzSeed(name: "p4", ext: "ppm", bytes: Array("P4\n10 2\n".utf8) + [0xA5, 0xC0, 0x3C, 0x40]))
+
+    let work = ikFolder.appendingPathComponent("fuzz-work", isDirectory: true)
+    let pipeline = ImageKitModule.converters.first { $0.id == .imagePipeline }
+    let ran = fuzzNeverCrashes("ImageKit.damagedInputNeverCrashes", seeds: seeds, count: 100) { url, seed in
+        let format = FormatID(seed.ext)
+        let context = StepContext(workFolder: work, source: url, sourceFormat: format, targetFormat: "png", options: OptionValues(["bitDepth": "16"]))
+        guard let reader = ImageKitModule.converters.first(where: { $0.handles(Step($0.id, .format(format), .imageAsset)) }) else { return }
+        let decoded = try await reader.run(Step(reader.id, .format(format), .imageAsset), input: .file(url), context: context)
+        // 16-bit output makes the pipeline decode every frame to floats, which is where ImageIO's sizes are allocated from.
+        _ = try await pipeline?.run(Step(.imagePipeline, .imageAsset, .imageAsset), input: decoded.value, context: context)
+    }
+    check(ran == seeds.count * 100, "every damaged input was handled without a crash (\(ran))")
 }

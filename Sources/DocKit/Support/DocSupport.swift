@@ -281,7 +281,16 @@ enum ListAssembler {
         var listID = ""
     }
 
+    /// A list's first number as a file gives it: at most CommonMark's nine digits and never negative, so the writers' item
+    /// numbers (`start + index`, `start - 1`) cannot overflow.
+    static func start(_ value: Int?) -> Int { min(max(value ?? 1, 0), 999_999_999) }
+
+    /// The deepest list level (Word's and OpenDocument's nine): each level is a level of recursion here and in the writers,
+    /// and a file can number its levels without end.
+    static let maxLevel = 8
+
     static func assemble(_ entries: [Entry]) -> [DocBlock] {
+        let entries = entries.map { entry in var e = entry; e.level = min(max(e.level, 0), maxLevel); return e }
         var index = 0
         var out: [DocBlock] = []
         let base = entries.map(\.level).min() ?? 0
@@ -439,5 +448,13 @@ enum PaperSize {
     static var regional: (width: Double, height: Double) {
         let letter: Set<String> = ["US", "CA", "MX", "PH", "CL", "CO", "VE"]
         return letter.contains(Locale.current.region?.identifier ?? "") ? (612, 792) : (595.28, 841.89)
+    }
+}
+
+extension Int {
+    /// A measurement written as a whole number (twips, half-points, EMUs, a colour channel): a size from a damaged file can
+    /// be NaN or 1e308, which `Int(_:)` traps on, so it is rounded and kept within ±1 000 000 000, NaN as 0.
+    init(measure value: Double) {
+        self = value.isNaN ? 0 : Int(Swift.min(Swift.max(value.rounded(), -1_000_000_000), 1_000_000_000))
     }
 }

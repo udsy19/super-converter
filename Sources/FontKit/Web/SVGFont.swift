@@ -107,24 +107,30 @@ enum SVGFont {
         var glyphs: [RawGlyph] = []
         var skipped = 0
 
+        /// A metric attribute in font units: a damaged file can say anything, and the font stores 16-bit values.
+        private func metric(_ value: String?) -> Double? {
+            guard let v = value.flatMap(Double.init), v.isFinite, abs(v) <= 32767 else { return nil }
+            return v
+        }
+
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes a: [String: String]) {
             let local = name.split(separator: ":").last.map(String.init) ?? name
             switch local {
             case "font":
                 guard !sawFont else { return }
                 sawFont = true; inFirstFont = true
-                fontAdvance = a["horiz-adv-x"].flatMap(Double.init) ?? 1000
+                fontAdvance = metric(a["horiz-adv-x"]) ?? 1000
             case "font-face" where inFirstFont:
-                unitsPerEm = a["units-per-em"].flatMap(Double.init) ?? 1000
-                ascent = a["ascent"].flatMap(Double.init); descent = a["descent"].flatMap(Double.init)
+                unitsPerEm = metric(a["units-per-em"]) ?? 1000
+                ascent = metric(a["ascent"]); descent = metric(a["descent"])
                 family = a["font-family"]?.split(separator: ",").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " '\"")) } ?? family
-                weight = a["font-weight"].flatMap(Double.init) ?? (a["font-weight"] == "bold" ? 700 : 400)
+                weight = metric(a["font-weight"]) ?? (a["font-weight"] == "bold" ? 700 : 400)
                 italic = a["font-style"].map { $0 == "italic" || $0 == "oblique" } ?? false
             case "missing-glyph" where inFirstFont:
-                missing = RawGlyph(name: ".notdef", unicode: nil, advance: a["horiz-adv-x"].flatMap(Double.init), d: a["d"])
+                missing = RawGlyph(name: ".notdef", unicode: nil, advance: metric(a["horiz-adv-x"]), d: a["d"])
             case "glyph" where inFirstFont:
                 if a["orientation"] == "v" || a["arabic-form"].map({ $0 != "isolated" }) == true || a["lang"] != nil { skipped += 1; return }
-                glyphs.append(RawGlyph(name: a["glyph-name"], unicode: a["unicode"], advance: a["horiz-adv-x"].flatMap(Double.init), d: a["d"]))
+                glyphs.append(RawGlyph(name: a["glyph-name"], unicode: a["unicode"], advance: metric(a["horiz-adv-x"]), d: a["d"]))
             default: break
             }
         }

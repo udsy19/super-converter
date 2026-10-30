@@ -481,6 +481,10 @@ enum MarkdownReader {
         var footnoteBodies: [String: [DocBlock]] = [:]
         var lastImageTitle: String?
         var inlineNoteCount = 0
+        /// Links, inline notes and HTML tags nest by recursion; past this depth the rest is text, so hostile input cannot
+        /// exhaust the stack. Link text also nests no deeper than this, which keeps the scan for each `[`'s `]` short.
+        var depth = 0
+        static let maxDepth = 32
 
         init(strict: Bool, baseURL: URL?) { self.strict = strict; self.baseURL = baseURL }
 
@@ -500,7 +504,11 @@ enum MarkdownReader {
         }
 
         mutating func flat(_ source: String) -> [FlatItem] {
+            depth += 1
+            defer { depth -= 1 }
+            if depth > Self.maxDepth { return [.run(source, RunFormat())] }
             let chars = Array(source)
+            var unclosed = Unclosed()
             var tokens: [Token] = []
             var text = ""
             func flushText() { if !text.isEmpty { tokens.append(.node(.run(text, RunFormat()))); text = "" } }
@@ -517,7 +525,7 @@ enum MarkdownReader {
                     text.append(" "); i += 1
                 case "\\":
                     if i + 1 < chars.count, chars[i + 1].isPunctuation || chars[i + 1].isSymbol {
-                        if !strict, chars[i + 1] == "(" , let end = findClosing(chars, from: i + 2, "\\)") {
+                        if !strict, chars[i + 1] == "(" , let end = findClosing(chars, from: i + 2, "\\)", &unclosed) {
                             flushText(); tokens.append(.node(.math(tex: String(chars[(i + 2)..<end]).trimmed))); i = end + 2; continue
                         }
                         text.append(chars[i + 1]); i += 2
@@ -564,7 +572,8 @@ enum MarkdownReader {
                     let isImage = c == "!"
                     let open = isImage ? i + 1 : i
                     // Footnote reference.
-                    if !isImage, !strict, open + 1 < chars.count, chars[open + 1] == "^", let close = chars[open...].firstIndex(of: "]") {
+                    if !isImage, !strict, open + 1 < chars.count, chars[open + 1] == "^",
+                       let close = chars[(open + 1)...].firstIndex(where: { $0 == "]" || $0 == "[" || $0.isWhitespace }), chars[close] == "]" {
                         let id = String(chars[(open + 2)..<close])
                         if !id.isEmpty, !id.contains(" ") { flushText(); tokens.append(.node(.footnote(id: id))); i = close + 1; continue }
                     }
@@ -586,7 +595,8 @@ enum MarkdownReader {
                         i = end
                     } else { text.append(c); i += 1 }
                 case "<":
-                    if let end = chars[i...].firstIndex(of: ">") {
+                    // A tag or autolink holds no `<`, so the search stops at the next one: a run of `<` stays linear.
+                    if let end = chars[(i + 1)...].firstIndex(where: { $0 == ">" || $0 == "<" }), chars[end] == ">" {
                         let inside = String(chars[(i + 1)..<end])
                         if inside.range(of: "^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\\s<>]*$", options: .regularExpression) != nil || inside.range(of: "^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$", options: .regularExpression) != nil {
                             flushText()
@@ -595,7 +605,7 @@ enum MarkdownReader {
                             i = end + 1
                             continue
                         }
-                        if let (items, next) = htmlInline(chars, at: i, tagEnd: end) {
+                        if let (items, next) = htmlInline(chars, at: i, tagEnd: end, &unclosed) {
                             flushText()
                             for item in items { tokens.append(.node(item)) }
                             i = next
@@ -606,7 +616,7 @@ enum MarkdownReader {
                             i = end + 1
                             continue
                         }
-                        if inside.hasPrefix("!--"), let close = findClosing(chars, from: i + 1, "-->") { i = close + 3; continue }
+                        if inside.hasPrefix("!--"), let close = findClosing(chars, from: i + 1, "-->", &unclosed) { i = close + 3; continue }
                     }
                     text.append(c); i += 1
                 case "&":
@@ -615,7 +625,7 @@ enum MarkdownReader {
                     } else { text.append(c); i += 1 }
                 case "$":
                     guard !strict else { text.append(c); i += 1; continue }
-                    if i + 1 < chars.count, chars[i + 1] == "$", let end = findClosing(chars, from: i + 2, "$$") {
+                    if i + 1 < chars.count, chars[i + 1] == "$", let end = findClosing(chars, from: i + 2, "$$", &unclosed) {
                         flushText(); tokens.append(.node(.math(tex: String(chars[(i + 2)..<end]).trimmed))); i = end + 2; continue
                     }
                     // Pandoc rule: the opening $ has a non-space after it, the closing one a non-space before it and no digit after.
@@ -662,22 +672,25 @@ enum MarkdownReader {
                 if case .delim(let c, let n, let o, let cl) = e.token, e.items == nil { return (c, n, o, cl) }
                 return nil
             }
+            // CommonMark's "openers bottom": once the search for a kind of closer's opener has failed, the next search for
+            // that kind stops where it began, so a long run of unmatched delimiters stays linear.
+            var openersBottom: [String: Int] = [:]
             var closerIndex = 0
             while closerIndex < list.count {
-                guard let (ch, count, _, canClose) = delim(list[closerIndex]), canClose else { closerIndex += 1; continue }
+                guard let (ch, count, closerCanOpen, canClose) = delim(list[closerIndex]), canClose else { closerIndex += 1; continue }
+                let kind = "\(ch)\(count % 3)\(closerCanOpen)"
                 var opener = closerIndex - 1
                 var found = false
-                while opener >= 0 {
+                while opener >= (openersBottom[kind] ?? 0) {
                     if let (och, ocount, canOpen, ocanClose) = delim(list[opener]), och == ch, canOpen {
                         // Multiple-of-3 rule.
-                        let closerCanOpen = delim(list[closerIndex])!.2
                         if (ocanClose || closerCanOpen) && (ocount + count) % 3 == 0 && !(ocount % 3 == 0 && count % 3 == 0) { opener -= 1; continue }
                         found = true
                         break
                     }
                     opener -= 1
                 }
-                guard found, let (_, ocount, oOpen, oClose) = delim(list[opener]) else { closerIndex += 1; continue }
+                guard found, let (_, ocount, oOpen, oClose) = delim(list[opener]) else { openersBottom[kind] = closerIndex; closerIndex += 1; continue }
                 let use: Int = ch == "~" ? 2 : (ocount >= 2 && count >= 2 ? 2 : 1)
                 // Gather what is between.
                 var inner: [FlatItem] = []
@@ -702,6 +715,7 @@ enum MarkdownReader {
                     closerEntry = Entry(token: .delim(ch, remainingClose, canOpen: co, canClose: cc), items: nil)
                 }
                 list.replaceSubrange(opener...closerIndex, with: replacement + (closerEntry.map { [$0] } ?? []))
+                for (k, bottom) in openersBottom where bottom > opener { openersBottom[k] = opener }
                 closerIndex = opener + replacement.count
                 if closerEntry == nil { continue }
             }
@@ -719,13 +733,19 @@ enum MarkdownReader {
 
         // MARK: Pieces
 
-        func findClosing(_ chars: [Character], from: Int, _ close: String) -> Int? {
+        /// For each closing string, the position from which one is known to be absent: a thousand openers with no closer
+        /// then cost one scan, not a thousand.
+        typealias Unclosed = [String: Int]
+
+        func findClosing(_ chars: [Character], from: Int, _ close: String, _ unclosed: inout Unclosed) -> Int? {
+            if let absent = unclosed[close], from >= absent { return nil }
             let target = Array(close)
             var j = from
             while j + target.count <= chars.count {
-                if Array(chars[j..<j + target.count]) == target { return j }
+                if chars[j..<j + target.count].elementsEqual(target) { return j }
                 j += 1
             }
+            unclosed[close] = from
             return nil
         }
 
@@ -742,7 +762,7 @@ enum MarkdownReader {
                     while k < chars.count { if chars[k] == "`" { let r = chars[k...].prefix(while: { $0 == "`" }).count; if r == run { j = k + r; found = true; break }; k += r } else { k += 1 } }
                     if found { continue }
                 }
-                if c == "[" { depth += 1 }
+                if c == "[" { depth += 1; if depth > Self.maxDepth { return nil } }
                 if c == "]" { depth -= 1; if depth == 0 { return j } }
                 j += 1
             }
@@ -750,6 +770,8 @@ enum MarkdownReader {
         }
 
         /// What follows a `]`: `(dest "title")`, `[ref]`, `[]`, or nothing (a shortcut reference). Returns the end index.
+        /// CommonMark's limits keep each attempt short: no `<` or line break in a `<…>` destination, parentheses nested at
+        /// most `maxDepth` deep, no `(` in a `(…)` title.
         func linkTail(_ chars: [Character], after close: Int, label: String) -> (String, String?, Int)? {
             let next = close + 1
             if next < chars.count, chars[next] == "(" {
@@ -758,14 +780,17 @@ enum MarkdownReader {
                 var destination = ""
                 if j < chars.count, chars[j] == "<" {
                     j += 1
-                    while j < chars.count, chars[j] != ">" { destination.append(chars[j]); j += 1 }
+                    while j < chars.count, chars[j] != ">" {
+                        guard chars[j] != "<", chars[j] != "\n" else { return nil }
+                        destination.append(chars[j]); j += 1
+                    }
                     j += 1
                 } else {
                     var depth = 0
                     while j < chars.count {
                         let c = chars[j]
                         if c == "\\", j + 1 < chars.count { destination.append(chars[j + 1]); j += 2; continue }
-                        if c == "(" { depth += 1 }
+                        if c == "(" { depth += 1; if depth > Self.maxDepth { return nil } }
                         if c == ")" { if depth == 0 { break }; depth -= 1 }
                         if c == " " || c == "\n" { break }
                         destination.append(c); j += 1
@@ -777,7 +802,11 @@ enum MarkdownReader {
                     let quote = chars[j] == "(" ? ")" : chars[j]
                     var t = ""
                     j += 1
-                    while j < chars.count, chars[j] != quote { if chars[j] == "\\", j + 1 < chars.count { j += 1 }; t.append(chars[j]); j += 1 }
+                    while j < chars.count, chars[j] != quote {
+                        if quote == ")", chars[j] == "(" { return nil }
+                        if chars[j] == "\\", j + 1 < chars.count { j += 1 }
+                        t.append(chars[j]); j += 1
+                    }
                     j += 1
                     title = t
                     while j < chars.count, chars[j] == " " || chars[j] == "\n" { j += 1 }
@@ -819,7 +848,7 @@ enum MarkdownReader {
 
         /// Inline HTML: `<br>`, `<img>`, and the paired tags people put in Markdown (`<sup>`, `<u>`, `<b>`, `<a href>`, …).
         /// Returns the items and the index after the construct.
-        mutating func htmlInline(_ chars: [Character], at start: Int, tagEnd: Int) -> ([FlatItem], Int)? {
+        mutating func htmlInline(_ chars: [Character], at start: Int, tagEnd: Int, _ unclosed: inout Unclosed) -> ([FlatItem], Int)? {
             let inside = String(chars[(start + 1)..<tagEnd]).trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
             let name = inside.split(whereSeparator: { $0.isWhitespace }).first.map { $0.lowercased() } ?? ""
             let attributes = Self.attributes(String(chars[(start + 1)..<tagEnd]))
@@ -834,7 +863,7 @@ enum MarkdownReader {
                 "code": { $0.code = true }, "kbd": { $0.code = true }, "a": { _ in },
             ]
             guard let apply = styles[name], !chars[start + 1] .isWhitespace, chars[start + 1] != "/",
-                  let close = findClosing(chars, from: tagEnd + 1, "</\(name)>") else { return nil }
+                  let close = findClosing(chars, from: tagEnd + 1, "</\(name)>", &unclosed) else { return nil }
             var items = flat(String(chars[(tagEnd + 1)..<close]))
             let href = name == "a" ? attributes["href"] : nil
             for k in items.indices {
