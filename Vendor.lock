@@ -24,10 +24,10 @@ source unalz       0.65    unalz-0.65.tgz             4c26699eb7545072de2ef7de79
 source bzip2       1.0.8   bzip2-1.0.8.tar.gz         ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269 https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz
 source libraw      0.21.5  libraw-0.21.5.tar.gz       4b7f183a68f6e46e579e80ba32ab121687e75bd30a2e5566f34c36a6bcba1679 https://github.com/LibRaw/LibRaw/archive/refs/tags/0.21.5.tar.gz
 release vendor-20261029
-asset AVIF.xcframework.zip f33ccc6cb6e0e71ab634ff31b46f7465be472282797b51667453ee9a0bd258dd
 asset Archive.xcframework.zip e46d215eda858e9b410c920845f47602e1aa139ef862078163a017431bd2b93e
+asset AVIF.xcframework.zip f33ccc6cb6e0e71ab634ff31b46f7465be472282797b51667453ee9a0bd258dd
 asset LibRaw.xcframework.zip 8ce2dd105f28d9d01d295a3d1af9904b32b57af3ec8a200c6771a36e774016e4
 asset UnALZ.xcframework.zip 3b76b714c277a04493e6fc768e1bdc36ae299c31b1da9f809505f0a2a3b41c3f
-asset WOFF2.xcframework.zip b2c802aab6cfd580279fb5c1ec75103a4666ecb53517599dce5bc1e99851882d
 asset WebP.xcframework.zip 65bf7c0454a6b07e5ddf207f79fa1a9d67047e996d2633c162ef1a2eda696b9c
+asset WOFF2.xcframework.zip b2c802aab6cfd580279fb5c1ec75103a4666ecb53517599dce5bc1e99851882d
 asset XLS.xcframework.zip a412998bc9e3e13f6c57bb86f235216b8c9a5a04edd3061aa325c7015565a7bd
