@@ -4,15 +4,18 @@ import SuperConverterCore
 /// Where a container's files come from: a ZIP in memory, or a folder on disk (an unpacked OEB, a CHM extracted by the archive
 /// engine, a bare `.opf`).
 struct ContainerFiles {
-    var paths: [String]
+    let paths: [String]
     var read: (String) -> Data?
+    /// For `has`: a package of thousands of entries and documents of thousands of pictures must not cost their product.
+    private let pathSet: Set<String>
 
-    func has(_ path: String) -> Bool { paths.contains(path) }
+    func has(_ path: String) -> Bool { pathSet.contains(path) }
 
-    init(paths: [String], read: @escaping (String) -> Data?) { self.paths = paths; self.read = read }
+    init(paths: [String], read: @escaping (String) -> Data?) { self.paths = paths; self.read = read; pathSet = Set(paths) }
 
     init(zip: ZipArchive, transform: @escaping (String, Data) -> Data = { $1 }) {
         paths = zip.entries.filter { !$0.isDirectory }.map { PackagePath.normalise($0.name) }
+        pathSet = Set(paths)
         let index = Dictionary(zip.entries.filter { !$0.isDirectory }.map { (PackagePath.normalise($0.name), $0) }, uniquingKeysWith: { a, _ in a })
         read = { path in
             guard let entry = index[path] ?? zip.entry(named: path), let data = try? zip.data(for: entry) else { return nil }
@@ -31,6 +34,7 @@ struct ContainerFiles {
             }
         }
         paths = found.sorted()
+        pathSet = Set(paths)
         read = { path in
             let url = base.appendingPathComponent(path).standardizedFileURL
             guard url.path.hasPrefix(base.path + "/") else { return nil }
