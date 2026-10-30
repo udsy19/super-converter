@@ -30,8 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A throwaway data folder or defaults suite (`SUPERCONVERTER_DATA_DIR` / `SUPERCONVERTER_DEFAULTS_SUITE`, tests): no
     /// updater and no LaunchServices registration, so a test build never becomes the Mac's Open With or Quick Action app.
     private var isThrowaway = false
-    /// Files and links that arrive before launch finishes wait here (step 4 opens them).
-    private var pending: [URL] = []
+    /// Files and links that arrive before launch finishes wait here (step 4 opens them), each with who sent it.
+    private var pending: [(url: URL, origin: LinkOrigin)] = []
     private var isLaunched = false
     /// Something was opened from outside, so the empty window isn't shown on its own.
     private var openedFromOutside = false
@@ -108,19 +108,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Files and links (Finder's Open and Open With, the Dock icon, Quick Actions, `superconverter://`)
 
+    /// Who sent the links is read from the Apple Event being handled, so it is known before they wait for launch to finish.
     func application(_ application: NSApplication, open urls: [URL]) {
         openedFromOutside = true
-        guard isLaunched else { pending += urls; return }
-        open(urls)
+        let origin = LinkOrigin.of(NSAppleEventManager.shared().currentAppleEvent,
+                                   plugIns: Bundle.main.bundleURL.appendingPathComponent("Contents/PlugIns", isDirectory: true))
+        let arrived = urls.map { (url: $0, origin: origin) }
+        guard isLaunched else { pending += arrived; return }
+        open(arrived)
     }
 
     /// Links are followed in order (`superconverter://open` adds files to the window, `superconverter://convert?file=…&to=jpg`
-    /// converts in the background and notifies: MenuBarKit's), then the files become cards in the window together.
-    private func open(_ urls: [URL]) {
-        for url in urls where !url.isFileURL {
-            if !MenuBarKitModule.handle(url) { Log.app.error("Ignored a link it doesn't know: \(url.absoluteString, privacy: .private)") }
+    /// from a Quick Action converts in the background and notifies, from anywhere else fills the window: MenuBarKit's), then
+    /// the files become cards in the window together.
+    private func open(_ urls: [(url: URL, origin: LinkOrigin)]) {
+        for (url, origin) in urls where !url.isFileURL {
+            if !MenuBarKitModule.handle(url, from: origin) { Log.app.error("Ignored a link it doesn't know: \(url.absoluteString, privacy: .private)") }
         }
-        let files = urls.filter(\.isFileURL)
+        let files = urls.map(\.url).filter(\.isFileURL)
         if !files.isEmpty { Services.window.add(files, target: nil) }
     }
 

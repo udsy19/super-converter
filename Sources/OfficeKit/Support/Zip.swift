@@ -1,4 +1,6 @@
-// Origin: Super PDF Sources/ConvertKit/Support/Zip.swift @ 058469b, adapted for OfficeKit (internal to this module).
+// Origin: Super PDF Sources/ConvertKit/Support/Zip.swift @ 058469b, adapted for OfficeKit (internal to this module); inflating
+// is bounded by the entry's size.
+import Compression
 import Foundation
 
 // ZIP containers (PKWARE APPNOTE 6.3): OOXML, OpenDocument, EPUB, HWPX and iWork files are ZIPs, and ZIP → PDF unpacks
@@ -70,8 +72,15 @@ struct ZipArchive {
             bytes = raw
         case 8:
             if entry.size == 0 { return Data() }
-            guard let inflated = try? (raw as NSData).decompressed(using: .zlib) as Data else { throw ZipError.damaged("deflate of \(entry.path)") }
-            bytes = inflated
+            // Into a buffer one byte longer than the entry says, so a stream that inflates to more (a bomb whose header
+            // understates its size) stops there and fails the size check instead of filling memory.
+            var buffer = [UInt8](repeating: 0, count: entry.size + 1)
+            let written = raw.withUnsafeBytes { (source: UnsafeRawBufferPointer) -> Int in
+                guard let base = source.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                return compression_decode_buffer(&buffer, buffer.count, base, source.count, nil, COMPRESSION_ZLIB)
+            }
+            guard written > 0 else { throw ZipError.damaged("deflate of \(entry.path)") }
+            bytes = Data(buffer.prefix(written))
         default:
             throw ZipError.unsupported("compression method \(entry.method)")
         }

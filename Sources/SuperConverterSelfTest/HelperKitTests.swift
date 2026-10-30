@@ -197,6 +197,29 @@ func registerHelperKitTests() {
             close(fd)
         } else { check(false, "couldn’t open a local socket") }
 
+        // Names: no DNS without network (a query carries data out too). Connecting to mDNSResponder's socket asks nothing.
+        let resolver = script("resolver.sh", in: dir, "/usr/bin/nc -U /var/run/mDNSResponder < /dev/null >/dev/null 2>&1; echo rc=$?")
+        @MainActor func reachedResolver(network: Bool) -> String {
+            let result = complete(30) { try await ProcessRunner.run(ProcessSpec(executable: resolver, arguments: [], workFolder: dir.appendingPathComponent("w4"), network: network)) }
+            return ((try? result?.get().standardOutput) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        check(reachedResolver(network: false) == "rc=1", "a conversion can’t look names up")
+        check(reachedResolver(network: true) == "rc=0", "an install step that must download can")
+
+        // LaunchServices: a command-line helper can't have a URL or an app opened outside its sandbox; an app helper (AppKit
+        // needs it) can. The lookup asks LaunchServices where Finder is and opens nothing.
+        let lookup = script("lookup.sh", in: dir, #"/usr/bin/osascript -l JavaScript -e 'ObjC.import("AppKit"); var u = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier("com.apple.finder"); u.isNil() ? "none" : "found"'"#)
+        @MainActor func lookedUp(launchServices: Bool, sandbox: Bool = true) -> String {
+            let result = complete(30) {
+                try await ProcessRunner.run(ProcessSpec(executable: lookup, arguments: [], workFolder: dir.appendingPathComponent("w5"), launchServices: launchServices, sandbox: sandbox))
+            }
+            return ((try? result?.get().standardOutput) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if lookedUp(launchServices: true, sandbox: false) == "found" {
+            check(lookedUp(launchServices: false) == "none", "a command-line helper can’t reach LaunchServices")
+            check(lookedUp(launchServices: true) == "found", "an app helper can")
+        } else { check(false, "LaunchServices finds Finder outside the sandbox") }
+
         // Time limit and cancellation stop exactly the process we started (and what it started), never others by name.
         let bystander = Process()
         bystander.executableURL = URL(fileURLWithPath: "/bin/sleep")
@@ -497,6 +520,19 @@ func registerHelperKitTests() {
             check(url.lastPathComponent == "book.epub" && FileManager.default.fileExists(atPath: url.path), "calibre writes <name>.<target>")
             check(((try? String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("env"), encoding: .utf8)) ?? "").contains("/.calibre/config"), "calibre's config stays private")
         } else { check(false, "calibre converts") }
+        // calibre picks its reader by extension and runs a `.recipe` as Python: a file that is really a MOBI reaches it as
+        // `.mobi` whatever it is called, as a copy in the work folder, with nothing in its name a tool could misread.
+        let named = fakeApp("calibre.app", in: dir.appendingPathComponent("named"), executable: "ebook-convert",
+                            body: "printf '%s' \"$1\" > \"$(dirname \"$2\")/input-name\"; cp \"$1\" \"$2\"")
+        let nrig = Rig([.calibre: named])
+        let recipe = complete(60) { try await nrig.convert(.calibre, "mobi", "epub", file: "-o 50%d\nbook.recipe") }
+        if let url = try? recipe?.get() {
+            let seen = (try? String(contentsOf: url.deletingLastPathComponent().appendingPathComponent("input-name"), encoding: .utf8)) ?? ""
+            check(seen.hasSuffix("/_o 50_d_book.mobi"), "the helper reads the file as what it really is, under a safe name (\(seen))")
+            check(seen.hasPrefix(nrig.work.path + "/"), "a copy in the work folder")
+        } else { check(false, "a misnamed book still converts (\(String(describing: recipe)))") }
+        check(HelperRuntime.safeName("Report") == "Report" && HelperRuntime.safeName("..hidden") == "_.hidden" && HelperRuntime.safeName("") == "input"
+              && HelperRuntime.safeName("a\u{202E}b:c") == "a_b_c", "safe names keep the person's words")
 
         // Pandoc → DocModel
         let ast = dir.appendingPathComponent("pbin/ast.json")

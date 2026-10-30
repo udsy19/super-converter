@@ -195,11 +195,14 @@ enum WebKitRender {
             let configuration = WKWebViewConfiguration()
             configuration.suppressesIncrementalRendering = true
             if !loadWebResources {
-                // Nothing leaves the Mac: remote requests are blocked before they start.
-                let rules = #"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}},{"trigger":{"url-filter":"^wss?://"},"action":{"type":"block"}},{"trigger":{"url-filter":"^ftp://"},"action":{"type":"block"}}]"#
-                if let list = try? await WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "block-remote", encodedContentRuleList: rules) {
-                    configuration.userContentController.add(list)
+                // Nothing leaves the Mac (ux §6.6): every load but the page's own files and inline data is blocked before it
+                // starts, whatever its scheme, and the page fails rather than loads if the rules can't be set up.
+                guard let list = try? await WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "local-only", encodedContentRuleList: Self.localOnly) else {
+                    throw ConversionError.failed("The page couldn’t be loaded.")
                 }
+                configuration.userContentController.add(list)
+                // WebRTC reaches STUN and TURN servers in datagrams no content rule sees, so the page has no WebRTC.
+                configuration.userContentController.addUserScript(WKUserScript(source: Self.noWebRTC, injectionTime: .atDocumentStart, forMainFrameOnly: false))
             }
             web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height), configuration: configuration)
             window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -228,6 +231,22 @@ enum WebKitRender {
             }
             if wait.ms > 0 { try await Task.sleep(nanoseconds: UInt64(min(wait.ms, 60_000)) * 1_000_000) }
         }
+
+        /// Blocks every URL, then lets the page's own kinds through: its files, inline `data:` and script-made `blob:` URLs,
+        /// and `about:` frames.
+        /// (Content-rule patterns have no alternation, so one rule per scheme.)
+        static let localOnly = "[" + ([#"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#]
+            + ["file", "data", "blob", "about"].map { #"{"trigger":{"url-filter":"^"# + $0 + #":"},"action":{"type":"ignore-previous-rules"}}"# })
+            .joined(separator: ",") + "]"
+
+        /// Takes WebRTC's constructors away from every frame before its scripts run, so they can't be put back.
+        static let noWebRTC = """
+            (function () {
+                for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceTransport", "RTCDtlsTransport", "RTCSctpTransport"]) {
+                    try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false }); } catch (e) {}
+                }
+            })();
+            """
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failure = error }

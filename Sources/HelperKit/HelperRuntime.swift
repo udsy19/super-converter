@@ -54,7 +54,7 @@ final class HelperRuntime: @unchecked Sendable {
         let limit = timeLimit ?? HelperCatalog.info(helper).timeLimit
         let spec = ProcessSpec(executable: executable, arguments: arguments, workFolder: workFolder, writable: writable,
                                environment: environment, searchPath: searchPath, extraWriteFilters: extraWriteFilters, timeLimit: limit,
-                               network: network, sandbox: sandbox)
+                               network: network, launchServices: HelperCatalog.info(helper).isApp, sandbox: sandbox)
         do { return try await ProcessRunner.run(spec) }
         catch RunFailure.timedOut { throw ConversionError.helperTimedOut(helper, seconds: Int(limit ?? 0)) }
         catch RunFailure.cancelled { throw ConversionError.cancelled }
@@ -89,6 +89,35 @@ final class HelperRuntime: @unchecked Sendable {
     static func inputFile(_ input: StepValue, _ context: StepContext) throws -> URL {
         if case .file(let url) = input { return url }
         return context.source
+    }
+
+    /// The file a helper reads: a copy (a clone on APFS) of `inputFile` in `folder` (a fresh one in the work folder when
+    /// nil), named after the person's file but with the extension of the format it really is and nothing in the name a tool
+    /// could misread. Helpers pick their reader by extension, and some readers run code (calibre runs a `.recipe` as Python),
+    /// so a file that is really a MOBI reaches calibre as `.mobi` whatever it is called; `%` (Ghostscript's page-number
+    /// pattern), control characters and a leading `-` are replaced. TeX and Pandoc read the file where it is, for the files
+    /// it includes; their reader is named on the command line.
+    static func stagedInput(_ input: StepValue, _ step: Step, _ context: StepContext, in folder: URL? = nil) throws -> URL {
+        let original = try inputFile(input, context)
+        let format: FormatID
+        if case .format(let from) = step.from { format = from } else { format = context.sourceFormat }
+        let place = try folder ?? outputFolder(context, "in")
+        try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+        let staged = place.appendingPathComponent(safeName(original.deletingPathExtension().lastPathComponent)).appendingPathExtension(format.rawValue)
+        try FileManager.default.copyItem(at: original, to: staged)
+        return staged
+    }
+
+    /// `name` with `%`, `/`, `:` and control characters replaced and no leading `-` or `.`; "input" when nothing is left.
+    static func safeName(_ name: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in name.unicodeScalars {
+            let unsafe = scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format || "%/:".unicodeScalars.contains(scalar)
+            scalars.append(unsafe ? "_" : scalar)
+        }
+        var safe = String(scalars)
+        while let first = safe.first, first == "-" || first == "." { safe = "_" + safe.dropFirst() }
+        return safe.isEmpty ? "input" : safe
     }
 
     /// A fresh folder under the job's work folder for one step's output, so a tool never overwrites its input.

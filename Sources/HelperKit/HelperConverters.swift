@@ -28,15 +28,12 @@ struct LibreOfficeConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let soffice = try runtime.requireExecutable(.libreoffice)
-        let original = try HelperRuntime.inputFile(input, context)
         let folder = try HelperRuntime.outputFolder(context, "lo")
         // LibreOffice drops a lock file next to the document it opens, so it works on a copy (a clone on APFS) in a folder
         // of its own, and the dropped file's folder is never writable.
         let staged = folder.appendingPathComponent("in", isDirectory: true), written = folder.appendingPathComponent("out", isDirectory: true)
-        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: written, withIntermediateDirectories: true)
-        let source = staged.appendingPathComponent(original.lastPathComponent)
-        try FileManager.default.copyItem(at: original, to: source)
+        let source = try HelperRuntime.stagedInput(input, step, context, in: staged)
         let profile = runtime.libreOfficeProfile
         Self.prepareProfile(profile)
         complete(context, 0)
@@ -95,7 +92,7 @@ struct CalibreConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let tool = try runtime.requireExecutable(.calibre)
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "calibre")
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: context.targetFormat.rawValue)
         let private_ = folder.appendingPathComponent(".calibre", isDirectory: true)
@@ -194,7 +191,7 @@ struct GhostscriptConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let tool = try runtime.requireExecutable(.ghostscript)
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "gs")
         let target = context.targetFormat.rawValue
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: target)
@@ -221,7 +218,7 @@ struct DjVuLibreConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let tool = try runtime.requireExecutable(.djvulibre)
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "djvu")
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: "pdf")
         complete(context, 0)
@@ -239,7 +236,7 @@ struct SfArkConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let tool = try runtime.requireExecutable(.sfark)
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "sfark")
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: "sf2")
         complete(context, 0)
@@ -259,7 +256,7 @@ struct DWGConverter: HelperConverter {
     var handles: [StepPattern] { fileToFile }
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "dwg")
         let from = context.sourceFormat.rawValue, to = context.targetFormat.rawValue
         complete(context, 0)
@@ -276,12 +273,9 @@ struct DWGConverter: HelperConverter {
     }
 
     private func viaODA(_ tool: URL, source: URL, from: String, to: String, folder: URL, context: StepContext) async throws -> URL {
-        let fm = FileManager.default
-        let inFolder = folder.appendingPathComponent("in", isDirectory: true), outFolder = folder.appendingPathComponent("out", isDirectory: true)
-        try fm.createDirectory(at: inFolder, withIntermediateDirectories: true)
-        try fm.createDirectory(at: outFolder, withIntermediateDirectories: true)
-        let staged = inFolder.appendingPathComponent(source.lastPathComponent)
-        try fm.copyItem(at: source, to: staged)
+        // The staged input sits alone in its folder, which is what ODA converts.
+        let inFolder = source.deletingLastPathComponent(), outFolder = folder.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: outFolder, withIntermediateDirectories: true)
         // <in> <out> <output version> <output type> <recurse> <audit> <filter>
         try await runtime.runChecked(.oda, tool, [inFolder.path, outFolder.path, "ACAD2018", to.uppercased(), "0", "1", "*.\(from.uppercased())"],
                                      workFolder: context.workFolder, writable: [outFolder], environment: ["QT_QPA_PLATFORM": "offscreen"])
@@ -320,7 +314,7 @@ struct FFmpegGPLConverter: HelperConverter {
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let tool = try runtime.requireExecutable(.ffmpegGPL)
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, "ffmpeg")
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: "cavs")
         complete(context, 0)
@@ -383,7 +377,7 @@ struct IWorkConverter: HelperConverter {
     }
 
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
-        let source = try HelperRuntime.inputFile(input, context)
+        let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, app.appName.lowercased())
         let target = context.targetFormat.rawValue
         let output = HelperRuntime.outputURL(in: folder, input: source, extension: target)

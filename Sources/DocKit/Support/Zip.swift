@@ -1,6 +1,8 @@
 // Adapted from super-pdf Sources/ConvertKit/Support/Zip.swift (commit 058469b): `extract(to:)` and `looksLikeZip` dropped
-// (DocKit reads parts in memory), a gzip reader added for compressed AbiWord files; otherwise unchanged.
+// (DocKit reads parts in memory), a gzip reader added for compressed AbiWord files, inflating bounded by the entry's size;
+// otherwise unchanged.
 
+import Compression
 import Foundation
 
 // ZIP containers (PKWARE APPNOTE 6.3): OOXML, OpenDocument, EPUB, HWPX and iWork files are ZIPs, and ZIP → PDF unpacks
@@ -72,7 +74,7 @@ struct ZipArchive {
             bytes = raw
         case 8:
             if entry.size == 0 { return Data() }
-            guard let inflated = try? (raw as NSData).decompressed(using: .zlib) as Data else { throw ZipError.damaged("deflate of \(entry.path)") }
+            guard let inflated = Inflate.raw(raw, limit: entry.size) else { throw ZipError.damaged("deflate of \(entry.path)") }
             bytes = inflated
         default:
             throw ZipError.unsupported("compression method \(entry.method)")
@@ -232,6 +234,39 @@ enum Gzip {
         }
         if flags & 2 != 0 { p += 2 }
         guard p < data.count - 8 else { return nil }
-        return try? (data.subdata(in: data.startIndex + p..<data.endIndex - 8) as NSData).decompressed(using: .zlib) as Data
+        return Inflate.raw(data.subdata(in: data.startIndex + p..<data.endIndex - 8), limit: ZipArchive.maxEntrySize)
+    }
+}
+
+/// Raw DEFLATE (RFC 1951) inflated to at most `limit` bytes; nil when the stream is damaged or inflates to more. A bomb whose
+/// header understates its size, or that has no header saying (gzip, HWP streams), stops at the limit instead of filling memory.
+enum Inflate {
+    static func raw(_ data: Data, limit: Int) -> Data? {
+        let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
+        defer { stream.deallocate() }
+        guard compression_stream_init(stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { return nil }
+        defer { compression_stream_destroy(stream) }
+        let chunk = 1 << 16
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: chunk)
+        defer { buffer.deallocate() }
+        var output = Data()
+        return data.withUnsafeBytes { (source: UnsafeRawBufferPointer) -> Data? in
+            guard let base = source.bindMemory(to: UInt8.self).baseAddress else { return nil }
+            stream.pointee.src_ptr = base
+            stream.pointee.src_size = source.count
+            while true {
+                stream.pointee.dst_ptr = buffer
+                stream.pointee.dst_size = chunk
+                let status = compression_stream_process(stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
+                let produced = chunk - stream.pointee.dst_size
+                guard output.count + produced <= limit else { return nil }
+                output.append(buffer, count: produced)
+                switch status {
+                case COMPRESSION_STATUS_END: return output
+                case COMPRESSION_STATUS_OK where produced > 0 || stream.pointee.src_size > 0: continue
+                default: return nil
+                }
+            }
+        }
     }
 }
