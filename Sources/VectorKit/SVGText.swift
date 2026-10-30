@@ -298,6 +298,7 @@ public enum PathFlattener {
     private static func curveSteps(_ pts: VectorPoint...) -> Int {
         var length = 0.0
         for i in 1..<pts.count { length += hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) }
-        return max(4, min(48, Int(length / 3)))
+        // Clamped as a Double: a curve with huge or NaN coordinates has a length no Int holds.
+        return length.isNaN ? 4 : Int(max(4, min(48, length / 3)))
     }
 }
