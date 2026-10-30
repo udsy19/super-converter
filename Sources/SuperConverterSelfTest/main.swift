@@ -20,10 +20,10 @@ func complete<T>(_ seconds: TimeInterval = 300, _ work: @escaping @MainActor () 
     var result: Result<T, Error>?
     Task { @MainActor in
         do { result = .success(try await work()) } catch { result = .failure(error) }
+        CFRunLoopStop(CFRunLoopGetMain())   // ends the wait below now rather than at the end of its 10 ms slice
     }
     let deadline = Date().addingTimeInterval(seconds)
-    // One pass at a time (not `run(until:)`, which keeps running to its date), so this returns as soon as the work is done.
-    while result == nil && Date() < deadline { RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01)) }
+    while result == nil && Date() < deadline { CFRunLoopRunInMode(.defaultMode, 0.01, false) }
     return result
 }
 
