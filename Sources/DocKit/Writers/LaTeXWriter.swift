@@ -59,6 +59,7 @@ enum LaTeXWriter {
         var fileNames: [String: String] = [:]
         var usesColour = false
         var usesStrike = false
+        var usesLongtable = false
         let sectionLevel: Int
         let star: String
 
@@ -91,12 +92,15 @@ enum LaTeXWriter {
                             "\\ifPDFTeX\n\\usepackage[T1]{fontenc}\n\\usepackage[utf8]{inputenc}\n\\usepackage{lmodern}\n\\else\n\\usepackage{fontspec}\n\\fi", "\\usepackage{microtype}",
                             "\\usepackage{amsmath,amssymb}", "\\usepackage{booktabs}", "\\usepackage{graphicx}"]
             if let lang = m.language?.split(separator: "-").first.map(String.init), let name = Self.babel[lang.lowercased()] { preamble.append("\\usepackage[\(name)]{babel}") }
+            if usesLongtable { preamble.append("\\usepackage{longtable}") }
             if usesStrike { preamble.append("\\usepackage[normalem]{ulem}") }
             if usesColour { preamble.append("\\usepackage{xcolor}") }
             preamble.append("\\usepackage{hyperref}")
+            // TeX's third pass instead of an overfull line, as TypesetKit's emergency pass (quality §3.3).
+            preamble.append("\\setlength{\\emergencystretch}{3em}")
             if let t = m.title { preamble.append("\\title{\(LaTeXWriter.escape(t))}") }
             if !m.authors.isEmpty { preamble.append("\\author{\(m.authors.map(LaTeXWriter.escape).joined(separator: " \\and "))}") }
-            if let d = m.date { preamble.append("\\date{\(DocDates.string(d))}") } else if m.title != nil { preamble.append("\\date{}") }
+            if let d = m.longDate { preamble.append("\\date{\(LaTeXWriter.escape(d))}") } else if m.title != nil { preamble.append("\\date{}") }
             var doc = ["\\begin{document}"]
             if m.title != nil || !m.authors.isEmpty { doc.append("\\maketitle") }
             if let s = m.summary { doc.append("\\begin{abstract}\n\(LaTeXWriter.escape(s))\n\\end{abstract}") }
@@ -137,7 +141,7 @@ enum LaTeXWriter {
                     lossNotes.append(LossNote(.imagesDropped, detail: resource))
                     return alt.map { "[\(LaTeXWriter.escape($0))]" }
                 }
-                var out = "\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=\\linewidth,height=0.6\\textheight,keepaspectratio]{\(path)}"
+                var out = "\\begin{figure}[tbp]\n\\centering\n\\includegraphics[width=\\linewidth,height=0.6\\textheight,keepaspectratio]{\(path)}"
                 if let caption { out += "\n\\caption{\(inline(caption))}" }
                 return out + "\n\\end{figure}"
             case .code(_, let text):
@@ -169,7 +173,11 @@ enum LaTeXWriter {
             let spec = (0..<columns).map { c -> String in
                 switch c < table.alignments.count ? table.alignments[c] : .start { case .centre: "c"; case .end: "r"; default: "l" }
             }.joined()
-            var lines = ["\\begin{tabular}{\(spec)}", "\\toprule"]
+            // A captioned table floats as a `tabular`; any other stays in the text as a `longtable`, which breaks across
+            // pages with its header repeated (as TypesetKit sets both).
+            let floats = table.caption != nil
+            if !floats { usesLongtable = true }
+            var lines = ["\\begin{\(floats ? "tabular" : "longtable")}{\(spec)}", "\\toprule"]
             let headers = table.rows.prefix { !$0.isEmpty && $0.allSatisfy(\.isHeader) }.count
             for (r, row) in rows.enumerated() {
                 var cells: [String] = []
@@ -189,17 +197,13 @@ enum LaTeXWriter {
                     c += span
                 }
                 lines.append(cells.joined(separator: " & ") + " \\\\")
-                if r == max(headers, 1) - 1 { lines.append("\\midrule") }
+                if r == max(headers, 1) - 1 { lines += floats ? ["\\midrule"] : ["\\midrule", "\\endhead", "\\bottomrule", "\\endlastfoot"] }
             }
-            lines += ["\\bottomrule", "\\end{tabular}"]
+            lines += floats ? ["\\bottomrule", "\\end{tabular}"] : ["\\end{longtable}"]
             if rowSpanned { lossNotes.append(LossNote(.tableSimplified, detail: "merged cells")) }
-            var out = lines.joined(separator: "\n")
-            if let caption = table.caption {
-                out = "\\begin{table}[htbp]\n\\centering\n\\caption{\(inline(caption))}\n\(out)\n\\end{table}"
-            } else {
-                out = "\\begin{center}\n\(out)\n\\end{center}"
-            }
-            return out
+            let out = lines.joined(separator: "\n")
+            guard let caption = table.caption else { return out }
+            return "\\begin{table}[tbp]\n\\centering\n\\caption{\(inline(caption))}\n\(out)\n\\end{table}"
         }
 
         // MARK: Inlines
@@ -214,7 +218,11 @@ enum LaTeXWriter {
                 case .strike(let c): usesStrike = true; out += "\\sout{\(inline(c))}"
                 case .code(let t): out += "\\texttt{\(LaTeXWriter.escape(t))}"
                 case .link(let c, let destination):
+                    // A link that shows its own address is \url (typewriter, breaking after slashes and dots).
+                    let shown = c.plainText
                     if destination.hasPrefix("#") { out += inline(c) }
+                    else if shown == destination { out += "\\url{\(destination)}" }
+                    else if "mailto:" + shown == destination { out += "\\href{\(Self.url(destination))}{\\nolinkurl{\(shown)}}" }
                     else { out += "\\href{\(Self.url(destination))}{\(inline(c))}" }
                 case .image(let resource, _):
                     if let path = picture(resource) { out += "\\includegraphics[height=1em]{\(path)}" } else { lossNotes.append(LossNote(.imagesDropped, detail: resource)) }

@@ -27,6 +27,15 @@ public struct DocMetadata: Hashable, Codable, Sendable {
         self.title = title; self.authors = authors; self.language = language; self.date = date
         self.summary = summary; self.pageSize = pageSize
     }
+
+    /// The date as a title block shows it, written out in the document's language ("March 14, 2024", "14. März 2024").
+    public var longDate: String? {
+        guard let date else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: language ?? "en_US")
+        f.setLocalizedDateFormatFromTemplate("MMMMdyyyy")
+        return f.string(from: date)
+    }
 }
 
 public indirect enum DocBlock: Hashable, Codable, Sendable {

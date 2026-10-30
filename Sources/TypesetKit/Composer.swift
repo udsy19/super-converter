@@ -701,13 +701,11 @@ final class Composer {
         let tag = nextTag(.figure, alt: alt ?? caption.map(\.plainText))
         if let caption {
             figureCount += 1
-            let saved = (items, prevDepth)
-            items = []; prevDepth = nil
-            appendBox(VBox(box: picture, x: ctx.left, tags: ctx.tags + [tag]), baselineskip: style.normal.leading)
-            items.append(.glue(Glue(width: style.abovecaptionskip)))
-            captionLines(label: "Figure \(figureCount)", caption, ctx)
-            let floatItems = items
-            (items, prevDepth) = saved
+            let floatItems = isolated {
+                appendBox(VBox(box: picture, x: ctx.left, tags: ctx.tags + [tag]), baselineskip: style.normal.leading)
+                items.append(.glue(Glue(width: style.abovecaptionskip)))
+                captionLines(label: "Figure \(figureCount)", caption, ctx)
+            }
             items.append(.float(FloatBlock(items: floatItems, height: Self.height(of: floatItems))))
             return
         }
@@ -726,6 +724,16 @@ final class Composer {
         var shape = ParagraphShape(width: lineWidth(ctx))
         shape.alignment = setter.natural(pieces).width <= lineWidth(ctx) ? .centred : .justified
         emitLines(setter.set(pieces, shape: shape).lines, ctx, baselineskip: style.normal.leading, tag: nextTag(.caption))
+    }
+
+    /// What `body` adds, as a vertical list of its own (a float's `\vbox`: no interline glue above its first box); the
+    /// main list is left as it was.
+    func isolated(_ body: () -> Void) -> [VItem] {
+        let saved = (items, prevDepth)
+        items = []; prevDepth = nil
+        body()
+        defer { (items, prevDepth) = saved }
+        return items
     }
 
     /// Natural height of a vertical list.
@@ -757,11 +765,13 @@ final class Composer {
         } else if result.isFloat {
             items.append(.float(FloatBlock(items: result.items, height: Self.height(of: result.items))))
         } else {
-            let spacing = listLevel(min(ctx.listDepth, 2))
-            addVSpace(spacing.topsep + spacing.partopsep)
+            // longtable: \penalty0 and \vskip\LTpre before the rows, which stack with no interline glue; \addvspace\LTpost
+            // after, and the next line \baselineskip below the bottom rule.
+            items.append(.penalty(0))
+            items.append(.glue(style.bigskip))
             items += result.items
-            addVSpace(spacing.topsep + spacing.partopsep)
-            prevDepth = nil
+            addVSpace(style.bigskip)
+            prevDepth = 0
         }
         afterHeading = false
         lastLine = nil
@@ -802,11 +812,8 @@ final class Composer {
         emitLines([authorLine(meta.authors, authorStyle, width: lineWidth(ctx), leading: large.leading)], ctx,
                   baselineskip: large.leading, tag: nextTag(.paragraph), keepTogether: true)
         items.append(.glue(Glue(width: em)))
-        if let date = meta.date {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: meta.language ?? "en_US")
-            f.setLocalizedDateFormatFromTemplate("MMMMdyyyy")
-            emitLines(setter.set([.text(f.string(from: date), authorStyle)], shape: shape).lines, ctx, baselineskip: large.leading,
+        if let date = meta.longDate {
+            emitLines(setter.set([.text(date, authorStyle)], shape: shape).lines, ctx, baselineskip: large.leading,
                       tag: nextTag(.paragraph), keepTogether: true)
         }
         addVSpace(center.topsep + center.partopsep)

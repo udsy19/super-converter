@@ -281,7 +281,8 @@ enum LineBreaker {
                 d += a.demerits
                 let lineClass = params.distinctLines > 0 ? min(a.line + 1, params.distinctLines) : 0
                 let key = fitness * 1000 + lineClass * 10 + min(run, 2)
-                if best[key] == nil || d < best[key]!.demerits {
+                // `<=` as tex.web §855: of equal demerits, the later active node (the longer previous line) wins.
+                if best[key] == nil || d <= best[key]!.demerits {
                     best[key] = (d, a.node, filLine, bad, a.line + 1, run)
                 }
             }

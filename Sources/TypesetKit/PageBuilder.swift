@@ -218,12 +218,13 @@ final class PageBuilder {
         var lastDepth = 0.0
         var sawBox = false
         var lastWasBox = false
-        // A table that continues from the previous page repeats its header.
+        // A table that continues from the previous page repeats its header: one box, as longtable's \LT@head, so
+        // \topskip measures it whole.
         if let first = queue.first(where: { !$0.isDiscardable }), case .box(let b) = first, let id = b.tableID, let header = tableHeaders[id] {
             for item in header {
                 switch item {
                 case .box(let v):
-                    if !sawBox { let ts = max(0, geometry.topSkip - v.box.height); add(.glue(Glue(width: ts)), queued: false); total += ts }
+                    if !sawBox { let ts = max(0, geometry.topSkip - Composer.height(of: header)); add(.glue(Glue(width: ts)), queued: false); total += ts }
                     total += lastDepth + v.box.height
                     lastDepth = v.box.depth
                     sawBox = true

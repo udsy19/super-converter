@@ -236,14 +236,13 @@ final class TableComposer {
             prevDepth = v.box.depth
         }
         if let number, let caption = grid.caption {
-            let saved = composer.items
-            composer.items = []
+            // \@makecaption: \abovecaptionskip above the caption (\belowcaptionskip, 0 pt, below); the tabular's paragraph
+            // follows with \parskip and \lineskip, its box being taller than \baselineskip allows.
             var captionCtx = ctx
             if p.landscape { captionCtx.right = ctx.right + style.geometry.columnWidth - style.geometry.textHeight }
-            composer.captionLines(label: "Table \(number)", caption, captionCtx)
-            items += composer.items
-            composer.items = saved
             items.append(.glue(Glue(width: style.abovecaptionskip)))
+            items += composer.isolated { composer.captionLines(label: "Table \(number)", caption, captionCtx) }
+            items += [.glue(style.parskip), .glue(Glue(width: style.lineskip))]
         }
         var headerItems: [VItem] = [.box(rule(heavy)), .kern(below)]
         if let h = grid.header {

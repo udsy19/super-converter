@@ -136,6 +136,8 @@ struct StyleSheet: Sendable {
     var abovedisplayShort: Glue
     var belowdisplayShort: Glue
     var textfloatsep = Glue(width: 20, stretch: 2, shrink: 4)
+    /// `\bigskipamount`: longtable's `\LTpre` and `\LTpost`.
+    var bigskip = Glue(width: 12, stretch: 4, shrink: 4)
     var abovecaptionskip = 10.0
     var topfraction = 0.7
     // \clubpenalty and \widowpenalty are LaTeX's 150 made absolute, so the lint's "no widows or orphans" always holds.

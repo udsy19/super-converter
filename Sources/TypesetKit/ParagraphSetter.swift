@@ -69,34 +69,77 @@ final class ParagraphSetter {
     static let underlineKey = NSAttributedString.Key("TSUnderline")
     static let strikeKey = NSAttributedString.Key("TSStrike")
 
-    /// Characters' protrusion into the margins, in thousandths of their width: microtype's settings for Latin Modern
-    /// in T1 (mt-cmr.cfg: `cmr-default`, `cmr-T1`, `lmr-T1`), as `\usepackage{microtype}` applies them.
-    static let protrusion: [Character: (left: Double, right: Double)] = [
-        "A": (50, 50), "F": (0, 50), "J": (50, 0), "K": (0, 50), "L": (0, 50), "T": (50, 50), "V": (50, 50),
+    typealias Protrusion = [Character: (left: Double, right: Double)]
+
+    /// Characters' protrusion into the margins, in thousandths of their width, as `\usepackage{microtype}` applies them
+    /// to Latin Modern under XeTeX (TeX's run of the parity golden, quality §3.7): mt-LatinModernRoman.cfg's
+    /// `LMR-default` for upright roman of every weight and size (microtype's default set is `alltext`).
+    static let protrusion: Protrusion = [
+        "A": (50, 50), "Æ": (50, 0), "F": (0, 50), "J": (50, 0), "K": (0, 50), "L": (0, 50), "T": (50, 50), "V": (50, 50),
         "W": (50, 50), "X": (50, 50), "Y": (50, 50), "k": (0, 50), "r": (0, 50), "t": (0, 70), "v": (50, 50),
         "w": (50, 50), "x": (50, 50), "y": (50, 70), "0": (0, 50), "1": (100, 200), "2": (50, 50), "3": (50, 50),
         "4": (70, 70), "5": (0, 50), "6": (0, 50), "7": (50, 100), "8": (0, 50), "9": (0, 50), ".": (0, 700),
         ",": (0, 500), ":": (0, 500), ";": (0, 500), "!": (0, 100), "?": (0, 200), "@": (50, 50), "~": (200, 250),
-        "%": (50, 50), "*": (300, 300), "+": (250, 250), "(": (300, 0), ")": (0, 300), "/": (200, 300),
-        "-": (400, 500), "\u{2010}": (400, 500), "\u{2013}": (400, 300), "\u{2014}": (300, 200),
-        "\u{2018}": (500, 700), "\u{2019}": (500, 600), "\u{201C}": (300, 400), "\u{201D}": (300, 400),
+        "%": (50, 50), "*": (300, 300), "+": (250, 250), "-": (400, 500), "\u{2013}": (400, 300), "\u{2014}": (300, 200),
+        "_": (200, 200), "/": (200, 300), "\\": (200, 300), "'": (300, 400),
+        "\u{2018}": (300, 400), "\u{2019}": (300, 400), "\u{201C}": (300, 300), "\u{201D}": (300, 300),
         "\u{201A}": (400, 400), "\u{201E}": (400, 400), "\u{2039}": (400, 400), "\u{203A}": (300, 500),
         "\u{00AB}": (300, 200), "\u{00BB}": (100, 400), "\u{00A1}": (100, 0), "\u{00BF}": (100, 0),
-        "_": (200, 200), "\\": (200, 300), "\"": (300, 300), "{": (400, 200), "}": (200, 400), "<": (200, 100),
-        ">": (100, 200),
+        "(": (300, 0), ")": (0, 300), "<": (200, 100), ">": (100, 200), "{": (400, 200), "}": (200, 400),
+        "\u{2020}": (100, 100), "\u{2021}": (80, 80), "\u{2022}": (200, 200), "\u{00B7}": (400, 450), "\u{00B0}": (400, 400),
+        "\u{2122}": (100, 200), "\u{00A9}": (100, 100), "\u{00AE}": (100, 100), "\u{00B9}": (200, 250), "\u{00B2}": (50, 100),
+        "\u{00B3}": (50, 100), "\u{00AC}": (200, 0), "\u{2212}": (300, 300), "\u{00B1}": (150, 200), "\u{00D7}": (150, 250),
+        "\u{00F7}": (150, 250), "\u{20AC}": (100, 0),
     ]
 
-    /// microtype's `basictext` set: protrusion for medium-weight roman and sans text up to `\large`; never for bold,
-    /// monospaced or display sizes.
-    private func protrudes(_ font: CTFont) -> Bool {
+    /// `LMR-it`: italic and slanted Latin Modern Roman (negative values pull the character in).
+    static let italicProtrusion: Protrusion = [
+        "A": (125, 100), "Æ": (125, -55), "B": (90, -40), "C": (145, -75), "D": (75, -28), "E": (80, -55), "F": (85, -80),
+        "G": (153, -15), "H": (73, -60), "I": (140, -120), "J": (135, -80), "K": (70, -30), "L": (87, 40), "M": (67, -45),
+        "N": (75, -55), "O": (150, -30), "Œ": (150, -55), "P": (82, -50), "Q": (150, -30), "R": (75, 15), "S": (90, -65),
+        "$": (100, -20), "T": (220, -85), "U": (230, -55), "V": (260, -60), "W": (185, -55), "X": (70, -30), "Y": (250, -60),
+        "Z": (90, -60), "a": (150, -10), "b": (170, 0), "c": (173, -10), "d": (150, -55), "e": (180, 0), "f": (0, -250),
+        "g": (150, -10), "h": (100, 0), "i": (210, 0), "j": (0, -40), "k": (110, -50), "l": (240, -110), "m": (80, 0),
+        "n": (115, 0), "o": (155, 0), "q": (170, -40), "r": (155, -40), "s": (130, 0), "t": (230, -10), "u": (120, 0),
+        "v": (140, -25), "w": (98, -20), "x": (65, -40), "y": (130, -20), "z": (110, -80), "0": (170, -85), "1": (230, 110),
+        "2": (130, -70), "3": (140, -70), "4": (130, 80), "5": (160, 0), "6": (175, -30), "7": (250, -150), "8": (130, -40),
+        "9": (155, -80), ".": (0, 500), ",": (0, 450), ":": (0, 300), ";": (0, 300), "&": (130, 30), "%": (180, 50),
+        "*": (380, 20), "+": (180, 200), "@": (180, 10), "~": (200, 150), "(": (300, 0), ")": (0, 70), "/": (100, 100),
+        "-": (500, 300), "\u{2013}": (500, 300), "\u{2014}": (400, 170), "_": (100, 200), "'": (300, 400), "\"": (500, 300),
+        "\u{2018}": (800, 200), "\u{2019}": (800, -20), "\u{201C}": (540, 100), "\u{201D}": (500, 100),
+        "\u{201A}": (300, 700), "\u{201E}": (200, 600), "\u{2039}": (500, 300), "\u{203A}": (400, 400),
+        "\u{00AB}": (400, 100), "\u{00BB}": (200, 300), "\u{00A1}": (200, 0), "\u{00BF}": (200, 0), "<": (300, 100),
+        ">": (200, 100), "\\": (300, 300), "{": (400, 100), "}": (200, 200), "\u{2020}": (200, 80), "\u{2021}": (120, 80),
+        "\u{2022}": (220, 100), "\u{00B7}": (550, 300), "\u{00B0}": (500, 300), "\u{2212}": (300, 200), "\u{00B1}": (150, 170),
+    ]
+
+    /// microtype.cfg's `default` and `T1-default`, for the fonts without a list of their own (Latin Modern Mono and Sans,
+    /// a document's own fonts).
+    static let defaultProtrusion: Protrusion = [
+        "A": (50, 50), "Æ": (50, 0), "F": (0, 50), "J": (50, 0), "K": (0, 50), "L": (0, 50), "T": (50, 50), "V": (50, 50),
+        "W": (50, 50), "X": (50, 50), "Y": (50, 50), "k": (0, 50), "r": (0, 50), "v": (50, 50), "w": (50, 50), "x": (50, 50),
+        "y": (0, 50), "1": (50, 50), "4": (50, 50), "7": (50, 50), ".": (0, 700), ",": (0, 500), ":": (0, 500), ";": (0, 300),
+        "!": (0, 100), "?": (0, 100), "@": (50, 50), "~": (200, 250), "%": (50, 50), "*": (200, 200), "+": (250, 250),
+        "(": (100, 0), ")": (0, 200), "/": (100, 200), "-": (500, 500), "\u{2013}": (200, 200), "\u{2014}": (150, 150),
+        "\u{2018}": (300, 400), "\u{2019}": (300, 400), "\u{201C}": (300, 300), "\u{201D}": (300, 300), "_": (100, 100),
+        "\\": (100, 200), "\u{201A}": (400, 400), "\u{201E}": (400, 400), "\u{2039}": (400, 300), "\u{203A}": (300, 400),
+        "\u{00AB}": (200, 200), "\u{00BB}": (200, 200), "\u{00A1}": (100, 0), "\u{00BF}": (100, 0), "{": (400, 200),
+        "}": (200, 400), "<": (200, 100), ">": (100, 200),
+    ]
+
+    /// The list microtype picks for a font: Latin Modern Roman's own (italic or upright), else the default one.
+    private func protrusionList(_ font: CTFont) -> Protrusion {
+        let name = (CTFontCopyPostScriptName(font) as String).lowercased()
+        guard name.hasPrefix("lmroman") else { return Self.defaultProtrusion }
         let traits = CTFontGetSymbolicTraits(font)
-        if traits.contains(.traitBold) || traits.contains(.traitMonoSpace) { return false }
-        if (CTFontCopyPostScriptName(font) as String).lowercased().contains("mono") { return false }
-        return Double(CTFontGetSize(font)) <= fonts.normalSize * 1.21
+        return traits.contains(.traitItalic) || name.contains("slant") ? Self.italicProtrusion : Self.protrusion
     }
 
     private func protrusionAmount(_ c: Character, right: Bool, font: CTFont) -> Double {
-        guard let p = Self.protrusion[c], protrudes(font) else { return 0 }
+        // Accented letters inherit their base letter's factors (the cfg's \DeclareCharacterInheritance).
+        let base = c.unicodeScalars.count == 1 ? Character(String(c).decomposedStringWithCanonicalMapping.unicodeScalars.first!) : c
+        let list = protrusionList(font)
+        guard let p = list[c] ?? list[base] else { return 0 }
         let factor = right ? p.right : p.left
         return factor == 0 ? 0 : factor / 1000 * advance(of: c, in: font)
     }
@@ -108,13 +151,12 @@ final class ParagraphSetter {
         return CTFontGetAdvancesForGlyphs(font, .horizontal, glyphs, nil, glyphs.count)
     }
 
-    /// The inter-word glue of a style's font (TeX's \fontdimen2–4 and 7, in the proportions of the TFM files: roman
-    /// ⅓ em plus ½ minus ⅓ of that; italic a little tighter; typewriter fixed).
+    /// The inter-word glue of a style's font (TeX's \fontdimen2–4 and 7 as XeTeX derives them from an OpenType font: the
+    /// space plus ½ minus ⅓ of it, ⅓ extra after a sentence; typewriter fixed).
     func spaceGlue(_ style: RunStyle, spaceFactor sf: Int) -> Glue {
         let w = advance(of: " ", in: fonts.font(for: style))
         var stretch: Double, shrink: Double, extra: Double
-        if style.family == .mono && style.documentFont == nil { stretch = 0; shrink = 0; extra = w }
-        else if style.italic && style.documentFont == nil { stretch = 0.4286 * w; shrink = 0.2857 * w; extra = 0.2857 * w }
+        if style.family == .mono && style.documentFont == nil { stretch = 0; shrink = 0; extra = w / 3 }
         else { stretch = w / 2; shrink = w / 3; extra = w / 3 }
         var width = w
         if sf >= 2000 { width += extra }
