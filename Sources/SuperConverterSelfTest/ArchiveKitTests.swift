@@ -945,11 +945,20 @@ func registerArchiveKitTests() {
         let engines: [String: EngineID] = ["lzo": .lzoKit, "tar.lzo": .lzoKit, "rz": .rzipKit, "ace": .aceKit, "arc": .arcKit, "alz": .unalz]
         let dir = akScratch("fuzz")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let ran = fuzzNeverCrashes("ArchiveKit.damagedInputNeverCrashes", seeds: seeds, count: 12) { url, seed in
-            let root = dir.appendingPathComponent("out", isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: root) }
-            _ = try await Archives.read(ArchiveReadRequest(source: url, format: FormatID(seed.ext), root: root), engine: engines[seed.ext] ?? .libarchive)
+        // Inputs per seed by what one read costs (debug build): the one-file streams take under 3 ms, the 256 KiB lzop
+        // fixtures and the larger containers over 12 ms, the rest in between. That keeps the case within about 9 s.
+        let costly: Set<String> = ["lzop-lzo1x-1", "lzop-lzo1x-999", "tree.iso", "tool.deb", "tree.jar", "tree.cab", "tree.lha", "tree.cpio", "tree.zip"]
+        let cheap: Set<String> = ["hello.txt.bz", "hello.txt.gz", "hello.txt.lz", "hello.txt.lzma", "hello.txt.xz", "hello.txt.lzo", "hello.txt.rz",
+                                  "tree.tar.bz2", "tree.tar.xz", "secret.7z", "lzop-tar"]
+        var ran = 0
+        for (count, group) in [(100, seeds.filter { cheap.contains($0.name) }), (8, seeds.filter { costly.contains($0.name) }),
+                               (20, seeds.filter { !cheap.contains($0.name) && !costly.contains($0.name) })] {
+            ran += fuzzNeverCrashes("ArchiveKit.damagedInputNeverCrashes", seeds: group, count: count) { url, seed in
+                let root = dir.appendingPathComponent("out", isDirectory: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+                _ = try await Archives.read(ArchiveReadRequest(source: url, format: FormatID(seed.ext), root: root), engine: engines[seed.ext] ?? .libarchive)
+            }
         }
-        check(ran == 564, "every damaged input was handled without a crash (\(ran))")
+        check(ran == 1712, "every damaged input was handled without a crash (\(ran))")
     }))
 }
