@@ -34,6 +34,7 @@ func registerDocKitTests() {
     SelfTest.cases.append(("DocKit.layoutAndSlides", { dockitLayoutAndSlides() }))
     SelfTest.cases.append(("DocKit.webKit", { dockitWebKit() }))
     SelfTest.cases.append(("DocKit.safety", { dockitSafety() }))
+    SelfTest.cases.append(("DocKit.damagedInputNeverCrashes", { dockitDamagedInput() }))
 }
 
 // MARK: - Helpers
@@ -806,12 +807,9 @@ private func dockitTextKit() {
     check(runStepFailure(.textKitImport, "rtf", .docModel, input: .file(junk), context: context(folder, source: "junk.rtf", from: "rtf", to: "docx")) != nil || true, "bad RTF does not crash")
 }
 
-@MainActor
-private func dockitAbiWord() {
-    let folder = tempFolder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    installFakes(); DocKitModule.install()
-    let abw = """
+/// The AbiWord fixture: metadata, a heading style, runs, a link and a break, lists, a table with attach spans, a picture.
+private func abwFixture() -> String {
+    """
         <?xml version="1.0" encoding="UTF-8"?><abiword version="3.0"><metadata><m key="dc.title">Abi Title</m><m key="dc.creator">Abi Author</m></metadata>
         <styles><s type="P" name="Heading 1" basedon="Normal" props="font-weight:bold"/></styles>
         <data><d name="logo" mime-type="image/png" base64="yes">\(png().base64EncodedString())</d></data>
@@ -820,6 +818,14 @@ private func dockitAbiWord() {
         <table><cell props="left-attach:0; right-attach:2; top-attach:0; bot-attach:1"><p>wide</p></cell><cell props="left-attach:0; right-attach:1; top-attach:1; bot-attach:2"><p>a</p></cell><cell props="left-attach:1; right-attach:2; top-attach:1; bot-attach:2"><p>b</p></cell></table>
         <p><image dataid="logo" alt="Logo"/></p></section></abiword>
         """
+}
+
+@MainActor
+private func dockitAbiWord() {
+    let folder = tempFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    installFakes(); DocKitModule.install()
+    let abw = abwFixture()
     let plain = folder.appendingPathComponent("a.abw")
     try? Data(abw.utf8).write(to: plain)
     func check(_ model: DocModel?, _ label: String) {
@@ -833,24 +839,24 @@ private func dockitAbiWord() {
         DocKitTestsCheck(lines.contains { $0.contains("figure alt=Logo") && $0.contains("data=true") }, "\(label): embedded picture")
     }
     check(readFile(plain, engine: .abiWordReader, from: "abw", folder: folder), "ABW")
-    // ZABW is the same document gzip-compressed (gzip header + raw deflate + CRC32 + size).
+    let zabw = folder.appendingPathComponent("a.zabw")
+    try? gzip(Data(abw.utf8)).write(to: zabw)
+    check(readFile(zabw, engine: .abiWordReader, from: "zabw", folder: folder), "ZABW")
+}
+
+/// ZABW is the AbiWord document gzip-compressed (gzip header + raw deflate + CRC32 + size).
+private func gzip(_ source: Data) -> Data {
     var gz = Data([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 3])
-    let source = Data(abw.utf8)
     gz.append((try? (source as NSData).compressed(using: .zlib) as Data) ?? Data())
     gz.le32(CRC32.checksum(source)); gz.le32(UInt32(source.count))
-    let zabw = folder.appendingPathComponent("a.zabw")
-    try? gz.write(to: zabw)
-    check(readFile(zabw, engine: .abiWordReader, from: "zabw", folder: folder), "ZABW")
+    return gz
 }
 
 /// `check` is shadowed inside `dockitAbiWord`'s local helper.
 @MainActor private func DocKitTestsCheck(_ condition: Bool, _ message: String) { check(condition, message) }
 
-@MainActor
-private func dockitHWPX() {
-    let folder = tempFolder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    installFakes(); DocKitModule.install()
+/// The HWPX fixture: a header with character and paragraph properties, a section with runs, a spanned table and a picture.
+private func hwpxFixture() -> Data {
     let header = """
         <?xml version="1.0"?><hh:head xmlns:hh="h"><hh:charProperties><hh:charPr id="1" height="1800" textColor="#FF0000"><hh:bold/></hh:charPr><hh:charPr id="2" height="1000" textColor="#000000"/></hh:charProperties>
         <hh:paraProperties><hh:paraPr id="3"><hh:align horizontal="CENTER"/></hh:paraPr></hh:paraProperties></hh:head>
@@ -867,8 +873,16 @@ private func dockitHWPX() {
     archive.add("mimetype", "application/hwp+zip", compress: false)
     archive.add("Contents/content.hpf", hpf); archive.add("Contents/header.xml", header); archive.add("Contents/section0.xml", section)
     archive.add("BinData/image1.png", png(), compress: false)
+    return archive.finish()
+}
+
+@MainActor
+private func dockitHWPX() {
+    let folder = tempFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    installFakes(); DocKitModule.install()
     let file = folder.appendingPathComponent("a.hwpx")
-    try? archive.finish().write(to: file)
+    try? hwpxFixture().write(to: file)
     guard let model = readFile(file, engine: .hwpxReader, from: "hwpx", folder: folder) else { return }
     let lines = describe(model)
     check(model.metadata.title == "한글 제목", "HWPX title")
@@ -968,11 +982,8 @@ private func hwpText(_ text: String) -> Data {
     return d
 }
 
-@MainActor
-private func dockitHWP() {
-    let folder = tempFolder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    installFakes(); DocKitModule.install()
+/// The HWP body records: a paragraph, a table control with two spanned cells, and a paragraph with a line break.
+private func hwpBody() -> Data {
     func paragraph(_ text: String, level: Int) -> Data {
         hwpRecord(0x42, level, Data(count: 22)) + hwpRecord(0x43, level + 1, hwpText(text))
     }
@@ -985,12 +996,25 @@ private func dockitHWP() {
     body += hwpRecord(0x48, 2, cell0) + paragraph("wide", level: 2) + hwpRecord(0x48, 2, cell1) + paragraph("under", level: 2)
     var withBreak = Data(); for u in "line one".utf16 { withBreak.le16(u) }; withBreak.le16(10); for u in "line two".utf16 { withBreak.le16(u) }; withBreak.le16(13)
     body += hwpRecord(0x42, 0, Data(count: 22)) + hwpRecord(0x43, 1, withBreak)
-    var header = Data("HWP Document File".utf8); header.append(Data(count: 15)); header.le32(0x0500_0000); header.le32(1)   // compressed
+    return body
+}
+
+/// The FileHeader stream: signature, version 5.0, and the flags (bit 0: the sections are compressed).
+private func hwpFileHeader(compressed: Bool) -> Data {
+    var header = Data("HWP Document File".utf8); header.append(Data(count: 15)); header.le32(0x0500_0000); header.le32(compressed ? 1 : 0)
     header.append(Data(count: 216))
-    var raw = (try? (body as NSData).compressed(using: .zlib) as Data) ?? body
+    return header
+}
+
+@MainActor
+private func dockitHWP() {
+    let folder = tempFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    installFakes(); DocKitModule.install()
+    let header = hwpFileHeader(compressed: true)
     // The OLE container stores the compressed stream as is.
     let file = folder.appendingPathComponent("a.hwp")
-    try? compoundFile([("FileHeader", header), ("BodyText/Section0", raw)]).write(to: file)
+    try? compoundFile([("FileHeader", header), ("BodyText/Section0", (try? (hwpBody() as NSData).compressed(using: .zlib) as Data) ?? Data())]).write(to: file)
     guard let model = readFile(file, engine: .hwpReader, from: "hwp", folder: folder) else { return }
     let lines = describe(model)
     check(lines.contains("p «안녕 HWP»"), "HWP paragraph text: \(lines)")
@@ -1001,17 +1025,14 @@ private func dockitHWP() {
     let lockedFile = folder.appendingPathComponent("locked.hwp")
     try? compoundFile([("FileHeader", locked)]).write(to: lockedFile)
     check(runStepFailure(.hwpReader, "hwp", .docModel, input: .file(lockedFile), context: context(folder, source: "locked.hwp", from: "hwp", to: "txt")) == .passwordRequired("hwp"), "a protected HWP asks for its password")
-    raw = Data("junk".utf8)
     let junk = folder.appendingPathComponent("junk.hwp")
-    try? raw.write(to: junk)
+    try? Data("junk".utf8).write(to: junk)
     check(runStepFailure(.hwpReader, "hwp", .docModel, input: .file(junk), context: context(folder, source: "junk.hwp", from: "hwp", to: "txt")) == .damaged("hwp"), "a damaged HWP is reported as damaged")
 }
 
-@MainActor
-private func dockitMail() {
-    let folder = tempFolder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    installFakes(); DocKitModule.install()
+/// The e-mail fixture: encoded-word headers, multipart/alternative inside multipart/mixed, quoted-printable HTML, a cid:
+/// picture and a PDF attachment, with CRLF line ends.
+private func emlFixture() -> Data {
     let eml = """
         From: =?UTF-8?B?w4lsb8Ot?= <elo@example.com>
         To: you@example.com
@@ -1048,8 +1069,16 @@ private func dockitMail() {
         JVBERi0xLjQK
         --OUTER--
         """
+    return Data(eml.replacingOccurrences(of: "\n", with: "\r\n").utf8)
+}
+
+@MainActor
+private func dockitMail() {
+    let folder = tempFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    installFakes(); DocKitModule.install()
     let file = folder.appendingPathComponent("m.eml")
-    try? Data(eml.replacingOccurrences(of: "\n", with: "\r\n").utf8).write(to: file)
+    try? emlFixture().write(to: file)
     guard let model = readFile(file, engine: .mailReader, from: "eml", folder: folder) else { return }
     let lines = describe(model)
     check(model.metadata.title == "Café menu" && model.metadata.authors == ["Élo <elo@example.com>"].map { $0 } || model.metadata.authors.first?.contains("elo@example.com") == true, "encoded-word headers: \(model.metadata)")
@@ -1349,3 +1378,157 @@ private func dockitSafety() {
     if let archive = try? ZipArchive(data: odt.data), let doc = try? archive.data("content.xml") { check((try? XML.parse(doc)) != nil, "ODT stays well-formed with control characters") }
 }
 
+
+// MARK: - Fuzzing
+
+/// Well-formed nesting for the deep-nesting inputs: `open` repeated, then `close` as often, inserted after `anchor`.
+private struct Nest {
+    var anchor: String
+    var open: String
+    var close: String
+}
+
+/// One damaged copy of a text or markup document: a third of the time a construct from `nests` nested hundreds to thousands
+/// deep but closed again (so the readers' recursion, not only the parser's, meets it), otherwise `Fuzz.mutate`.
+private func damaged(_ bytes: [UInt8], nesting: [String], nests: [Nest], using rng: inout FuzzRandom) -> [UInt8] {
+    guard !nests.isEmpty, Int.random(in: 0..<3, using: &rng) == 0 else { return Fuzz.mutate(bytes, nesting: nesting, using: &rng) }
+    let nest = nests.randomElement(using: &rng)!
+    let depth = Int.random(in: 50...1_500, using: &rng)
+    let text = String(decoding: bytes, as: UTF8.self)
+    let at = text.range(of: nest.anchor)?.upperBound ?? text.startIndex
+    return Array((text[..<at] + String(repeating: nest.open, count: depth) + String(repeating: nest.close, count: depth) + text[at...]).utf8)
+}
+
+/// A package's damage goes inside: the ZIP is unpacked with DocKit's own `ZipArchive`, one member is damaged (deeply nested,
+/// mutated or dropped) and the rest are written back with `ZipWriter`; one input in four damages the ZIP's own bytes instead.
+private func damagedPackage(_ data: Data, member: String, nesting: [String], nests: [Nest]) -> (inout FuzzRandom) -> [UInt8] {
+    let archive = try? ZipArchive(data: data)
+    let entries = archive.map { a in a.entries.compactMap { e in (try? a.data(for: e)).map { (path: e.path, bytes: [UInt8]($0)) } } } ?? []
+    return { rng in
+        if Int.random(in: 0..<4, using: &rng) == 0 { return Fuzz.mutate([UInt8](data), using: &rng) }
+        var damagedEntries = entries
+        if Int.random(in: 0..<3, using: &rng) == 0, let i = entries.firstIndex(where: { $0.path == member }) {
+            damagedEntries[i].bytes = damaged(entries[i].bytes, nesting: [], nests: nests, using: &rng)
+        } else {
+            damagedEntries = Fuzz.mutateEntries(entries, nesting: nesting, using: &rng)
+        }
+        var zip = ZipWriter()
+        for entry in damagedEntries { zip.add(entry.path, Data(entry.bytes), compress: entry.path != "mimetype") }
+        return [UInt8](zip.finish())
+    }
+}
+
+/// HWP body records for tables nested `depth` deep: each cell holds a paragraph whose control is the next table.
+private func hwpNestedTables(_ depth: Int) -> Data {
+    var tableControl = Data("tbl ".utf8.reversed())
+    tableControl.append(Data(count: 20))
+    var cell = Data(); cell.le16(1); cell.le32(0); cell.le16(0); cell.le16(0); cell.le16(0); cell.le16(1); cell.le16(1); cell.append(Data(count: 8))
+    var body = Data()
+    for d in 0..<depth {
+        let level = min(d * 3, 0x3FF)
+        body += hwpRecord(0x42, level, Data(count: 22)) + hwpRecord(0x43, min(level + 1, 0x3FF), hwpText("cell \(d)"))
+        body += hwpRecord(0x47, min(level + 1, 0x3FF), tableControl) + hwpRecord(0x48, min(level + 3, 0x3FF), cell)
+    }
+    return body
+}
+
+@MainActor
+private func dockitDamagedInput() {
+    let folder = tempFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    installFakes(); DocKitModule.install()
+    let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Tests/Corpus/generated")
+    func sample(_ ext: String) -> [UInt8] { (try? [UInt8](Data(contentsOf: corpus.appendingPathComponent("sample.\(ext)")))) ?? [] }
+    func text(_ name: String, _ ext: String, _ bytes: [UInt8], nesting: [String] = [], nests: [Nest] = []) -> FuzzSeed {
+        FuzzSeed(name: name, ext: ext, bytes: bytes, mutate: { rng in damaged(bytes, nesting: nesting, nests: nests, using: &rng) })
+    }
+    var seeds: [FuzzSeed] = []
+    seeds.append(FuzzSeed(name: "docx", ext: "docx", bytes: sample("docx"), mutate: damagedPackage(Data(sample("docx")), member: "word/document.xml",
+        nesting: ["<w:p><w:r>", "<w:tbl><w:tr><w:tc>", "<m:f><m:num>"],
+        nests: [Nest(anchor: "<w:body>", open: "<w:tbl><w:tr><w:tc>", close: "<w:p/></w:tc></w:tr></w:tbl>"),
+                Nest(anchor: "<w:body>", open: "<w:sdt><w:sdtContent>", close: "</w:sdtContent></w:sdt>"),
+                Nest(anchor: "<w:body>", open: "<w:p><w:hyperlink>", close: "</w:hyperlink></w:p>"),
+                Nest(anchor: "<w:body>", open: "<w:p><m:oMath><m:f><m:num>", close: "</m:num><m:den/></m:f></m:oMath></w:p>")])))
+    seeds.append(FuzzSeed(name: "odt", ext: "odt", bytes: sample("odt"), mutate: damagedPackage(Data(sample("odt")), member: "content.xml",
+        nesting: ["<text:list><text:list-item>", "<table:table><table:table-row><table:table-cell>"],
+        nests: [Nest(anchor: "<office:text>", open: "<text:list><text:list-item>", close: "</text:list-item></text:list>"),
+                Nest(anchor: "<office:text>", open: "<table:table><table:table-row><table:table-cell>", close: "</table:table-cell></table:table-row></table:table>"),
+                Nest(anchor: "<office:text>", open: "<text:section>", close: "</text:section>"),
+                Nest(anchor: "<office:text>", open: "<text:p><text:span>", close: "</text:span></text:p>")])))
+    seeds.append(FuzzSeed(name: "hwpx", ext: "hwpx", bytes: [UInt8](hwpxFixture()), mutate: damagedPackage(hwpxFixture(), member: "Contents/section0.xml",
+        nesting: ["<hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run>"],
+        nests: [Nest(anchor: "xmlns:hp=\"p\">", open: "<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>", close: "</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>")])))
+    seeds.append(text("md", "md", sample("md"), nesting: [">", "[", "*", "<div>"],
+        nests: [Nest(anchor: "\n\n", open: "> ", close: ""), Nest(anchor: "\n\n", open: "- ", close: ""), Nest(anchor: "\n\n", open: "1. ", close: ""),
+                Nest(anchor: "\n\n", open: "[", close: "](u)"), Nest(anchor: "\n\n", open: "<b>", close: "</b>"), Nest(anchor: "\n\n", open: "^[", close: "]"),
+                Nest(anchor: "\n\n", open: "*a ", close: " a*"), Nest(anchor: "\n\n", open: "<div>\n", close: "</div>\n")]))
+    seeds.append(text("html", "html", sample("html"), nesting: ["<div>", "<ul><li>", "<table><tr><td>", "<math><mrow>"],
+        nests: [Nest(anchor: "<body>", open: "<div>", close: "</div>"), Nest(anchor: "<body>", open: "<table><tr><td>", close: "</td></tr></table>"),
+                Nest(anchor: "<body>", open: "<blockquote>", close: "</blockquote>"), Nest(anchor: "<body>", open: "<ul><li>", close: "</li></ul>"),
+                Nest(anchor: "<body>", open: "<b><a href=\"u\">", close: "</a></b>"), Nest(anchor: "<body>", open: "<math><mrow>", close: "</mrow></math>")]))
+    seeds.append(text("txt", "txt", sample("txt")))
+    seeds.append(text("rtf", "rtf", sample("rtf"), nesting: ["{", "{\\pict"], nests: [Nest(anchor: "\\f0\\fs24 ", open: "{\\b ", close: "}")]))
+    var model = sampleModel()
+    model.blocks.removeAll { if case .math = $0 { true } else { false } }
+    if let doc = writeFile(model, engine: .textKitExport, to: "doc", folder: folder, name: "fuzz"), let bytes = try? [UInt8](Data(contentsOf: doc)) {
+        seeds.append(FuzzSeed(name: "doc", ext: "doc", bytes: bytes))
+    }
+    let abw = Data(abwFixture().utf8)
+    seeds.append(text("abw", "abw", [UInt8](abw), nesting: ["<c>", "<table><cell>"],
+        nests: [Nest(anchor: "<section>", open: "<table><cell>", close: "</cell></table>"), Nest(anchor: "<p>", open: "<c props=\"font-weight:bold\">", close: "</c>"),
+                Nest(anchor: "<p>", open: "<a xlink:href=\"u\">", close: "</a>")]))
+    seeds.append(FuzzSeed(name: "zabw", ext: "zabw", bytes: [UInt8](gzip(abw))))
+    seeds.append(text("eml", "eml", [UInt8](emlFixture()), nesting: ["Content-Type: multipart/mixed; boundary=\"OUTER\"\r\n\r\n--OUTER\r\n"],
+        nests: [Nest(anchor: "<body>", open: "<div>", close: "</div>")]))
+    // HWP: the container's bytes damaged, and records (flat or tables nested deep) damaged inside an intact container.
+    let body = hwpBody()
+    seeds.append(FuzzSeed(name: "hwp", ext: "hwp", bytes: [UInt8](compoundFile([("FileHeader", hwpFileHeader(compressed: true)),
+                                                                                ("BodyText/Section0", (try? (body as NSData).compressed(using: .zlib) as Data) ?? Data())]))))
+    seeds.append(FuzzSeed(name: "hwp-records", ext: "hwp", bytes: [UInt8](body), mutate: { rng in
+        let records = Int.random(in: 0..<3, using: &rng) == 0 ? hwpNestedTables(Int.random(in: 50...400, using: &rng)) : body
+        return [UInt8](compoundFile([("FileHeader", hwpFileHeader(compressed: false)), ("BodyText/Section0", Data(Fuzz.mutate([UInt8](records), using: &rng)))]))
+    }))
+    // Maths as the readers meet it: TeX in Markdown, MathML in HTML, OMML in DOCX.
+    let tex = "\\frac{\\sum_{i=1}^{n} x_i^2}{\\sqrt[3]{\\left(a+b\\right)}} + \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} + \\hat{x}_{ij} \\text{if } x \\in \\mathbb{R}"
+    seeds.append(text("tex", "tex", Array(tex.utf8), nesting: ["{", "\\frac{", "\\sqrt[", "\\left(", "\\begin{x}", "^{", "\\hat"],
+        nests: [Nest(anchor: "", open: "{", close: "}"), Nest(anchor: "", open: "\\frac{", close: "}{x}"), Nest(anchor: "", open: "\\sqrt[", close: "]{x}"),
+                Nest(anchor: "", open: "\\left(", close: "\\right)"), Nest(anchor: "", open: "\\begin{pmatrix}", close: "\\end{pmatrix}"), Nest(anchor: "", open: "x^{", close: "}")]))
+    seeds.append(text("mathml", "mml", Array(MathML.write(tex: tex, display: true).utf8), nesting: ["<mrow>", "<mfrac><mrow>"],
+        nests: [Nest(anchor: "<semantics>", open: "<mrow>", close: "</mrow>"), Nest(anchor: "<semantics>", open: "<mfrac><mrow>", close: "</mrow><mi>x</mi></mfrac>"),
+                Nest(anchor: "<semantics>", open: "<msup><mrow>", close: "</mrow><mn>2</mn></msup>")]))
+    let omml = "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\(OMML.write(tex: tex))</m:oMath>"
+    seeds.append(text("omml", "omml", Array(omml.utf8), nesting: ["<m:f><m:num>", "<m:d><m:e>"],
+        nests: [Nest(anchor: "/main\">", open: "<m:f><m:num>", close: "</m:num><m:den/></m:f>"), Nest(anchor: "/main\">", open: "<m:d><m:e>", close: "</m:e></m:d>"),
+                Nest(anchor: "/main\">", open: "<m:sSup><m:e>", close: "</m:e><m:sup/></m:sSup>")]))
+    // Each input goes through the reader's registered converter, off the main thread as the job runner runs it (the converters
+    // move their work to a thread with a large stack, since worker threads have a small one).
+    let engines: [String: EngineID] = ["docx": .docxReader, "odt": .odtReader, "hwpx": .hwpxReader, "hwp": .hwpReader, "md": .markdownReader,
+                                       "html": .htmlReader, "txt": .plainTextReader, "rtf": .textKitImport, "doc": .textKitImport,
+                                       "abw": .abiWordReader, "zabw": .abiWordReader, "eml": .mailReader]
+    let read: @MainActor (URL, FuzzSeed) async throws -> Void = { url, seed in
+        let format = FormatID(seed.ext)
+        let context = StepContext(workFolder: folder, source: url, sourceFormat: format, targetFormat: "docx")
+        if let engine = engines[seed.ext], let converter = Services.converters.converter(for: engine) {
+            _ = try await converter.run(Step(engine, .format(format), .docModel), input: .file(url), context: context)
+            if engine == .mailReader { _ = try await converter.run(Step(engine, .format(format), .archiveTree), input: .file(url), context: context) }
+            return
+        }
+        let bytes = try Data(contentsOf: url)
+        // Maths is read inside the readers, so on their thread.
+        try await DocKitConverters.onLargeStack {
+            switch seed.ext {
+            case "tex":
+                let canonical = TeX.emit(TeX.parse(String(decoding: bytes, as: UTF8.self)))
+                _ = (MathML.write(tex: canonical, display: false), OMML.write(tex: canonical))
+            case "mml": _ = TeX.emit(MathML.node(try XML.parse(bytes)))
+            default: _ = OMML.tex(try XML.parse(bytes))
+            }
+        }
+    }
+    // MIME, HTML, Markdown and TeX inputs grow to megabytes when damaged, so they get fewer copies and the case stays near 10 s.
+    let slow: Set<String> = ["eml", "html", "md", "tex"]
+    let ran = fuzzNeverCrashes("DocKit.damagedInputNeverCrashes", seeds: seeds.filter { !slow.contains($0.name) }, count: 200, read: read)
+        + fuzzNeverCrashes("DocKit.damagedInputNeverCrashes", seeds: seeds.filter { slow.contains($0.name) }, count: 30, read: read)
+    check(seeds.count == 16 && ran == 12 * 200 + 4 * 30, "every damaged input was handled without a crash (\(ran) inputs from \(seeds.count) seeds)")
+}
