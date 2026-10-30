@@ -1,0 +1,41 @@
+name: Website
+
+# Publishes the website and the one-line installer: curl -fsSL https://udsy19.github.io/super-converter/install.sh | bash
+# Needs GitHub Pages turned on for this repository with "GitHub Actions" as the source. The site is committed already
+# built (node website/src/build.mjs); website/src, the build, is left out.
+on:
+  push:
+    branches: [main]
+    paths: [website/**, scripts/install.sh, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        # The site from website/, with install.sh at its root.
+        run: |
+          mkdir -p _site
+          cp -R website/. _site/
+          rm -rf _site/src
+          cp scripts/install.sh _site/install.sh
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
