@@ -545,11 +545,11 @@ func registerFontKitTests() {
                 seeds.append(FuzzSeed(name: format.rawValue, ext: format.rawValue, bytes: [UInt8](data), nesting: format == "svg" ? ["<g>"] : []))
             }
         }
-        let ran = fuzzNeverCrashes("FontKit.damagedInputNeverCrashes", seeds: seeds, count: 120) { url, seed in
+        let ran = fuzzNeverCrashes("FontKit.damagedInputNeverCrashes", seeds: seeds, count: 250) { url, seed in
             let format = FormatID(seed.ext), id = fkReaderID(format)
             let context = StepContext(workFolder: dir, source: url, sourceFormat: format, targetFormat: "ttf")
             _ = try await fkConverter(id).run(Step(id, StepEndpoint.format(format), .fontModel), input: .file(url), context: context)
         }
-        check(ran == 720, "every damaged input was handled without a crash (\(ran))")
+        check(ran == 1500, "every damaged input was handled without a crash (\(ran))")
     }))
 }
