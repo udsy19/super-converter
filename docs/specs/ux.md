@@ -145,9 +145,10 @@ Everything else stays quiet: neutral window, white cards, system controls. No co
 
 SF Symbols where macOS has them: `plus`, `square.grid.2x2`, `list.bullet`, `trash`, `arrow.right`,
 `slider.horizontal.3`, `magnifyingglass`, `square.and.arrow.up`, `eye`, `folder`, `checkmark`, `exclamationmark`,
-`arrow.down.circle`, `gearshape`, `xmark`, `stop.fill`, `lock`. The app's mark is a rounded square holding three
-tilted cards (pink photo, blue page, violet frame) with a white circular double arrow; the menu-bar icon is the
-double arrow alone as a template image (WP-R draws both, `scripts/make-icon.swift` as in the sister apps).
+`arrow.down.circle`, `gearshape`, `xmark`, `stop.fill`, `lock`. The app's mark is the Super family's white squircle
+with one ink (#141414) glyph: a rounded square, an arrow and a circle, "this becomes that" (`scripts/make-icon.swift`,
+as in the sister apps; `website/icon.svg` carries the same geometry). The menu-bar icon is the same glyph alone as a
+template image, drawn by MenuBarKit.
 
 ## 4. Window anatomy
 

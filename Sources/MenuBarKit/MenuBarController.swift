@@ -37,12 +37,32 @@ final class MenuBarController: NSObject, MenuBarPresenting, NSWindowDelegate {
         return await switches.row(action)
     }
 
+    /// The app icon's glyph (ux §3.7: a rounded square, an arrow, a circle) as an 18 pt template image, so the menu bar
+    /// tints it for light, dark and highlighted states. Same proportions as scripts/make-icon.swift.
+    static let statusImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let side: CGFloat = 5.6, disc = side * 1.06, gap: CGFloat = 1.1, shaft: CGFloat = 3.3
+            let x0 = rect.midX - (side + gap + shaft + gap + disc) / 2, cy = rect.midY
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: NSRect(x: x0, y: cy - side / 2, width: side, height: side), xRadius: side * 0.2, yRadius: side * 0.2).fill()
+            NSBezierPath(ovalIn: NSRect(x: x0 + side + gap + shaft + gap, y: cy - disc / 2, width: disc, height: disc)).fill()
+            let tip = NSPoint(x: x0 + side + gap + shaft, y: cy), head: CGFloat = 1.3
+            let arrow = NSBezierPath()
+            arrow.move(to: NSPoint(x: x0 + side + gap, y: cy)); arrow.line(to: tip)
+            arrow.move(to: NSPoint(x: tip.x - head, y: cy + head)); arrow.line(to: tip); arrow.line(to: NSPoint(x: tip.x - head, y: cy - head))
+            arrow.lineWidth = 1.1; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
+            NSColor.black.setStroke(); arrow.stroke()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = Strings.appName
+        return image
+    }()
+
     func setVisible(_ visible: Bool) {
         if visible, statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-            let image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: Strings.appName)
-            image?.isTemplate = true
-            item.button?.image = image
+            item.button?.image = Self.statusImage
             item.button?.toolTip = Strings.appName
             if let button = item.button {
                 let drop = StatusDropView(frame: button.bounds)
