@@ -1,0 +1,48 @@
+name: Feature request
+description: A format, an option or something else Super Converter should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the solution. Which files do you have, what do you need them to become, what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Super Converter to do?
+      description: The format pair, the option, or how it would look or behave; where it would live (card, picker, options, Settings, Finder).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+      description: Another app, a website, a command-line tool?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - A new format or pair
+        - Conversion quality
+        - Options
+        - The window and cards
+        - The format picker
+        - Menu bar
+        - Quick Actions and Services
+        - Helpers
+        - Command line (sconv)
+        - Links (superconverter://)
+        - Settings
+        - Website or docs
+        - Other
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and licences
+      options:
+        - label: This would need network access or a new permission (say which, above).
+        - label: This would need a GPL or AGPL tool (those can only be detected, never bundled).

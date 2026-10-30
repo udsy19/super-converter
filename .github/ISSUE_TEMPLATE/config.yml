@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/udsy19/super-converter/security/advisories/new
+    about: Report a vulnerability privately. Please don't open a public issue for it.
+  - name: User guide
+    url: https://github.com/udsy19/super-converter/blob/main/docs/USAGE.md
+    about: How every feature works, with the shortcuts, sconv and link reference.
+  - name: Formats
+    url: https://github.com/udsy19/super-converter/blob/main/docs/specs/formats.md
+    about: Every format pair, the engine or helper that does it, and why some pairs aren't offered.
