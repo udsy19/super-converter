@@ -104,8 +104,10 @@ public final class Planner: Planning {
 
     func choose(_ route: Route, look: DocumentLook?, preferHelper: Bool?) -> (choice: RouteChoice, betterWithHelper: HelperID?) {
         var builtin = route.builtin, helper = route.helper
-        if look == .latex {
-            let alternates = route.alternates.filter { $0.look == .latex }
+        // A LaTeX alternate replaces the routes; where a pair has none, the LaTeX look is TypesetKit's `look` option on
+        // the built-in route (O-DOC-PDF), so the routes stay.
+        let alternates = route.alternates.filter { $0.look == .latex }
+        if look == .latex, !alternates.isEmpty {
             builtin = alternates.first { $0.via == .builtin }?.steps
             helper = alternates.first { $0.via == .helper }?.steps
         }

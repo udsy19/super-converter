@@ -253,8 +253,6 @@ originals and post a notification. Convert to JPG, PNG and PDF are switched on t
 MP4 and MP3 wait until you switch them on in Settings › Quick Actions (or in System Settings' Extensions).
 macOS lists them once Super Converter is in your Applications folder and has been opened.
 
-<p align="center"><img src="images/settings-quickActions.png" alt="Settings, Quick Actions pane: the six actions with their switches." width="70%"></p>
-
 ## Services, the Dock and Open With
 
 - **Services**: the same six actions are in the Services menu (right-click › Services in Finder, or the app menu ›
@@ -309,12 +307,7 @@ How installs work:
 
 <kbd>⌘,</kbd> (Super Converter › Settings…). Five panes:
 
-<table>
-  <tr>
-    <td width="50%"><img src="images/settings-general.png" alt="Settings, General pane."><br><sub>General</sub></td>
-    <td width="50%"><img src="images/settings-formats.png" alt="Settings, Formats pane: default targets per source format."><br><sub>Formats</sub></td>
-  </tr>
-</table>
+<p align="center"><img src="images/settings-formats.png" alt="Settings, Formats pane: default targets per source format." width="70%"></p>
 
 - **General**: **Save to** (next to the originals · Downloads · a folder); **When a file with that name exists** (add a
   number · replace · ask); **Keep originals** (always: converting never changes or removes them); **Remember my format
@@ -330,8 +323,6 @@ How installs work:
   System Settings too, and **Open Extensions Settings…** goes there.
 - **About**: the version, **Updates** with Check for Updates and the update status, **Check for updates
   automatically**, the privacy statement, the licences of everything inside the app, and the source code link.
-
-<p align="center"><img src="images/settings-about.png" alt="Settings, About pane: version, updates, privacy, licences and source code." width="70%"></p>
 
 ## Keyboard shortcuts
 

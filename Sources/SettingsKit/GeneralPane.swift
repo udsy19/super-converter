@@ -8,6 +8,7 @@ struct GeneralPane: View {
     @Default(.collisionPolicy) private var collision
     @Default(.rememberFormatChoices) private var remember
     @Default(.showInMenuBar) private var showInMenuBar
+    @Default(.convertOnMenuBarDrop) private var convertOnDrop
     @Default(.notifyWhenDone) private var notify
     @Default(.playSound) private var sound
 
@@ -58,6 +59,12 @@ struct GeneralPane: View {
                 RowDivider()
                 SettingsRow(title: "Show in menu bar") {
                     Toggle("Show in menu bar", isOn: $showInMenuBar).labelsHidden().toggleStyle(.switch)
+                }
+                RowDivider()
+                // ux §5.9: off by default; it only matters while the menu-bar item is there.
+                SettingsRow(title: "Convert as soon as files are dropped on the menu bar") {
+                    Toggle("Convert as soon as files are dropped on the menu bar", isOn: $convertOnDrop).labelsHidden().toggleStyle(.switch)
+                        .disabled(!showInMenuBar)
                 }
                 RowDivider()
                 SettingsRow(title: "Notify when done") {

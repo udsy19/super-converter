@@ -144,6 +144,11 @@ public enum SconvCommand {
                 var request = ConversionRequest(source: file, sourceFormat: source, target: target, look: parsed.look)
                 let plan = planner.plan(for: request)
                 request.options = try options(parsed.options, profile: plan.optionProfile)
+                // `--look` is also the profile's `look` option where it has one (TypesetKit reads it), unless set by hand.
+                if let look = parsed.look, request.options["look"] == nil,
+                   OptionProfiles.profile(plan.optionProfile)?.options.contains(where: { $0.key == "look" }) == true {
+                    request.options["look"] = .string(look.rawValue)
+                }
                 requests.append((file, planner.plan(for: request)))
             } catch let error as UsageError {
                 err("sconv: \(error.message)"); return 64

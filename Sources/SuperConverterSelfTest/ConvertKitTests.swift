@@ -248,6 +248,11 @@ func registerConvertKitTests() {
         let latex = planner.plan(for: request)
         check(latex.choice == .builtin(steps: alternate.steps), "LaTeX look follows the alternate")
         check(planner.plan(for: ConversionRequest(source: URL(fileURLWithPath: "/x"), sourceFormat: "png", target: "jpg")).availableLooks.isEmpty, "no looks for an image")
+        // A pair with no LaTeX alternate keeps its built-in route under the LaTeX look (TypesetKit's `look` option sets it).
+        let plain = routes { $0.alternates.isEmpty && $0.builtin != nil && $0.to == "pdf" }!
+        var plainRequest = ConversionRequest(source: URL(fileURLWithPath: "/x"), sourceFormat: plain.from, target: plain.to)
+        plainRequest.look = .latex
+        check(planner.plan(for: plainRequest).choice == .builtin(steps: plain.builtin!), "LaTeX look without an alternate keeps the built-in route")
     }
 
     add("planner.familyMembersShareRoutes") {
