@@ -15,7 +15,10 @@ public enum Rasterizer {
         if let width, let height { scale = min(Double(width) / max(size.width, 1), Double(height) / max(size.height, 1)) }
         else if let width { scale = Double(width) / max(size.width, 1) }
         else if let height { scale = Double(height) / max(size.height, 1) }
-        return (max(Int((size.width * scale).rounded()), 1), max(Int((size.height * scale).rounded()), 1))
+        // A damaged page can be any size, NaN included: sides stay in 1…1,000,000 px so the conversion can't trap and
+        // width × height can't overflow; `bitmapContext` then refuses what is over `maxPixels`.
+        func side(_ v: Double) -> Int { v.isNaN ? 1 : Int(min(max(v.rounded(), 1), 1_000_000)) }
+        return (side(size.width * scale), side(size.height * scale))
     }
 
     /// A bitmap context (8-bit RGBA, premultiplied) in `space`, white-filled unless `transparent`.
