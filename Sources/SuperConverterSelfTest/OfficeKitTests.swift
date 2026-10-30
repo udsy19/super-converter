@@ -617,7 +617,7 @@ func registerOfficeKitTests() {
             let url = officeFile(data, "hostile.\(ext)")
             check(complete(30, { await read(url, ext) }) != nil, "\(name) is read in time")
         }
-        let ran = fuzzNeverCrashes("OfficeKit.damagedInputNeverCrashes", seeds: seeds + hostile, count: 45) { url, seed in await read(url, seed.ext) }
-        check(ran == 45 * 10 && seeds.count == 8, "every damaged input was handled without a crash (\(ran))")
+        let ran = fuzzNeverCrashes("OfficeKit.damagedInputNeverCrashes", seeds: seeds + hostile, count: 70) { url, seed in await read(url, seed.ext) }
+        check(ran == 70 * 10 && seeds.count == 8, "every damaged input was handled without a crash (\(ran))")
     }))
 }
