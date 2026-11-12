@@ -1,0 +1,272 @@
+{
+ "app": "Super Converter",
+ "repo": "udsy19/super-converter",
+ "branch": "release/macos-app-store",
+ "commit": "ca942e9",
+ "bundleIds": {
+  "direct": "com.udsy.superconverter",
+  "appstore": "com.udsy.superconverter.appstore"
+ },
+ "features": [
+  {
+   "name": "Built-in conversions: images, vector, CAD, documents, spreadsheets, e-books, fonts",
+   "classification": "compatible",
+   "storeStatus": "enabled",
+   "evidence": "test-results.md §4: 42/42 non-gated cases PASS under App Sandbox"
+  },
+  {
+   "name": "Media via bundled LGPL FFmpeg (Contents/Helpers, app-sandbox+inherit)",
+   "classification": "compatible-with-config",
+   "storeStatus": "enabled",
+   "evidence": "§4: 11/11 PASS; LGPL-3.0+ licence decision pending"
+  },
+  {
+   "name": "Media via AVFoundation",
+   "classification": "compatible",
+   "storeStatus": "enabled",
+   "evidence": "§4: 4/4 PASS"
+  },
+  {
+   "name": "Archives via libarchive, own decoders, bundled 7-Zip (incl. RAR read, AES 7Z write)",
+   "classification": "compatible-with-config",
+   "storeStatus": "enabled",
+   "evidence": "§4: 22/22 PASS"
+  },
+  {
+   "name": "Disk images (DMG)",
+   "classification": "compatible-after-architecture-change",
+   "storeStatus": "enabled via 7-Zip (hdiutil denied)",
+   "evidence": "§2 hdiutil deny mach-lookup com.apple.system.hdiejectd.xpc; §4 tree.dmg PASS"
+  },
+  {
+   "name": "Unsafe archive protection (path traversal, symlink escape, bomb)",
+   "classification": "compatible",
+   "storeStatus": "enabled",
+   "evidence": "§4 zip-slip, link-escape, bomb.tar.bz2 all contained"
+  },
+  {
+   "name": "HTML to PDF/PNG (WebKit)",
+   "classification": "compatible-with-config",
+   "storeStatus": "enabled (network.client)",
+   "evidence": "§4: FAIL without network.client, PASS with"
+  },
+  {
+   "name": "Input staging for bundled tools",
+   "classification": "compatible-after-architecture-change",
+   "storeStatus": "enabled",
+   "evidence": "§3 grant experiment + Downloads cases"
+  },
+  {
+   "name": "Outside helpers (LibreOffice, calibre, Pandoc, Tectonic, Ghostscript, DjVuLibre, ODA, LibreDWG, GPL FFmpeg, RAR write, sfArk)",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "gated with in-app explanation",
+   "evidence": "§4 'Needs Tectonic/Pandoc/calibre'; §5 460/2252 pairs, 40/212 input formats unavailable"
+  },
+  {
+   "name": "One-click helper installer (runtime executable downloads)",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "compiled out",
+   "evidence": "HelperPins empty, HelperInstaller stub, build strings check"
+  },
+  {
+   "name": "iWork / Microsoft Office via Apple Events",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "gated; no apple-events entitlement",
+   "evidence": "§5 'needs Pages / Numbers / Keynote'"
+  },
+  {
+   "name": "Self-updater (UpdateKit)",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "compiled out",
+   "evidence": "§1 strings check: 0 hits Store, 14 direct"
+  },
+  {
+   "name": "Per-tool sandbox-exec confinement",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "replaced by App Sandbox inheritance",
+   "evidence": "§2 forbidden-sandbox-reinit"
+  },
+  {
+   "name": "Finder Quick Actions",
+   "classification": "unverified-needs-experiment",
+   "storeStatus": "enabled; app asks for folder access",
+   "evidence": "extensions build+sign sandboxed; Finder run needs a human"
+  },
+  {
+   "name": "Quick Action switches in Settings (pluginkit)",
+   "classification": "incompatible-confirmed",
+   "storeStatus": "moved to System Settings",
+   "evidence": "§2 pkd unauthorized discovery flag"
+  },
+  {
+   "name": "Services menu",
+   "classification": "unverified-needs-experiment",
+   "storeStatus": "enabled",
+   "evidence": "needs Finder/human"
+  },
+  {
+   "name": "Drag & drop, Open With, Add Files",
+   "classification": "unverified-needs-experiment",
+   "storeStatus": "enabled",
+   "evidence": "GUI not driven (no synthetic input)"
+  },
+  {
+   "name": "Save next to original / Downloads fall-back",
+   "classification": "compatible-with-config",
+   "storeStatus": "enabled",
+   "evidence": "§2 access(W_OK) sandbox-aware; §3 Downloads writes PASS"
+  },
+  {
+   "name": "Save To folder security-scoped bookmarks",
+   "classification": "unverified-needs-experiment",
+   "storeStatus": "enabled",
+   "evidence": "needs real open panel"
+  },
+  {
+   "name": "Batch / background queue",
+   "classification": "compatible",
+   "storeStatus": "enabled",
+   "evidence": "§4 87 jobs through the same queue"
+  },
+  {
+   "name": "Import settings from direct edition",
+   "classification": "compatible",
+   "storeStatus": "enabled (app menu)",
+   "evidence": "§6 Core.directEditionImport PASS"
+  },
+  {
+   "name": "Sandboxed app launch",
+   "classification": "compatible",
+   "storeStatus": "enabled",
+   "evidence": "§1 running after 8 s, 1 benign denial"
+  }
+ ],
+ "dependencies": [
+  {
+   "name": "FFmpeg (ffmpeg, ffprobe)",
+   "version": "7.1.5",
+   "license": "LGPL-3.0-or-later (--enable-version3 --disable-gpl --disable-nonfree)",
+   "kind": "executable",
+   "bundled": "Contents/Helpers",
+   "sandboxOK": true
+  },
+  {
+   "name": "LAME / soxr / FriBidi (in ffmpeg)",
+   "version": "3.100 / 0.1.3 / 1.0.16",
+   "license": "LGPL-2.0+/2.1+",
+   "kind": "static in ffmpeg",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "libvpx, SVT-AV1, dav1d, Opus, Ogg, Vorbis, Theora, libwebp, zimg, FreeType, HarfBuzz, libass (in ffmpeg)",
+   "version": "see Tools.lock",
+   "license": "BSD/MIT/ISC/FTL/WTFPL",
+   "kind": "static in ffmpeg",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "7-Zip (7zz)",
+   "version": "25.01",
+   "license": "LGPL-2.1-or-later + BSD-3 + unRAR restriction",
+   "kind": "executable",
+   "bundled": "Contents/Helpers",
+   "sandboxOK": true
+  },
+  {
+   "name": "LibRaw",
+   "version": "0.21.5",
+   "license": "LGPL-2.1 (CDDL-1.0 available)",
+   "kind": "dylib",
+   "bundled": "Contents/Frameworks",
+   "sandboxOK": true
+  },
+  {
+   "name": "libwebp",
+   "version": "1.6.0",
+   "license": "BSD-3-Clause",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "libavif + SVT-AV1 + libaom + dav1d",
+   "version": "1.4.2/4.2.0/3.14.1/1.5.4",
+   "license": "BSD",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "libarchive + xz + zstd + lz4",
+   "version": "3.8.10/5.8.4/1.5.7/1.10.0",
+   "license": "BSD-2/0BSD/BSD-3/BSD-2",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "libxls",
+   "version": "1.6.4",
+   "license": "BSD-2-Clause",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "woff2 + brotli",
+   "version": "1.0.2/1.2.1",
+   "license": "MIT",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "unalz + bzip2",
+   "version": "0.65/1.0.8",
+   "license": "zlib / bzip2",
+   "kind": "static",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "MathJax + mhchemParser",
+   "version": "3.2.2/4.2.1",
+   "license": "Apache-2.0",
+   "kind": "resource (JavaScriptCore)",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "Latin Modern fonts",
+   "version": "-",
+   "license": "GUST Font License",
+   "kind": "resource",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "hyph-utf8 patterns",
+   "version": "5684c0f",
+   "license": "MIT/permissive",
+   "kind": "resource",
+   "bundled": true,
+   "sandboxOK": true
+  },
+  {
+   "name": "LibreOffice, calibre, Pandoc, Tectonic, Ghostscript, DjVuLibre, ODA, LibreDWG, GPL FFmpeg, RAR, sfArk, iWork, MS Office",
+   "version": "various",
+   "license": "various (GPL/AGPL/proprietary)",
+   "kind": "outside programs",
+   "bundled": false,
+   "sandboxOK": false
+  }
+ ],
+ "sizes": {
+  "storeAppArm64MB": 231,
+  "storeAppArm64ZippedMB": 96,
+  "directUniversalMB": 310
+ },
+ "status": "CODE COMPLETE / CREDENTIALS REQUIRED"
+}
