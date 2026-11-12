@@ -211,6 +211,12 @@ enum Sandbox {
     }
 
     static let isEnforced: Bool = {
+        #if APP_STORE
+        // Store edition: the App Sandbox already confines every child (bundled tools are signed with
+        // com.apple.security.inherit), and a sandboxed process can't apply a second profile: sandbox-exec fails with
+        // "sandbox_apply: Operation not permitted" (docs/app-store/test-results.md). So no sandbox-exec here.
+        return false
+        #else
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("superconverter-sandbox-\(UUID().uuidString)", isDirectory: true)
         let inside = root.appendingPathComponent("in", isDirectory: true), outside = root.appendingPathComponent("out", isDirectory: true)
@@ -226,5 +232,6 @@ enum Sandbox {
         guard (try? process.run()) != nil else { return false }
         process.waitUntilExit()
         return fm.fileExists(atPath: inside.appendingPathComponent("a").path) && !fm.fileExists(atPath: outside.appendingPathComponent("b").path)
+        #endif
     }()
 }

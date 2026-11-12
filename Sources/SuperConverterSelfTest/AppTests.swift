@@ -83,12 +83,12 @@ private func appLaunchSequence() {
     func position(_ text: String) -> String.Index? { source.range(of: text)?.lowerBound }
     let steps = ["CoreBootstrap.configure()", "HelperKitModule.install()", "SettingsKitModule.install()", "Services.updates = ",
                  "NSApp.mainMenu = ", "NSApp.servicesProvider = ", "NSUpdateDynamicServices()", "LSRegisterURL(",
-                 "Services.menuBar.install()", "open(waiting)", "Services.updates.start()"]
+                 "Services.menuBar.install()", "open(waiting)", "Services.updates?.start()"]
     let positions = steps.map(position)
     check(!positions.contains(nil), "every launch step is there: \(zip(steps, positions).filter { $0.1 == nil }.map(\.0))")
     let found = positions.compactMap { $0 }
     check(found == found.sorted(), "and in ARCHITECTURE §9's order")
-    check(source.contains("if !isThrowaway { Services.updates.start() }") && source.contains("if !isThrowaway, Bundle.main.bundleURL.pathExtension == \"app\""),
+    check(source.contains("if !isThrowaway { Services.updates?.start() }") && source.contains("if !isThrowaway, Bundle.main.bundleURL.pathExtension == \"app\""),
           "a throwaway data folder starts no updater and registers nothing")
 }
 

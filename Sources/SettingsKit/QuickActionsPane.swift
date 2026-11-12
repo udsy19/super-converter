@@ -20,7 +20,22 @@ struct QuickActionsPane: View {
     static let footnote = "Switching an action here switches it in System Settings › Extensions too. The same actions are in the Services menu."
     static let unlisted = "macOS lists these actions once Super Converter is in your Applications folder and has been opened."
 
+    static let storeNote = "Switch each action on or off in System Settings › General › Login Items & Extensions › Finder. The Mac App Store edition can’t switch them from here."
+
     var body: some View {
+        if Distribution.isAppStore {
+            PaneScroll {
+                PaneNote(Self.intro)
+                PaneNote(Self.storeNote)
+                HStack {
+                    Button("Open Extensions Settings…") { context.open(Self.extensionsSettings) }
+                    Spacer()
+                }
+            }
+        } else { directBody }
+    }
+
+    private var directBody: some View {
         PaneScroll {
             PaneNote(Self.intro)
             CardList {

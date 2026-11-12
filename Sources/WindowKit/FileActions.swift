@@ -46,7 +46,10 @@ final class SystemFileActions: NSObject, FileActions {
             let types = format.utTypes
             if !types.isEmpty { panel.allowedContentTypes = types }
         }
-        return panel.runModal() == .OK ? panel.urls : []
+        guard panel.runModal() == .OK else { return [] }
+        // Store edition: a folder chosen here stays reachable, and results can go next to its files.
+        for url in panel.urls where url.hasDirectoryPath { FolderAccess.remember(url) }
+        return panel.urls
     }
 
     func chooseFolder() -> URL? {
@@ -55,7 +58,9 @@ final class SystemFileActions: NSObject, FileActions {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        FolderAccess.remember(url)   // Store edition: Save To survives a relaunch
+        return url
     }
 
     func get(_ helper: HelperID) {

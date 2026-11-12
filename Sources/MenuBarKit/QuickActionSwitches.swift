@@ -10,7 +10,8 @@ struct QuickActionSwitches: Sendable {
     let tools: ToolRunning
 
     /// Through HelperKit's runner; nil before HelperKit is installed.
-    @MainActor static var current: QuickActionSwitches? { Services.tools.map(QuickActionSwitches.init) }
+    /// None in the Store edition: pkd answers no sandboxed client, so the switches live in System Settings only.
+    @MainActor static var current: QuickActionSwitches? { Distribution.isAppStore ? nil : Services.tools.map(QuickActionSwitches.init) }
 
     enum Election: Equatable, Sendable { case use, ignore, undecided }
 

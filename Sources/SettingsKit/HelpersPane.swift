@@ -13,6 +13,21 @@ struct HelpersPane: View {
     }
 
     var body: some View {
+        if Distribution.isAppStore { storeBody } else { directBody }
+    }
+
+    /// The Store edition can't run or install other programs: what that means, and where the full set is.
+    private var storeBody: some View {
+        PaneScroll {
+            PaneNote(Distribution.helpersUnavailable)
+            HStack {
+                Button("Open the Direct Download Page…") { context.open(Distribution.directDownloadPage) }
+                Spacer()
+            }
+        }
+    }
+
+    private var directBody: some View {
         PaneScroll {
             PaneNote("Super Converter converts most files by itself. These free helpers add the rest. They install into your Library folder or Applications, never run on their own, and can be removed any time.")
             CardList {

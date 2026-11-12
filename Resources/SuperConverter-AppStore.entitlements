@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Mac App Store edition (docs/app-store/entitlements.md). Sandboxed; no Apple Events, no library validation
+	     exception (libraw_r.dylib is signed with the same team identity as the app). -->
+	<key>com.apple.security.app-sandbox</key><true/>
+	<!-- Files and folders the person drops, opens or chooses as Save To, read and written. -->
+	<key>com.apple.security.files.user-selected.read-write</key><true/>
+	<!-- Results fall back to Downloads when the original's folder can't be written (ux §6.3). -->
+	<key>com.apple.security.files.downloads.read-write</key><true/>
+	<!-- Save To folders and folders granted for Quick Actions survive a relaunch (security-scoped bookmarks). -->
+	<key>com.apple.security.files.bookmarks.app-scope</key><true/>
+	<!-- WebKit (HTML → PDF/PNG) loads nothing, not even the local page, in a sandboxed app without it (test-results.md).
+	     Pages still reach no server: a content rule list blocks every non-local URL unless the person turns on
+	     "Load web resources" for that one file (DocKit WebKitRender). Nothing else in the app opens a connection. -->
+	<key>com.apple.security.network.client</key><true/>
+</dict>
+</plist>

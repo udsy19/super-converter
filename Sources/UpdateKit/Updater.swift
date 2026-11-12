@@ -1,3 +1,5 @@
+// The Store edition has no updater: the Mac App Store updates it (App Review 2.4.5(vii)).
+#if !APP_STORE
 // Origin: Super Flow Sources/UpdateKit/Updater.swift (c1edfc4), by way of Super PDF Sources/UpdateKit/Updater.swift (afce4c6).
 // Configured through initialisers (repository udsy19/super-converter, asset SuperConverter). Changed here: one channel and no managed preferences; the app's "Check for updates" switch turns the automatic checks off (none scheduled, no install when idle, and a staged update is dropped), while Check for Updates… still checks, downloads and stages on request, installing on quit or from "Install now".
 
@@ -252,3 +254,4 @@ public final class Updater: UpdateChecking {
         }
     }
 }
+#endif

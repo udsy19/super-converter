@@ -206,6 +206,8 @@ Tests/Corpus, Tests/Golden      quality bench fixtures and goldens
   `scripts/make-dmg.sh`, updates through UpdateKit. Entitlements: Apple Events (automation of Pages, Numbers,
   Keynote, Microsoft Office). MathJax runs in JavaScriptCore without the JIT entitlement (interpreter is fast enough
   for formulas; WP-T measures).
+- **Mac App Store edition** (`DISTRIBUTION=appstore scripts/build-app.sh`, `-DAPP_STORE`): sandboxed, no helpers, no
+  Apple Events, no updater, DMG through 7-Zip; see docs/app-store/architecture.md.
 
 ## 8. Data
 

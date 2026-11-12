@@ -5,9 +5,12 @@ import SuperConverterCore
 /// the same safety rules as any archive, and detached. The Finder never sees the volume. hdiutil runs through HelperKit's
 /// runner (`Services.tools`) with the mount folder as its only writable place besides its scratch folder.
 enum DiskImageReader {
-    static func isAvailable(_ tools: (any ToolRunning)?) -> Bool { tools?.location(of: .hdiutil) != nil }
+    /// hdiutil, or 7-Zip when there is no hdiutil to run (the Store edition: the App Sandbox denies hdiutil's attach), which
+    /// `Archives.read` falls back to.
+    static func isAvailable(_ tools: (any ToolRunning)?) -> Bool { tools?.location(of: .hdiutil) != nil || SevenZip.isAvailable(tools) }
 
     static func read(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
+        guard request.tools?.location(of: .hdiutil) != nil else { throw ArchiveError.unsupported("hdiutil isn’t available.") }
         let scratch = request.root.deletingLastPathComponent().appendingPathComponent(".dmg-\(UUID().uuidString)")
         let mounts = scratch.appendingPathComponent("mounts")
         try FileManager.default.createDirectory(at: mounts, withIntermediateDirectories: true)

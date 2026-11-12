@@ -16,9 +16,27 @@
 # every @rpath dependency present, executables and entry points, the extensions, helpers, resources and Info.plist.
 # Adapted from super-pdf scripts/build-app.sh (commit 2079863): bundled executables and the LibRaw dylib added, the four
 # Super PDF Quick Actions replaced by Super Converter's six, the checks fitted to this app.
+#
+# DISTRIBUTION=appstore builds the Mac App Store edition instead (docs/app-store/README.md): compiled with -DAPP_STORE
+# in its own build folder (.build-appstore), bundle id APPSTORE_BUNDLE_ID, written to build/appstore/Super Converter.app,
+# sandboxed (Resources/SuperConverter-AppStore.entitlements; the bundled executables get app-sandbox + inherit), no
+# Apple Events usage string, signed with APPSTORE_APP_IDENTITY when set (scripts/package-appstore.sh), else ad hoc.
+# The default, DISTRIBUTION=direct, is the direct-download build above, unchanged.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 CONFIG=release; [ "${1:-}" = "--debug" ] && CONFIG=debug
+DISTRIBUTION="${DISTRIBUTION:-direct}"
+DIRECT_BUNDLE_ID=com.udsy.superconverter
+# The Store edition's bundle id: the one place to change it before registering it in App Store Connect (and
+# SuperConverterPaths.bundleID under APP_STORE, which the checks below compare with it).
+APPSTORE_BUNDLE_ID=com.udsy.superconverter.appstore
+SWIFT_FLAGS=()
+case "$DISTRIBUTION" in
+  direct) BUNDLE_ID="$DIRECT_BUNDLE_ID" ;;
+  appstore) BUNDLE_ID="$APPSTORE_BUNDLE_ID"; SWIFT_FLAGS=(-Xswiftc -DAPP_STORE --scratch-path "$ROOT/.build-appstore") ;;
+  *) echo "error: DISTRIBUTION must be direct or appstore, not $DISTRIBUTION" >&2; exit 1 ;;
+esac
+swiftbuild() { swift build ${SWIFT_FLAGS[@]+"${SWIFT_FLAGS[@]}"} "$@"; }
 APP_EXE=SuperConverter
 EXT_EXE=SuperConverterQuickActions
 PRODUCTS=("$APP_EXE" "$EXT_EXE")
@@ -34,23 +52,34 @@ if [ "${UNIVERSAL:-0}" = 1 ]; then
   # compatibility libraries for arm64 only; macOS 14 has everything they back-deploy, so skip them.
   for arch in arm64 x86_64; do
     for product in "${PRODUCTS[@]}"; do
-      swift build -c "$CONFIG" --product "$product" --triple "$arch-apple-macosx14.0" -Xswiftc -runtime-compatibility-version -Xswiftc none
+      swiftbuild -c "$CONFIG" --product "$product" --triple "$arch-apple-macosx14.0" -Xswiftc -runtime-compatibility-version -Xswiftc none
     done
   done
-  ARM="$(swift build -c "$CONFIG" --triple arm64-apple-macosx14.0 --show-bin-path)"
-  INTEL="$(swift build -c "$CONFIG" --triple x86_64-apple-macosx14.0 --show-bin-path)"
-  BIN="$ROOT/build/universal"; mkdir -p "$BIN"; RES_BIN="$ARM"
+  ARM="$(swiftbuild -c "$CONFIG" --triple arm64-apple-macosx14.0 --show-bin-path)"
+  INTEL="$(swiftbuild -c "$CONFIG" --triple x86_64-apple-macosx14.0 --show-bin-path)"
+  BIN="$ROOT/build/universal"; [ "$DISTRIBUTION" = appstore ] && BIN="$ROOT/build/appstore/universal"
+  mkdir -p "$BIN"; RES_BIN="$ARM"
   for product in "${PRODUCTS[@]}"; do lipo -create -output "$BIN/$product" "$ARM/$product" "$INTEL/$product"; done
 else
-  for product in "${PRODUCTS[@]}"; do swift build -c "$CONFIG" --product "$product"; done
-  BIN="$(swift build -c "$CONFIG" --show-bin-path)"; RES_BIN="$BIN"
+  for product in "${PRODUCTS[@]}"; do swiftbuild -c "$CONFIG" --product "$product"; done
+  BIN="$(swiftbuild -c "$CONFIG" --show-bin-path)"; RES_BIN="$BIN"
 fi
 
 APP="$ROOT/build/Super Converter.app"
+[ "$DISTRIBUTION" = appstore ] && APP="$ROOT/build/appstore/Super Converter.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Licenses" "$APP/Contents/PlugIns" "$APP/Contents/Helpers" "$APP/Contents/Frameworks"
 cp "$BIN/$APP_EXE" "$APP/Contents/MacOS/$APP_EXE"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+if [ "$DISTRIBUTION" = appstore ]; then
+  # Its own bundle id; no Apple Events (no automation in the Store edition) and no folder usage strings (the sandbox asks
+  # nothing: the person grants files and folders by choosing them).
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
+  for key in NSAppleEventsUsageDescription NSDesktopFolderUsageDescription NSDocumentsFolderUsageDescription NSDownloadsFolderUsageDescription \
+             NSRemovableVolumesUsageDescription NSNetworkVolumesUsageDescription; do
+    /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist"
+  done
+fi
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Contents/Info.plist")"
@@ -77,6 +106,7 @@ for plist in "$ROOT"/Sources/SuperConverterQuickActions/Plists/*.plist; do
   cp "$BIN/$EXT_EXE" "$ext/Contents/MacOS/$EXT_EXE"
   cp "$plist" "$ext/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$ext/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID.quickactions.$name" "$ext/Contents/Info.plist"
   EXTENSIONS+=("$ext")
 done
 
@@ -97,17 +127,39 @@ if [ ! -f "$ICONS/AppIcon.icns" ] || [ "$ROOT/scripts/make-icon.swift" -nt "$ICO
 fi
 cp "$ICONS/AppIcon.icns" "$APP/Contents/Resources/"
 
+# Downloaded files carry com.apple.quarantine, which App Store Connect rejects inside a bundle; the Store edition is
+# signed clean.
+[ "$DISTRIBUTION" = appstore ] && xattr -r -d com.apple.quarantine "$APP" 2>/dev/null || true
+
 # Signing, nested code first: the helpers and LibRaw, then the extensions, then the bundle that seals them. Everything
 # gets the hardened runtime; the helpers keep their own identifiers.
 KC="$ROOT/.signing/super-converter.keychain-db"
 ENT="$ROOT/Resources/SuperConverter.entitlements"
 EXT_ENT="$ROOT/Resources/QuickActions.entitlements"
+TOOL_ENT=()
 IDENTITY="Super Converter Local Signing"
 NESTED=("$APP/Contents/Frameworks/libraw_r.dylib")
 for tool in "${TOOLS[@]}"; do NESTED+=("$APP/Contents/Helpers/$tool"); done
 TIMESTAMP=()
-sign() { codesign -f -s "$SIGN_AS" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} -o runtime "$@"; }
-if [ -n "${DEVELOPER_ID:-}" ]; then
+RUNTIME=(-o runtime)
+sign() { codesign -f -s "$SIGN_AS" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} ${RUNTIME[@]+"${RUNTIME[@]}"} "$@"; }
+if [ "$DISTRIBUTION" = appstore ]; then
+  # The Store edition: sandboxed app, sandbox + inherit for the bundled executables. The Hardened Runtime is not
+  # required on the Mac App Store and stays off, so library validation doesn't refuse an ad-hoc test build's
+  # libraw_r.dylib (no Team ID); a Store-signed build has the app and LibRaw under one Team ID.
+  ENT="${APPSTORE_ENTITLEMENTS:-$ROOT/Resources/SuperConverter-AppStore.entitlements}"
+  EXT_ENT="${APPSTORE_EXT_ENTITLEMENTS:-$EXT_ENT}"
+  TOOL_ENT=(--entitlements "$ROOT/Resources/SuperConverter-AppStore-Helper.entitlements")
+  RUNTIME=()
+  KEYCHAIN=()
+  if [ -n "${APPSTORE_APP_IDENTITY:-}" ]; then
+    grep -qF "$APPSTORE_APP_IDENTITY" <<< "$(security find-identity -v -p codesigning)" || { echo "error: APPSTORE_APP_IDENTITY \"$APPSTORE_APP_IDENTITY\" is not a valid signing identity in your keychains" >&2; exit 1; }
+    SIGN_AS="$APPSTORE_APP_IDENTITY"
+  else
+    SIGN_AS="-"
+  fi
+  [ -n "${APPSTORE_PROVISIONING_PROFILE:-}" ] && cp "$APPSTORE_PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+elif [ -n "${DEVELOPER_ID:-}" ]; then
   # A "Developer ID Application: …" identity in the login keychain; notarisation needs the secure timestamp.
   grep -qF "$DEVELOPER_ID" <<< "$(security find-identity -v -p codesigning)" || { echo "error: DEVELOPER_ID \"$DEVELOPER_ID\" is not a valid signing identity in your keychains" >&2; exit 1; }
   SIGN_AS="$DEVELOPER_ID"; KEYCHAIN=(); TIMESTAMP=(--timestamp)
@@ -125,10 +177,11 @@ else
   echo "warning: no project signing identity (run scripts/signing-setup.sh); signing ad hoc, so automation grants won't survive rebuilds and the updater can't verify updates" >&2
   SIGN_AS="-"; KEYCHAIN=()
 fi
-for item in "${NESTED[@]}"; do sign "$item"; done
+sign "$APP/Contents/Frameworks/libraw_r.dylib"
+for tool in "${TOOLS[@]}"; do sign ${TOOL_ENT[@]+"${TOOL_ENT[@]}"} "$APP/Contents/Helpers/$tool"; done
 for ext in "${EXTENSIONS[@]}"; do sign --entitlements "$EXT_ENT" "$ext"; done
 sign --entitlements "$ENT" "$APP"
-if [ -z "${DEVELOPER_ID:-}" ] && [ -f "$KC" ]; then restore; trap - EXIT; fi
+if [ "$DISTRIBUTION" = direct ] && [ -z "${DEVELOPER_ID:-}" ] && [ -f "$KC" ]; then restore; trap - EXIT; fi
 codesign --verify --deep --strict "$APP"
 
 # ---- Static launch checks. The app is never launched here (no GUI on a build machine); instead everything that would
@@ -136,11 +189,29 @@ codesign --verify --deep --strict "$APP"
 fail() { echo "error: $*" >&2; exit 1; }
 EXE="$APP/Contents/MacOS/$APP_EXE"
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
-# LibRaw is signed without an Apple Team ID, so the hardened runtime refuses to load it unless library validation is
-# off. Without this the app aborts at launch; fail the build instead.
-grep -q disable-library-validation <<< "$ENTITLEMENTS" || fail "$APP embeds libraw_r.dylib but lacks com.apple.security.cs.disable-library-validation"
-grep -q com.apple.security.automation.apple-events <<< "$ENTITLEMENTS" || fail "entitlement com.apple.security.automation.apple-events missing (iWork and Office automation)"
-if grep -q com.apple.security.app-sandbox <<< "$ENTITLEMENTS"; then fail "the app must not be sandboxed (helpers, automation and hdiutil need it)"; fi
+if [ "$DISTRIBUTION" = appstore ]; then
+  # The Store edition: sandboxed, nothing the Store refuses, every bundled executable sandboxed with inherit.
+  grep -q com.apple.security.app-sandbox <<< "$ENTITLEMENTS" || fail "the Store edition must be sandboxed"
+  for banned in automation.apple-events disable-library-validation allow-unsigned-executable-memory temporary-exception network.server security.inherit; do
+    if grep -q "$banned" <<< "$ENTITLEMENTS"; then fail "the Store edition must not have $banned"; fi
+  done
+  for tool in "${TOOLS[@]}"; do
+    tool_ent="$(codesign -d --entitlements :- "$APP/Contents/Helpers/$tool" 2>/dev/null)"
+    grep -q com.apple.security.app-sandbox <<< "$tool_ent" && grep -q com.apple.security.inherit <<< "$tool_ent" || fail "Contents/Helpers/$tool lacks app-sandbox + inherit"
+  done
+  grep -q "\"$BUNDLE_ID\"" "$ROOT/Sources/SuperConverterCore/SuperConverterPaths.swift" || fail "SuperConverterPaths.bundleID (APP_STORE) differs from APPSTORE_BUNDLE_ID $BUNDLE_ID"
+  if grep -q NSAppleEventsUsageDescription "$APP/Contents/Info.plist"; then fail "the Store edition's Info.plist asks for Apple Events"; fi
+  # No update or helper-download code may be reachable: the updater and the installer's network code aren't compiled in.
+  for marker in 'api.github.com' 'LibreOffice_' 'pandoc-3' 'tectonic-0' 'calibre-9'; do
+    if grep -q "$marker" <<< "$(strings "$APP/Contents/MacOS/$APP_EXE")"; then fail "the Store edition's binary contains '$marker' (updater or helper download)"; fi
+  done
+else
+  # LibRaw is signed without an Apple Team ID, so the hardened runtime refuses to load it unless library validation is
+  # off. Without this the app aborts at launch; fail the build instead.
+  grep -q disable-library-validation <<< "$ENTITLEMENTS" || fail "$APP embeds libraw_r.dylib but lacks com.apple.security.cs.disable-library-validation"
+  grep -q com.apple.security.automation.apple-events <<< "$ENTITLEMENTS" || fail "entitlement com.apple.security.automation.apple-events missing (iWork and Office automation)"
+  if grep -q com.apple.security.app-sandbox <<< "$ENTITLEMENTS"; then fail "the app must not be sandboxed (helpers, automation and hdiutil need it)"; fi
+fi
 # Executables and their dependencies: no rpath or library in the build tree or the toolchain, every @rpath dependency
 # inside Contents/Frameworks.
 BINARIES=("$EXE" "${NESTED[@]}")
@@ -169,11 +240,11 @@ grep -q '@executable_path/../Frameworks' <<< "$(otool -l "$EXE")" || fail "the a
 for plist in "$APP/Contents/Info.plist" "${EXTENSIONS[@]/%//Contents/Info.plist}"; do plutil -lint -s "$plist" || fail "$plist is not a valid property list"; done
 plist() { /usr/libexec/PlistBuddy -c "Print $1" "$APP/Contents/Info.plist" 2>/dev/null; }
 [ "$(plist CFBundleExecutable)" = "$APP_EXE" ] || fail "CFBundleExecutable is not $APP_EXE"
-[ "$(plist CFBundleIdentifier)" = "com.udsy.superconverter" ] || fail "CFBundleIdentifier is not com.udsy.superconverter"
+[ "$(plist CFBundleIdentifier)" = "$BUNDLE_ID" ] || fail "CFBundleIdentifier is not $BUNDLE_ID"
 [ "$(plist :CFBundleURLTypes:0:CFBundleURLSchemes:0)" = "superconverter" ] || fail "the superconverter:// scheme is not registered"
 [ "$(plutil -extract CFBundleDocumentTypes raw "$APP/Contents/Info.plist")" -eq 12 ] || fail "expected 12 document types (11 kinds and other files)"
 [ "$(plutil -extract NSServices raw "$APP/Contents/Info.plist")" -eq 6 ] || fail "expected six Services entries"
-for key in NSAppleEventsUsageDescription NSDesktopFolderUsageDescription NSDocumentsFolderUsageDescription NSDownloadsFolderUsageDescription \
+[ "$DISTRIBUTION" = direct ] && for key in NSAppleEventsUsageDescription NSDesktopFolderUsageDescription NSDocumentsFolderUsageDescription NSDownloadsFolderUsageDescription \
            NSRemovableVolumesUsageDescription NSNetworkVolumesUsageDescription; do
   plist "$key" >/dev/null || fail "Info.plist lacks $key"
 done
@@ -184,7 +255,7 @@ for ext in "${EXTENSIONS[@]}"; do
   info() { /usr/libexec/PlistBuddy -c "Print $1" "$ext/Contents/Info.plist" 2>/dev/null; }
   [ "$(info :NSExtension:NSExtensionPointIdentifier)" = "com.apple.services" ] || fail "$(basename "$ext"): not an action extension"
   [ "$(info :NSExtension:NSExtensionPrincipalClass)" = "QuickActionRequestHandler" ] || fail "$(basename "$ext"): wrong principal class"
-  [[ "$(info CFBundleIdentifier)" == com.udsy.superconverter.quickactions.* ]] || fail "$(basename "$ext"): its bundle id isn't under the app's"
+  [[ "$(info CFBundleIdentifier)" == "$BUNDLE_ID".quickactions.* ]] || fail "$(basename "$ext"): its bundle id isn't under the app's"
   [ "$(info CFBundleShortVersionString)" = "$VERSION" ] && [ "$(info CFBundleVersion)" = "$BUILD" ] || fail "$(basename "$ext"): version differs from the app's"
   info SuperConverterQuickAction >/dev/null || fail "$(basename "$ext"): no SuperConverterQuickAction key"
   grep -q LC_MAIN <<< "$(otool -l "$ext/Contents/MacOS/$EXT_EXE")" || fail "$(basename "$ext"): no entry point"

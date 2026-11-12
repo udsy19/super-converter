@@ -7,6 +7,23 @@ import Foundation
 import Security
 import SuperConverterCore
 
+#if APP_STORE
+// The Store edition has no installer (App Review 2.5.2: no downloading or installing of executable code). This stand-in
+// keeps HelperService's shape; nothing calls it, since HelperService.install answers before reaching it.
+struct InstalledHelper: Sendable {
+    var version: String
+    var path: URL
+}
+
+struct HelperInstaller: Sendable {
+    var applicationsFolder: URL
+    var helperFolder: @Sendable (HelperID, String) -> URL
+
+    func install(_ pin: HelperPin, progress: @escaping @Sendable (InstallProgress) -> Void) async throws -> InstalledHelper {
+        throw HelperError.scriptFailed(Distribution.helpersUnavailable)
+    }
+}
+#else
 enum HelperInstallError: Error, LocalizedError, Equatable {
     case noPin(HelperID)
     case http(Int)
@@ -231,3 +248,4 @@ struct HelperInstaller: Sendable {
 
     private final class ErrorBox: @unchecked Sendable { var data = Data() }
 }
+#endif

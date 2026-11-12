@@ -25,7 +25,9 @@ final class SettingsContext {
         panel.canChooseDirectories = folders
         panel.canCreateDirectories = !files
         panel.prompt = "Choose"
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        if folders && !files { FolderAccess.remember(url) }   // Store edition: Save To survives a relaunch
+        return url
     }
 }
 
