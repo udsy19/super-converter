@@ -16,6 +16,7 @@ Nothing here is Store-signed: real signing/upload is blocked on credentials (kno
   still running after 8 s, window shown, container `~/Library/Containers/com.udsy.superconverter.appstore` created
   with `Application Support/Super Converter`. Only sandbox denial during launch:
   `Sandbox: SuperConverter(45080) deny(1) iokit-open-user-client AppleNVMeEANUC` (harmless system probe).
+- Direct edition: `scripts/build-app.sh` (no DISTRIBUTION) → "Static launch checks passed" after these changes (apple-events, disable-library-validation, not sandboxed — unchanged).
 - Direct edition regression: `swift run SuperConverterSelfTest` for Core, HelperKit, UpdateKit, MenuBarKit,
   SettingsKit, App, ConvertKit, ArchiveKit, WindowKit — see §6.
 
