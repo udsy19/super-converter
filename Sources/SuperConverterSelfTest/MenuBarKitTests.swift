@@ -19,6 +19,7 @@ func registerMenuBarKitTests() {
         ("MenuBarKit.extensionPlists", menuBarExtensionPlists),
         ("MenuBarKit.quickActionsHandOff", menuBarHandOff),
         ("MenuBarKit.services", menuBarServices),
+        ("MenuBarKit.accessRequests", menuBarAccessRequests),
         ("MenuBarKit.quickActionSwitches", menuBarSwitches),
         ("MenuBarKit.quickActionsFirstLaunch", menuBarFirstLaunch),
         ("MenuBarKit.backgroundConversion", menuBarBackground),
@@ -618,6 +619,23 @@ private func isNear(_ c: NSColor, _ hex: String, tolerance: CGFloat = 0.04) -> B
     check(pluginkit[.convertWith] == " ", "“Convert with Super Converter…” is left as macOS has it")
     _ = complete(10) { await QuickActionSwitches(tools: pluginkit).electAtFirstLaunch() }
     check(pluginkit.takeRuns().isEmpty, "the second launch runs nothing")
+}
+/// Store edition folder-access requests: only the files' own folder, never a parent; nothing for files in several folders;
+/// one panel at a time and a few seconds apart, so a burst of links can't stack panels.
+@MainActor func menuBarAccessRequests() {
+    var requests = AccessRequests()
+    let t0 = Date(timeIntervalSince1970: 1_000)
+    let files = [URL(fileURLWithPath: "/Users/me/Pictures/Trip/a.heic"), URL(fileURLWithPath: "/Users/me/Pictures/Trip/b.heic")]
+    check(requests.folderToAsk(for: files, now: t0)?.path == "/Users/me/Pictures/Trip", "asks for the files' own folder")
+    check(requests.folderToAsk(for: files, now: t0.addingTimeInterval(30)) == nil, "no second panel while one is showing")
+    requests.finished()
+    check(requests.folderToAsk(for: files, now: t0.addingTimeInterval(1)) == nil, "not again within the interval")
+    check(requests.folderToAsk(for: files, now: t0.addingTimeInterval(10)) != nil, "again after the interval")
+    requests.finished()
+    let spread = [URL(fileURLWithPath: "/Users/me/a.heic"), URL(fileURLWithPath: "/Users/me/Pictures/b.heic")]
+    check(requests.folderToAsk(for: spread, now: t0.addingTimeInterval(100)) == nil, "files in several folders: no widened panel")
+    check(requests.folderToAsk(for: [URL(fileURLWithPath: "/etc/../Users/me/x/../y/c.heic")], now: t0.addingTimeInterval(200))?.path == "/Users/me/y",
+          "the folder is the standardized parent")
 }
 #else
 func registerMenuBarKitTests() {}
