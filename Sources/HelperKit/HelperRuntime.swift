@@ -16,7 +16,14 @@ final class HelperRuntime: @unchecked Sendable {
     /// Helpers found but not usable, with the reason (an FFmpeg without GPL encoders).
     private var blocked: [HelperID: String] = [:]
 
-    init(detector: HelperDetector, libreOfficeProfile: URL, tectonicCache: URL, osascript: URL = URL(fileURLWithPath: "/usr/bin/osascript")) {
+    #if APP_STORE
+    /// The Store edition sends no Apple Events; nothing runs this.
+    static let systemOsascript = URL(fileURLWithPath: "/usr/bin/false")
+    #else
+    static let systemOsascript = URL(fileURLWithPath: "/usr/bin/osascript")
+    #endif
+
+    init(detector: HelperDetector, libreOfficeProfile: URL, tectonicCache: URL, osascript: URL = HelperRuntime.systemOsascript) {
         self.detector = detector
         self.libreOfficeProfile = libreOfficeProfile
         self.tectonicCache = tectonicCache
@@ -25,14 +32,22 @@ final class HelperRuntime: @unchecked Sendable {
 
     // MARK: Where helpers are
 
-    /// Detects every helper again (file system only).
+    /// Detects every helper again (file system only). The Store edition finds none: it may not run programs from outside its
+    /// bundle, so every helper reads as unusable with the reason (Distribution.helpersUnavailable).
     func refresh() {
+        #if APP_STORE
+        lock.withLock {
+            locations = [:]
+            blocked = Dictionary(uniqueKeysWithValues: HelperID.allCases.map { ($0, Distribution.helpersUnavailable) })
+        }
+        #else
         var found: [HelperID: HelperLocation] = [:]
         for helper in HelperID.allCases { if let location = detector.locate(helper) { found[helper] = location } }
         lock.withLock {
             locations = found
             blocked = blocked.filter { found[$0.key] != nil }
         }
+        #endif
     }
 
     func location(of helper: HelperID) -> HelperLocation? { lock.withLock { blocked[helper] == nil ? locations[helper] : nil } }

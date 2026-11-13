@@ -1,5 +1,6 @@
 import AppKit
 import CoreServices
+import UniformTypeIdentifiers
 import SuperConverterCore
 import UpdateKit
 import HelperKit
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 1. Core bootstrap.
         isThrowaway = CoreBootstrap.configure()
         SuperConverterPaths.ensure(SuperConverterPaths.support)
+        FolderAccess.restore()   // Store edition: the folders the person chose before (security-scoped bookmarks)
 
         // 2. Modules in order: HelperKit, every engine, then the feature modules (ConvertKit checks the matrix against
         // every engine's converters, computes availability and sweeps the work folders of jobs whose process is gone).
@@ -70,8 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MenuBarKitModule.install()
         SettingsKitModule.install()
 
-        // 3. The app target's own: the updater, the menus, the Services entries (Info.plist `NSServices`).
+        // 3. The app target's own: the updater (direct edition only), the menus, the Services entries (Info.plist `NSServices`).
+        #if !APP_STORE
         Services.updates = Self.makeUpdater()
+        #endif
         NSApp.mainMenu = MainMenu.make()
         servicesProvider = MenuBarKitModule.servicesProvider()
         NSApp.servicesProvider = servicesProvider
@@ -103,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !self.openedFromOutside { Services.window.show() }
             }
         }
-        if !isThrowaway { Services.updates.start() }
+        if !isThrowaway { Services.updates?.start() }
     }
 
     // MARK: Files and links (Finder's Open and Open With, the Dock icon, Quick Actions, `superconverter://`)
@@ -164,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The status shows in Settings › About, next to the automatic-updates switch.
     @objc func checkForUpdates(_ sender: Any?) {
-        Services.updates.checkNow()
+        Services.updates?.checkNow()
         Services.settings.show(pane: .about)
     }
 
@@ -172,8 +176,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(SuperConverterPaths.repository.appendingPathComponent("blob/main/README.md"))
     }
 
+    /// Store edition: "Import Settings from Another Copy…" copies the direct edition's preferences file, which the
+    /// person picks (the open panel starts at it), into this edition's. The direct edition's files stay as they are.
+    @objc func importDirectSettings(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.directoryURL = DirectEditionImport.preferencesFile.deletingLastPathComponent()
+        panel.nameFieldStringValue = DirectEditionImport.preferencesFile.lastPathComponent
+        panel.allowedContentTypes = [.propertyList]
+        panel.prompt = "Import"
+        panel.message = "Choose \(DirectEditionImport.preferencesFile.lastPathComponent), the settings of another copy of Super Converter. They are copied; nothing there changes."
+        guard panel.runModal() == .OK, let file = panel.url else { return }
+        let alert = NSAlert()
+        do {
+            let count = try DirectEditionImport.importPreferences(from: file)
+            alert.messageText = count == 0 ? "No settings to import" : "Imported \(count) settings"
+        } catch {
+            alert.messageText = "The settings couldn’t be imported"
+            alert.informativeText = error.localizedDescription
+        }
+        alert.runModal()
+    }
+
     // MARK: The engine the app target owns
 
+    #if !APP_STORE
     /// UpdateKit on this repository's releases. Automatic checks follow Settings › General "Check for updates"; "Check for
     /// Updates…" always checks. A staged update goes in when the app quits, or sooner when it is idle: in the background,
     /// nothing converting, no files waiting in the window and nothing asking a question.
@@ -188,4 +214,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     !NSApp.isActive && NSApp.modalWindow == nil && Services.queue.activeCount == 0 && !Services.window.hasWork
                 })
     }
+    #endif
 }

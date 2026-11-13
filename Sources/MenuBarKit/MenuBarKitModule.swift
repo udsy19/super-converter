@@ -33,6 +33,9 @@ public enum MenuBarKitModule {
     /// else fills the window with the files and the target instead and waits for the person; such a link brings files
     /// only, never folders, so a web page can't make the window read a whole folder.
     @MainActor public static func handle(_ link: QuickActionLink, from origin: LinkOrigin) {
+        // Store edition: only the app's own Quick Actions and Services may ask for folder access; a link from anywhere
+        // else (a web page) never brings up a panel, it only fills the window with what the app can already read.
+        if Distribution.isAppStore, origin == .thisApp, !grantAccess(to: link.files) { return }
         switch (link.verb, origin) {
         case (.convert, .thisApp):
             background.convert(link.files, target: link.target)
@@ -50,6 +53,28 @@ public enum MenuBarKitModule {
         }
     }
 
+    /// Store edition: a Quick Action hands over paths, and the App Sandbox lets the app read only what the person chose. When
+    /// the files can't be read, an open panel at their own folder asks for it; the folder is remembered (FolderAccess), so
+    /// later Quick Actions there convert straight away, and results can go next to the originals. Never more than one
+    /// panel at a time, at most one every few seconds, and only at the files' own folder (`AccessRequests`).
+    @MainActor static func grantAccess(to files: [URL]) -> Bool {
+        if FolderAccess.canRead(files) { return true }
+        guard let folder = accessRequests.folderToAsk(for: files, now: Date()) else { return false }
+        defer { accessRequests.finished() }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.directoryURL = folder
+        panel.prompt = "Allow"
+        panel.message = "Super Converter needs your permission to open the files in “\(folder.lastPathComponent)” and save next to them."
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let chosen = panel.url else { return false }
+        FolderAccess.remember(chosen)
+        return FolderAccess.canRead(files)
+    }
+
+    @MainActor static var accessRequests = AccessRequests()
+
     /// Handles a `superconverter://open` or `superconverter://convert` URL; false for anything else.
     @MainActor @discardableResult public static func handle(_ url: URL, from origin: LinkOrigin) -> Bool {
         guard let link = QuickActionLink(url) else { return false }
@@ -61,4 +86,23 @@ public enum MenuBarKitModule {
     @MainActor public static func servicesProvider() -> NSObject {
         ServicesProvider(dispatch: { handle($0, from: .thisApp) })
     }
+}
+
+/// When the Store edition may ask for folder access for a Quick Action: one panel at a time, at least `interval` seconds
+/// apart, only when every file sits in one folder (that folder, never a parent of it).
+struct AccessRequests {
+    var interval: TimeInterval = 5
+    private(set) var isAsking = false
+    private(set) var lastAsked: Date?
+
+    mutating func folderToAsk(for files: [URL], now: Date) -> URL? {
+        let folders = Set(files.map { $0.deletingLastPathComponent().standardizedFileURL })
+        guard folders.count == 1, let folder = folders.first, !isAsking else { return nil }
+        if let lastAsked, now.timeIntervalSince(lastAsked) < interval { return nil }
+        isAsking = true
+        lastAsked = now
+        return folder
+    }
+
+    mutating func finished() { isAsking = false }
 }

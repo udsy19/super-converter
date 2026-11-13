@@ -60,7 +60,7 @@ public final class HelperService: HelperManaging {
         self.init(override: override, applications: home.appendingPathComponent("Applications", isDirectory: true),
                   recordFile: SuperConverterPaths.helpersRecord, libreOfficeProfile: SuperConverterPaths.libreOfficeProfile,
                   tectonicCache: SuperConverterPaths.tectonicCache, helperFolder: { SuperConverterPaths.helper($0, version: $1) },
-                  installer: nil, pins: { HelperPins.pin(for: $0) }, osascript: URL(fileURLWithPath: "/usr/bin/osascript"),
+                  installer: nil, pins: { HelperPins.pin(for: $0) }, osascript: HelperRuntime.systemOsascript,
                   remove: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
     }
 
@@ -125,6 +125,10 @@ public final class HelperService: HelperManaging {
     }
 
     public func install(_ helper: HelperID) -> AsyncStream<InstallProgress> {
+        #if APP_STORE
+        // No downloads of executable code in the Store edition (App Review 2.5.2): the installer isn't compiled in.
+        return AsyncStream { $0.yield(.failed(Distribution.helpersUnavailable)); $0.finish() }
+        #else
         AsyncStream { continuation in
             guard case .oneClick = HelperCatalog.info(helper).install, let pin = pinFor(helper) else {
                 continuation.yield(.failed(HelperError.notOneClick(helper).localizedDescription)); continuation.finish(); return
@@ -151,6 +155,7 @@ public final class HelperService: HelperManaging {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+        #endif
     }
 
     public func remove(_ helper: HelperID) throws {
@@ -173,6 +178,10 @@ public final class HelperService: HelperManaging {
     }
 
     public func automate(app: HelperID, script: String) async throws -> String {
+        #if APP_STORE
+        // No Apple Events in the Store edition (no automation entitlement).
+        throw HelperError.scriptFailed(Distribution.helpersUnavailable)
+        #else
         guard runtime.location(of: app) != nil else { throw ConversionError.helperMissing(app) }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("superconverter-automation-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -180,12 +189,16 @@ public final class HelperService: HelperManaging {
         let result = try await runtime.run(app, runtime.osascript, ["-e", script], workFolder: folder, timeLimit: IWorkConverter.timeLimit, sandbox: false)
         guard result.exitCode == 0 else { throw HelperError.scriptFailed(result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        #endif
     }
 
     // MARK: "Get…"
 
     public nonisolated static func getAction(for helper: HelperID) -> HelperGetAction {
-        switch HelperCatalog.info(helper).install {
+        #if APP_STORE
+        return .nothing   // the Store edition installs and points to nothing outside
+        #else
+        return switch HelperCatalog.info(helper).install {
         case .oneClick: .installHere
         case .vendorPage(let url): .openPage(url)
         case .appStore(let url): .openAppStore(url)
@@ -193,6 +206,7 @@ public final class HelperService: HelperManaging {
         case .buildFromSource(let url): .buildFromSource(url)
         case .detectOnly: .nothing
         }
+        #endif
     }
 
     // MARK: Changes and the background pass

@@ -13,7 +13,9 @@ enum MainMenu {
         NSApp.servicesMenu = services
         add(app, [
             item("About \(Strings.appName)", "showAbout:"),
-            item("Check for Updates…", "checkForUpdates:"),
+            // The Mac App Store updates the Store edition; it imports the direct edition's settings instead.
+            Distribution.isAppStore ? item("Import Settings from Another Copy…", "importDirectSettings:")
+                                    : item("Check for Updates…", "checkForUpdates:"),
             .separator(),
             item("Settings…", "showSettings:", ","),
             .separator(),

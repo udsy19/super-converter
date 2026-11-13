@@ -9,7 +9,9 @@ struct AboutPane: View {
     @State private var sections: [NoticeSection]?
     @State private var showLicences = false
 
-    static let privacy = "Nothing leaves the Mac. The only network traffic: the update check (GitHub Releases, can be turned off), helper downloads you start with Install, and — only when you turn on “Load web resources” for one HTML file — that page’s own pictures and styles. No accounts, no analytics, no crash upload."
+    static let privacy = Distribution.isAppStore
+        ? "Nothing leaves the Mac. The only network traffic: only when you turn on “Load web resources” for one HTML file, that page’s own pictures and styles. No accounts, no analytics, no crash upload."
+        : "Nothing leaves the Mac. The only network traffic: the update check (GitHub Releases, can be turned off), helper downloads you start with Install, and — only when you turn on “Load web resources” for one HTML file — that page’s own pictures and styles. No accounts, no analytics, no crash upload."
     static let noticesPage = SuperConverterPaths.repository.appendingPathComponent("blob/main/THIRD_PARTY_NOTICES.md")
 
     init(context: SettingsContext, showLicences: Bool = false) {
@@ -25,7 +27,8 @@ struct AboutPane: View {
                 Text(Strings.appName).scFont(SCFont.display).foregroundStyle(Color.scLabel)
                 Text("Version \(context.version)").scFont(SCFont.body).foregroundStyle(Color.scSecondary)
             }
-            CardList {
+            // The Store edition has no updater (the Mac App Store updates it).
+            if context.updates() != nil { CardList {
                 SettingsRow(title: "Updates", detail: model.statusText.isEmpty ? nil : model.statusText) {
                     HStack(spacing: 8) {
                         if model.readyVersion != nil { Button("Install and Restart") { model.installNow() } }
@@ -36,7 +39,7 @@ struct AboutPane: View {
                 SettingsRow(title: "Check for updates automatically") {
                     Toggle("Check for updates automatically", isOn: $automatic).labelsHidden().toggleStyle(.switch)
                 }
-            }
+            } }
             CardList {
                 SettingsRow(title: "Privacy", detail: Self.privacy) { EmptyView() }
             }

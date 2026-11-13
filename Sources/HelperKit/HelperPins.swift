@@ -41,6 +41,10 @@ enum HelperPins {
     private static func url(_ text: String) -> URL { URL(string: text)! }
 
     /// Versions and digests were taken from upstream's release pages (the digests are upstream's published ones; the arm64 files and calibre's image were hashed again after download).
+    #if APP_STORE
+    /// None in the Store edition: it downloads no programs.
+    static let all: [HelperPin] = []
+    #else
     static let all: [HelperPin] = [
         HelperPin(helper: .libreoffice, version: "26.8.1", arch: .arm64,
                   url: url("https://download.documentfoundation.org/libreoffice/stable/26.8.1/mac/aarch64/LibreOffice_26.8.1_MacOS_aarch64.dmg"),
@@ -76,4 +80,5 @@ enum HelperPins {
                   sha256: "7c90ef5b6ddb1eb1937e4337add5237b79338e4b9676459fa91187d24d6cdf80",
                   payload: .tarGzBinary(binary: "tectonic")),
     ]
+    #endif
 }

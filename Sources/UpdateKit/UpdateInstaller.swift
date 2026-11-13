@@ -1,3 +1,5 @@
+// The Store edition has no updater: the Mac App Store updates it (App Review 2.4.5(vii)).
+#if !APP_STORE
 // Origin: Super Flow Sources/UpdateKit/UpdateInstaller.swift (c1edfc4), by way of Super PDF Sources/UpdateKit/UpdateInstaller.swift (afce4c6).
 // Configured through initialisers (repository udsy19/super-converter, asset SuperConverter). Unchanged apart from the module name.
 
@@ -274,3 +276,4 @@ public struct UpdateInstaller {
         exit 0
         """
 }
+#endif

@@ -46,7 +46,10 @@ final class SystemFileActions: NSObject, FileActions {
             let types = format.utTypes
             if !types.isEmpty { panel.allowedContentTypes = types }
         }
-        return panel.runModal() == .OK ? panel.urls : []
+        guard panel.runModal() == .OK else { return [] }
+        // Store edition: a folder chosen here stays reachable, and results can go next to its files.
+        for url in panel.urls where url.hasDirectoryPath { FolderAccess.remember(url) }
+        return panel.urls
     }
 
     func chooseFolder() -> URL? {
@@ -55,11 +58,16 @@ final class SystemFileActions: NSObject, FileActions {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        FolderAccess.remember(url)   // Store edition: Save To survives a relaunch
+        return url
     }
 
     func get(_ helper: HelperID) {
         let info = HelperCatalog.info(helper)
+        #if APP_STORE
+        explain("\(info.name) isn’t available", Distribution.helpersUnavailable)
+        #else
         switch info.install {
         case .oneClick(let page), .vendorPage(let page), .appStore(let page):
             NSWorkspace.shared.open(page)
@@ -70,6 +78,7 @@ final class SystemFileActions: NSObject, FileActions {
         case .detectOnly:
             explain("\(info.name) is detected, not installed", "Install \(info.name) from its vendor and Super Converter will use it.")
         }
+        #endif
     }
 
     private func explain(_ title: String, _ detail: String) {

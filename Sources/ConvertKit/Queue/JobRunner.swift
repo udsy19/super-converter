@@ -68,10 +68,21 @@ struct JobRunner: Sendable {
         }
     }
 
+    static func sameVolume(_ a: URL, _ b: URL) -> Bool {
+        let key: Set<URLResourceKey> = [.volumeIdentifierKey]
+        guard let x = try? a.resourceValues(forKeys: key).volumeIdentifier, let y = try? b.resourceValues(forKeys: key).volumeIdentifier else { return false }
+        return x.isEqual(y)
+    }
+
     private func execute(in work: URL) async throws -> ConversionResult {
         let request = plan.request
         guard FileManager.default.fileExists(atPath: request.source.path) else {
             throw ConversionError.failed("Super Converter can’t find \(Strings.quoted(request.source.lastPathComponent))")
+        }
+        // Store edition: a file the sandbox doesn't let the app read (a link that named it, never chosen) says so, rather
+        // than surfacing as a write error further on.
+        if Distribution.isAppStore, !FileManager.default.isReadableFile(atPath: request.source.path) {
+            throw ConversionError.failed("Super Converter can’t open \(Strings.quoted(request.source.lastPathComponent)). Add it again from Finder or with Add Files…")
         }
         let inputBytes = Self.size(of: request.source)
 
@@ -80,6 +91,12 @@ struct JobRunner: Sendable {
         let folder = early.url.deletingLastPathComponent()
         if SuperConverterPaths.freeSpace(at: folder) < inputBytes {
             throw ConversionError.notEnoughSpace(volume: OutputRules.volumeName(of: folder), needed: inputBytes - SuperConverterPaths.freeSpace(at: folder))
+        }
+        // Store edition: the bundled tools read a copy in the work folder (ToolStaging); from another volume that copy is
+        // real, so the container's volume needs room for it too.
+        if ToolStaging.needsCopy(request.source), !Self.sameVolume(request.source, work) {
+            let free = SuperConverterPaths.freeSpace(at: work)
+            if free < inputBytes { throw ConversionError.notEnoughSpace(volume: OutputRules.volumeName(of: work), needed: inputBytes - free) }
         }
 
         var value = StepValue.file(request.source)

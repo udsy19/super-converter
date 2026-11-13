@@ -21,7 +21,9 @@ final class PanelModel: ObservableObject {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
         panel.prompt = "Choose"
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        FolderAccess.remember(url)   // Store edition: Save To survives a relaunch
+        return url
     }
     /// True while the panel is on screen; a run that ends with the panel closed posts a notification (ux §5.7).
     var isShown = false

@@ -3,7 +3,12 @@ import Foundation
 /// Where Super Converter keeps its files (ARCHITECTURE §8): ~/Library/Application Support/Super Converter/ and
 /// ~/Library/Caches/Super Converter/.
 public enum SuperConverterPaths {
+    #if APP_STORE
+    /// The Store edition's id (scripts/build-app.sh APPSTORE_BUNDLE_ID must match; the build checks it).
+    public static let bundleID = "com.udsy.superconverter.appstore"
+    #else
     public static let bundleID = "com.udsy.superconverter"
+    #endif
     public static let appName = "Super Converter"
     public static let supportFolderName = "Super Converter"
     /// The `superconverter://convert?file=…&to=jpg` URL scheme (ARCHITECTURE §3, app target).

@@ -1,3 +1,5 @@
+// The Store edition has no updater: the Mac App Store updates it (App Review 2.4.5(vii)).
+#if !APP_STORE
 // Origin: Super Flow Sources/UpdateKit/UpdateLogic.swift (c1edfc4), by way of Super PDF Sources/UpdateKit/UpdateLogic.swift (afce4c6).
 // Configured through initialisers (repository udsy19/super-converter, asset SuperConverter). Changed here: one channel (`releases/latest`, never a pre-release) and no managed-preferences file.
 
@@ -230,3 +232,4 @@ public enum UpdateSchedule {
         return elapsed >= minimumGap || elapsed < 0
     }
 }
+#endif

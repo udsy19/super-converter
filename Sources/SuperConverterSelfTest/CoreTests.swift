@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 // Owned with SuperConverterCore: the contracts every module builds on.
 func registerCoreTests() {
     SelfTest.cases.append(("Core.formats", { coreFormats() }))
+    SelfTest.cases.append(("Core.directEditionImport", { coreDirectEditionImport() }))
     SelfTest.cases.append(("Core.formatDetails", { coreFormatDetails() }))
     SelfTest.cases.append(("Core.matrixShape", { coreMatrixShape() }))
     SelfTest.cases.append(("Core.matrixSteps", { coreMatrixSteps() }))
@@ -662,4 +663,37 @@ private func coreFakes() {
     Services.updates.checkNow()
     check((Services.updates as! FakeUpdates).checks == 1, "the updater records checks")
     Services.converters = ConverterList()
+}
+
+/// Store edition, "Import Settings from the Direct Download…": a preferences file laid out as the direct edition writes it
+/// (Defaults keys plus AppKit's own) is copied key by key; window frames, open-panel state, helper paths, the updater
+/// switch and the Quick Action election stay behind, and the source file is not changed.
+@MainActor func coreDirectEditionImport() {
+    let folder = scratch.appendingPathComponent("direct-import", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let file = folder.appendingPathComponent("com.udsy.superconverter.plist")
+    let direct: [String: Any] = [
+        "general.outputPlace": "downloads", "general.collisionPolicy": "replace", "general.playSound": true,
+        "general.checkForUpdates": false, "target.heic": "jpg", "options.jpg": Data(#"{"quality":"80"}"#.utf8),
+        "window.viewMode": "list", "helpers.path.pandoc": "file:///opt/homebrew/bin/pandoc",
+        "menuBarKit.quickActionsElected": true, "NSWindow Frame SuperConverterMainWindow": "216 205 1080 700 0 0 1512 949 ",
+        "NSNavPanelExpandedSizeForOpenMode": "{880, 448}",
+    ]
+    guard let data = try? PropertyListSerialization.data(fromPropertyList: direct, format: .binary, options: 0),
+          (try? data.write(to: file)) != nil else { check(false, "fixture written"); return }
+    let suite = "superconverter-selftest-import-\(UUID().uuidString)"
+    guard let target = UserDefaults(suiteName: suite) else { check(false, "suite"); return }
+    defer { target.removePersistentDomain(forName: suite) }
+    let count = (try? DirectEditionImport.importPreferences(from: file, into: target)) ?? -1
+    check(count == 6, "six keys imported, got \(count)")
+    check(target.string(forKey: "general.outputPlace") == "downloads", "Save To comes over")
+    check(target.string(forKey: "target.heic") == "jpg", "format choices come over")
+    check(target.data(forKey: "options.jpg") != nil, "saved options come over")
+    check(target.object(forKey: "general.checkForUpdates") == nil, "updater switch stays behind")
+    check(target.object(forKey: "helpers.path.pandoc") == nil, "helper paths stay behind")
+    check(target.object(forKey: "menuBarKit.quickActionsElected") == nil, "Quick Action election stays behind")
+    check(target.object(forKey: "NSWindow Frame SuperConverterMainWindow") == nil, "AppKit state stays behind")
+    check((try? Data(contentsOf: file)) == data, "the direct edition's file is unchanged")
+    check((try? DirectEditionImport.importPreferences(from: folder.appendingPathComponent("missing.plist"), into: target)) == nil, "a missing file throws")
+    check(DirectEditionImport.preferencesFile.path.hasSuffix("/Library/Preferences/com.udsy.superconverter.plist"), "the panel starts at the direct edition's file")
 }
