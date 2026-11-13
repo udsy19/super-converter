@@ -8,7 +8,10 @@
 # Verify with `scripts/tools.sh check` (licence, linkage, slices) and `scripts/tools.sh smoke`.
 #
 # Recipe (docs/ARCHITECTURE.md WP0c, docs/specs/formats.md §2-3):
-#   - LGPL-3.0-or-later as a whole: --enable-version3 --disable-gpl --disable-nonfree, nothing else that is GPL
+#   - LGPL-2.1-or-later as a whole: --disable-gpl --disable-nonfree, no --enable-version3 (nothing here needs v3;
+#     LGPL-2.1+ is the friendlier licence for the Mac App Store edition), nothing else that is GPL
+#   - reproducible paths: the build folder never ends up in the binaries (-ffile-prefix-map for every library and
+#     FFmpeg; FFmpeg's recorded configuration and data folder rewritten in config.h after configure)
 #   - video: VideoToolbox (H.264/HEVC/ProRes encode+decode), libvpx (VP8/VP9), SVT-AV1 (AV1 encode), dav1d (AV1
 #     decode), libtheora; audio: AudioToolbox (AAC/ALAC/...), libopus, libvorbis, LAME; AMR only through FFmpeg's
 #     native amrnb/amrwb decoders (no AMR encoder is built, formats §2.7); images/subtitles/filters: libwebp, libass
@@ -39,7 +42,7 @@ build_arch() { # arch
         x86_64) host_triple="x86_64-apple-darwin" ;;
     esac
 
-    local cflags="-arch $arch -O2 -isysroot $sdk -mmacosx-version-min=$DEPLOYMENT_TARGET -I$P/include"
+    local cflags="-arch $arch -O2 -isysroot $sdk -mmacosx-version-min=$DEPLOYMENT_TARGET -I$P/include -ffile-prefix-map=$WORK=. -ffile-prefix-map=$sdk=SDK"
     local ldflags="-arch $arch -isysroot $sdk -mmacosx-version-min=$DEPLOYMENT_TARGET -L$P/lib"
     export PATH="$WORK/host/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"   # Homebrew last: build tools only
     export CC="clang -arch $arch" CXX="clang++ -arch $arch" OBJC="clang -arch $arch"
@@ -107,6 +110,7 @@ EOM
         --enable-vp8 --enable-vp9 --enable-vp9-highbitdepth --enable-pic --enable-runtime-cpu-detect \
         --enable-multithread --disable-shared --enable-static --disable-examples --disable-tools --disable-docs \
         --disable-unit-tests --disable-webm-io --extra-cflags="-mmacosx-version-min=$DEPLOYMENT_TARGET" >/dev/null &&
+        sed -i '' -e "s|$WORK|.|g" vpx_config.c &&   # libvpx keeps its configure line (with --prefix) in the library
         make -j "$jobs" >/dev/null && make install >/dev/null)
 
     log "[$arch] SVT-AV1"; unpack svtav1
@@ -158,15 +162,25 @@ EOM
     (mkdir -p "$B/ffmpeg" && cd "$B/ffmpeg" && "$SRC_DIR/configure" --prefix="$WORK/$arch/ffmpeg-install" \
         --cc="clang -arch $arch" --cxx="clang++ -arch $arch" --arch="$arch" --target-os=darwin ${cross[@]+"${cross[@]}"} \
         --extra-cflags="$cflags" --extra-ldflags="$ldflags" --pkg-config-flags=--static \
-        --enable-version3 --disable-gpl --disable-nonfree --disable-autodetect \
+        --disable-gpl --disable-nonfree --disable-autodetect \
         --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay \
         --disable-network --disable-indevs --enable-indev=lavfi --disable-outdevs \
         --enable-zlib --enable-bzlib --enable-iconv --enable-audiotoolbox --enable-videotoolbox \
         --enable-libvpx --enable-libsvtav1 --enable-libdav1d \
         --enable-libopus --enable-libvorbis --enable-libtheora --enable-libmp3lame \
         --enable-libwebp --enable-libsoxr --enable-libzimg \
-        --enable-libass --enable-libfreetype --enable-libharfbuzz --enable-libfribidi >/dev/null &&
+        --enable-libass --enable-libfreetype --enable-libharfbuzz --enable-libfribidi > configure.out 2>&1 ||
+        { tail -20 configure.out >&2; tail -40 ffbuild/config.log >&2; exit 1; }
+        cd "$B/ffmpeg" &&
+        sed -i '' -e "s|$WORK|.|g" -e "s|$sdk|SDK|g" config.h &&
         make -j "$jobs" >/dev/null && make install >/dev/null)
+    # Nothing of the build machine's folders may remain in the executables.
+    local tool
+    for tool in ffmpeg ffprobe; do
+        if strings -a "$WORK/$arch/ffmpeg-install/bin/$tool" | grep -q -F "$WORK"; then
+            echo "error: $tool ($arch) still contains the build folder $WORK" >&2; return 1
+        fi
+    done
 }
 
 cmd_build() {

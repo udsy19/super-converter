@@ -23,7 +23,7 @@ SRC_ASSET="tools-sources.tar.gz"
 
 # id | name | SPDX licence | homepage | licence files inside the tarball (relative to its top-level directory)
 COMPONENTS=(
-"ffmpeg|FFmpeg|LGPL-3.0-or-later (built without --enable-gpl and --enable-nonfree)|https://ffmpeg.org|COPYING.LGPLv3 COPYING.GPLv3 COPYING.LGPLv2.1 LICENSE.md"
+"ffmpeg|FFmpeg|LGPL-2.1-or-later (built without --enable-gpl, --enable-nonfree and --enable-version3)|https://ffmpeg.org|COPYING.LGPLv3 COPYING.GPLv3 COPYING.LGPLv2.1 LICENSE.md"
 "libvpx|libvpx (VP8/VP9)|BSD-3-Clause + WebM patent grant|https://www.webmproject.org|LICENSE PATENTS"
 "svtav1|SVT-AV1 (AV1 encoder)|BSD-3-Clause-Clear + AOMedia patent licence (some files BSD-2-Clause)|https://gitlab.com/AOMediaCodec/SVT-AV1|LICENSE.md LICENSE-BSD2.md PATENTS.md"
 "dav1d|dav1d (AV1 decoder)|BSD-2-Clause|https://code.videolan.org/videolan/dav1d|COPYING doc/PATENTS"
@@ -75,16 +75,16 @@ check_ffmpeg_licence() { # path
     local bin="$1" arch conf lic
     for arch in "${ARCHS[@]}"; do
         conf="$(run_slice "$arch" "$bin" -hide_banner -buildconf 2>&1)"
-        grep -q -- '--enable-version3' <<<"$conf" || die "$(basename "$bin") ($arch): not built with --enable-version3"
+        if grep -q -- '--enable-version3' <<<"$conf"; then die "$(basename "$bin") ($arch): built with --enable-version3 (LGPL-3.0); the recipe is LGPL-2.1+"; fi
         grep -q -- '--disable-gpl' <<<"$conf" || die "$(basename "$bin") ($arch): --disable-gpl missing"
         if grep -q -E -- '--enable-(gpl|nonfree|libx264|libx265|libxvid|libfdk-aac|libxavs|libxavs2|libdavs2|libvidstab|librubberband|frei0r|openssl|libaribb24|libsmbclient|libcdio|avisynth|decklink)' <<<"$conf"; then
             die "$(basename "$bin") ($arch): GPL / nonfree option in -buildconf"
         fi
         lic="$(run_slice "$arch" "$bin" -hide_banner -L 2>&1 | tr '\n' ' ')"
-        [[ "$lic" == *"GNU Lesser General Public License"*"version 3"* && "$lic" != *"GNU General Public License"*"modify it under the terms of the GNU General"* ]] ||
-            die "$(basename "$bin") ($arch): -L does not report LGPL v3 or later: $lic"
+        [[ "$lic" == *"GNU Lesser General Public"*"version 2.1"* && "$lic" != *"version 3"* && "$lic" != *"modify it under the terms of the GNU General"* ]] ||
+            die "$(basename "$bin") ($arch): -L does not report LGPL v2.1 or later: $lic"
     done
-    log "    $(basename "$bin"): LGPL-3.0-or-later (-L), no GPL/nonfree options in -buildconf"
+    log "    $(basename "$bin"): LGPL-2.1-or-later (-L), no GPL/nonfree options in -buildconf"
 }
 
 cmd_check() {
@@ -230,8 +230,8 @@ upstream source: `ffmpeg`, `ffprobe` (FFmpeg, with the libraries below linked st
 
 ### Licence compliance (LGPL)
 
-- **FFmpeg is licensed LGPL-3.0-or-later as a whole.** The build uses `--enable-version3 --disable-gpl
-  --disable-nonfree`; no GPL or non-free component is compiled in (no x264, x265, Xvid, fdk-aac, libxavs, rubberband,
+- **FFmpeg is licensed LGPL-2.1-or-later as a whole.** The build uses `--disable-gpl --disable-nonfree` and not
+  `--enable-version3`; no GPL or non-free component is compiled in (no x264, x265, Xvid, fdk-aac, libxavs, rubberband,
   OpenSSL). `ffmpeg -L` and `ffmpeg -buildconf` show this, and `scripts/tools.sh check` fails the build otherwise.
   No AMR encoder is built (formats §2.7); AMR is read by FFmpeg's own decoders.
 - **7-Zip** is LGPL-2.1-or-later with BSD-3-Clause parts and the **unRAR licence restriction** (below).
@@ -245,13 +245,27 @@ upstream source: `ffmpeg`, `ffprobe` (FFmpeg, with the libraries below linked st
   at https://github.com/udsy19/super-converter/issues).
 - **You may replace these programs.** They are ordinary Mach-O executables in `Contents/Helpers/`. Build your own
   with the published scripts (`scripts/build-ffmpeg.sh build`) and put the result in their place; macOS requires
-  replaced code to carry a signature (`codesign --force --sign - <file>`).
+  replaced code to carry a signature (`codesign --force --sign - <file>`). (Direct-download edition; for the Mac App
+  Store edition see below.)
+
+### Mac App Store edition
+
+- The same `ffmpeg`, `ffprobe` and `7zz`, under the same licences, with the same complete corresponding source and the
+  same written offer as above (valid for at least three years from when you received the app, for anyone, at no more
+  than the cost of providing it: open an issue at https://github.com/udsy19/super-converter/issues).
+- In the Mac App Store edition these programs are sealed inside the app's Store signature and sandbox, so swapping a
+  file inside the installed app is not the way to use a modified version. Instead build Super Converter itself (MIT,
+  full source in this repository) with your own build of the tools: `scripts/build-ffmpeg.sh build`, then
+  `DISTRIBUTION=appstore scripts/build-app.sh` (or the direct edition with `scripts/build-app.sh`); the scripts take
+  the tools from `Vendor/Tools/`.
+- The Mac App Store edition never writes RAR archives and runs no outside `rar`; it only reads RAR with `7zz`.
 
 ### unRAR licence restriction (7-Zip)
 
 `7zz` contains the unRAR decoder (`CPP/7zip/Compress/Rar*`) under the "GNU LGPL with unRAR license restriction".
 Super Converter uses it **only to read RAR archives**. The code cannot create RAR archives and must not be used to
-develop a RAR (WinRAR)-compatible archiver; RAR output in Super Converter requires the user's own licensed `rar`.
+develop a RAR (WinRAR)-compatible archiver; RAR output in the direct-download edition requires the user's own
+licensed `rar` (the Mac App Store edition has no RAR output).
 The unRAR sources are unmodified; the licence also forbids charging a fee for the distribution of unRAR itself
 (clause 3), so `7zz` is never sold or licensed separately. The licence text is reproduced below.
 
@@ -354,7 +368,7 @@ cmd_release() {
     else
         gh release create "$tag" "$DIST/$BIN_ASSET" "$DIST/$SRC_ASSET" --repo "$REPO" --prerelease \
             --title "Bundled executables $tag" --notes \
-"Universal (arm64 + x86_64, macOS 14+) \`ffmpeg\`, \`ffprobe\` (LGPL-3.0-or-later build) and \`7zz\` (7-Zip), built by scripts/build-ffmpeg.sh and scripts/build-7zz.sh. \`$SRC_ASSET\` is the complete corresponding source (all upstream tarballs, build scripts, Tools.lock). Licences: Tools/Licenses inside \`$BIN_ASSET\` and THIRD_PARTY_NOTICES.md. Fetched by scripts/tools.sh fetch, pinned by SHA-256 in Tools.lock. Not an app release."
+"Universal (arm64 + x86_64, macOS 14+) \`ffmpeg\`, \`ffprobe\` (LGPL-2.1-or-later build) and \`7zz\` (7-Zip), built by scripts/build-ffmpeg.sh and scripts/build-7zz.sh. \`$SRC_ASSET\` is the complete corresponding source (all upstream tarballs, build scripts, Tools.lock). Licences: Tools/Licenses inside \`$BIN_ASSET\` and THIRD_PARTY_NOTICES.md. Fetched by scripts/tools.sh fetch, pinned by SHA-256 in Tools.lock. Not an app release."
     fi
     lock_set release - "$tag"
     lock_set asset "$BIN_ASSET" "$(sha256_of "$DIST/$BIN_ASSET")"

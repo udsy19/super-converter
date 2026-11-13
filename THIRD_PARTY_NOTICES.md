@@ -10,8 +10,8 @@ upstream source: `ffmpeg`, `ffprobe` (FFmpeg, with the libraries below linked st
 
 ### Licence compliance (LGPL)
 
-- **FFmpeg is licensed LGPL-3.0-or-later as a whole.** The build uses `--enable-version3 --disable-gpl
-  --disable-nonfree`; no GPL or non-free component is compiled in (no x264, x265, Xvid, fdk-aac, libxavs, rubberband,
+- **FFmpeg is licensed LGPL-2.1-or-later as a whole.** The build uses `--disable-gpl --disable-nonfree` and not
+  `--enable-version3`; no GPL or non-free component is compiled in (no x264, x265, Xvid, fdk-aac, libxavs, rubberband,
   OpenSSL). `ffmpeg -L` and `ffmpeg -buildconf` show this, and `scripts/tools.sh check` fails the build otherwise.
   No AMR encoder is built (formats §2.7); AMR is read by FFmpeg's own decoders.
 - **7-Zip** is LGPL-2.1-or-later with BSD-3-Clause parts and the **unRAR licence restriction** (below).
@@ -25,13 +25,27 @@ upstream source: `ffmpeg`, `ffprobe` (FFmpeg, with the libraries below linked st
   at https://github.com/udsy19/super-converter/issues).
 - **You may replace these programs.** They are ordinary Mach-O executables in `Contents/Helpers/`. Build your own
   with the published scripts (`scripts/build-ffmpeg.sh build`) and put the result in their place; macOS requires
-  replaced code to carry a signature (`codesign --force --sign - <file>`).
+  replaced code to carry a signature (`codesign --force --sign - <file>`). (Direct-download edition; for the Mac App
+  Store edition see below.)
+
+### Mac App Store edition
+
+- The same `ffmpeg`, `ffprobe` and `7zz`, under the same licences, with the same complete corresponding source and the
+  same written offer as above (valid for at least three years from when you received the app, for anyone, at no more
+  than the cost of providing it: open an issue at https://github.com/udsy19/super-converter/issues).
+- In the Mac App Store edition these programs are sealed inside the app's Store signature and sandbox, so swapping a
+  file inside the installed app is not the way to use a modified version. Instead build Super Converter itself (MIT,
+  full source in this repository) with your own build of the tools: `scripts/build-ffmpeg.sh build`, then
+  `DISTRIBUTION=appstore scripts/build-app.sh` (or the direct edition with `scripts/build-app.sh`); the scripts take
+  the tools from `Vendor/Tools/`.
+- The Mac App Store edition never writes RAR archives and runs no outside `rar`; it only reads RAR with `7zz`.
 
 ### unRAR licence restriction (7-Zip)
 
 `7zz` contains the unRAR decoder (`CPP/7zip/Compress/Rar*`) under the "GNU LGPL with unRAR license restriction".
 Super Converter uses it **only to read RAR archives**. The code cannot create RAR archives and must not be used to
-develop a RAR (WinRAR)-compatible archiver; RAR output in Super Converter requires the user's own licensed `rar`.
+develop a RAR (WinRAR)-compatible archiver; RAR output in the direct-download edition requires the user's own
+licensed `rar` (the Mac App Store edition has no RAR output).
 The unRAR sources are unmodified; the licence also forbids charging a fee for the distribution of unRAR itself
 (clause 3), so `7zz` is never sold or licensed separately. The licence text is reproduced below.
 
@@ -39,7 +53,7 @@ The unRAR sources are unmodified; the licence also forbids charging a fee for th
 
 | Component | Version | Licence | Source archive (SHA-256) |
 |---|---|---|---|
-| [FFmpeg](https://ffmpeg.org) | 7.1.5 | LGPL-3.0-or-later (built without --enable-gpl and --enable-nonfree) | `ffmpeg-7.1.5.tar.xz`<br>`de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f` |
+| [FFmpeg](https://ffmpeg.org) | 7.1.5 | LGPL-2.1-or-later (built without --enable-gpl, --enable-nonfree and --enable-version3) | `ffmpeg-7.1.5.tar.xz`<br>`de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f` |
 | [libvpx (VP8/VP9)](https://www.webmproject.org) | 1.15.2 | BSD-3-Clause + WebM patent grant | `libvpx-1.15.2.tar.gz`<br>`26fcd3db88045dee380e581862a6ef106f49b74b6396ee95c2993a260b4636aa` |
 | [SVT-AV1 (AV1 encoder)](https://gitlab.com/AOMediaCodec/SVT-AV1) | 3.1.2 | BSD-3-Clause-Clear + AOMedia patent licence (some files BSD-2-Clause) | `SVT-AV1-v3.1.2.tar.gz`<br>`d0d73bfea42fdcc1222272bf2b0e2319e9df5574721298090c3d28315586ecb1` |
 | [dav1d (AV1 decoder)](https://code.videolan.org/videolan/dav1d) | 1.5.1 | BSD-2-Clause | `dav1d-1.5.1.tar.xz`<br>`401813f1f89fa8fd4295805aa5284d9aed9bc7fc1fdbe554af4292f64cbabe21` |

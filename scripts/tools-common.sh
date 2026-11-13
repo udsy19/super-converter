@@ -22,7 +22,8 @@ cleanup() {
     return 0
 }
 trap cleanup EXIT
-make_work() { WORK="$(mktemp -d "${TMPDIR:-/tmp}/sc-tools.XXXXXX")"; }
+# The physical path (no // from a TMPDIR ending in /, no /tmp symlink), so -ffile-prefix-map and the scrub match it.
+make_work() { WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/sc-tools.XXXXXX")" && pwd -P)"; }
 
 # lock_source <id>: sets SRC_VERSION SRC_FILE SRC_SHA SRC_URL
 lock_source() {
