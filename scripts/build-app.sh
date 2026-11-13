@@ -201,9 +201,15 @@ if [ "$DISTRIBUTION" = appstore ]; then
   done
   grep -q "\"$BUNDLE_ID\"" "$ROOT/Sources/SuperConverterCore/SuperConverterPaths.swift" || fail "SuperConverterPaths.bundleID (APP_STORE) differs from APPSTORE_BUNDLE_ID $BUNDLE_ID"
   if grep -q NSAppleEventsUsageDescription "$APP/Contents/Info.plist"; then fail "the Store edition's Info.plist asks for Apple Events"; fi
-  # No update or helper-download code may be reachable: the updater and the installer's network code aren't compiled in.
-  for marker in 'api.github.com' 'LibreOffice_' 'pandoc-3' 'tectonic-0' 'calibre-9'; do
-    if grep -q "$marker" <<< "$(strings "$APP/Contents/MacOS/$APP_EXE")"; then fail "the Store edition's binary contains '$marker' (updater or helper download)"; fi
+  # Nothing of the direct edition's outside world may be compiled in: the updater, helper downloads and install pages,
+  # Homebrew and /usr/local places, osascript and AppleScript, hdiutil's attach.
+  for bin in "$APP/Contents/MacOS/$APP_EXE" "${EXTENSIONS[0]}/Contents/MacOS/$EXT_EXE"; do
+    found="$(strings "$bin")"
+    for marker in 'api.github.com' 'LibreOffice_' 'pandoc-3' 'tectonic-0' 'calibre-9' 'documentfoundation' 'calibre-ebook' \
+                  'rarlab.com' 'opendesign.com' '/opt/homebrew' '/usr/local/' 'brew install' '/usr/bin/osascript' 'tell application' \
+                  '-mountrandom' 'Caskroom'; do
+      if grep -qF -- "$marker" <<< "$found"; then fail "the Store edition's $(basename "$bin") contains '$marker' (direct-edition code)"; fi
+    done
   done
 else
   # LibRaw is signed without an Apple Team ID, so the hardened runtime refuses to load it unless library validation is

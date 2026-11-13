@@ -9,6 +9,10 @@ enum DiskImageReader {
     /// `Archives.read` falls back to.
     static func isAvailable(_ tools: (any ToolRunning)?) -> Bool { tools?.location(of: .hdiutil) != nil || SevenZip.isAvailable(tools) }
 
+    #if APP_STORE
+    /// The Store edition has no hdiutil (the sandbox denies its attach); `Archives.read` falls back to 7-Zip.
+    static func read(_ request: ArchiveReadRequest) async throws -> ArchiveTree { throw ArchiveError.unsupported("hdiutil isn’t available.") }
+    #else
     static func read(_ request: ArchiveReadRequest) async throws -> ArchiveTree {
         guard request.tools?.location(of: .hdiutil) != nil else { throw ArchiveError.unsupported("hdiutil isn’t available.") }
         let scratch = request.root.deletingLastPathComponent().appendingPathComponent(".dmg-\(UUID().uuidString)")
@@ -101,4 +105,5 @@ enum DiskImageReader {
             }
         }
     }
+    #endif
 }

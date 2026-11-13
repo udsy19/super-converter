@@ -65,6 +65,9 @@ final class SystemFileActions: NSObject, FileActions {
 
     func get(_ helper: HelperID) {
         let info = HelperCatalog.info(helper)
+        #if APP_STORE
+        explain("\(info.name) isn’t available", Distribution.helpersUnavailable)
+        #else
         switch info.install {
         case .oneClick(let page), .vendorPage(let page), .appStore(let page):
             NSWorkspace.shared.open(page)
@@ -75,6 +78,7 @@ final class SystemFileActions: NSObject, FileActions {
         case .detectOnly:
             explain("\(info.name) is detected, not installed", "Install \(info.name) from its vendor and Super Converter will use it.")
         }
+        #endif
     }
 
     private func explain(_ title: String, _ detail: String) {

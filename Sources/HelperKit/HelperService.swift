@@ -60,7 +60,7 @@ public final class HelperService: HelperManaging {
         self.init(override: override, applications: home.appendingPathComponent("Applications", isDirectory: true),
                   recordFile: SuperConverterPaths.helpersRecord, libreOfficeProfile: SuperConverterPaths.libreOfficeProfile,
                   tectonicCache: SuperConverterPaths.tectonicCache, helperFolder: { SuperConverterPaths.helper($0, version: $1) },
-                  installer: nil, pins: { HelperPins.pin(for: $0) }, osascript: URL(fileURLWithPath: "/usr/bin/osascript"),
+                  installer: nil, pins: { HelperPins.pin(for: $0) }, osascript: HelperRuntime.systemOsascript,
                   remove: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
     }
 
@@ -195,7 +195,10 @@ public final class HelperService: HelperManaging {
     // MARK: "Get…"
 
     public nonisolated static func getAction(for helper: HelperID) -> HelperGetAction {
-        switch HelperCatalog.info(helper).install {
+        #if APP_STORE
+        return .nothing   // the Store edition installs and points to nothing outside
+        #else
+        return switch HelperCatalog.info(helper).install {
         case .oneClick: .installHere
         case .vendorPage(let url): .openPage(url)
         case .appStore(let url): .openAppStore(url)
@@ -203,6 +206,7 @@ public final class HelperService: HelperManaging {
         case .buildFromSource(let url): .buildFromSource(url)
         case .detectOnly: .nothing
         }
+        #endif
     }
 
     // MARK: Changes and the background pass

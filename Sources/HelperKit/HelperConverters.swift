@@ -376,6 +376,10 @@ struct IWorkConverter: HelperConverter {
         runtime.detector.apps(of: .iwork).contains { $0.lastPathComponent == app.appName + ".app" } ? .available : .needsHelper(.iwork)
     }
 
+    #if APP_STORE
+    /// The Store edition sends no Apple Events: registered (the matrix names it) but never available.
+    func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput { throw ConversionError.helperMissing(.iwork) }
+    #else
     func run(_ step: Step, input: StepValue, context: StepContext) async throws -> StepOutput {
         let source = try HelperRuntime.stagedInput(input, step, context)
         let folder = try HelperRuntime.outputFolder(context, app.appName.lowercased())
@@ -455,4 +459,5 @@ struct IWorkConverter: HelperConverter {
     static func quote(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
+    #endif
 }

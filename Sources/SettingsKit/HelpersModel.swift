@@ -149,7 +149,11 @@ final class HelpersModel: ObservableObject {
             case .detectOnly: return "Used when it is installed · \(info.licenceName)"
             case .oneClick: return "\(Strings.Helper.cost(helper))\(info.downloadMB == nil ? "" : " download") · \(info.licenceName)"
             case .vendorPage: return "Free from the vendor · \(info.licenceName)"
+            #if APP_STORE
+            case .homebrew: return "\(info.licenceName)"
+            #else
             case .homebrew(let formula): return "Free · brew install \(formula) · \(info.licenceName)"
+            #endif
             case .buildFromSource: return "Free · built from source · \(info.licenceName)"
             }
         }
@@ -157,8 +161,12 @@ final class HelpersModel: ObservableObject {
 
     /// The Homebrew line shown after "Get…".
     func note(for helper: HelperID) -> String? {
+        #if APP_STORE
+        return nil
+        #else
         guard notes.contains(helper), case .homebrew(let formula) = HelperCatalog.info(helper).install else { return nil }
         return "Install it with Homebrew: brew install \(formula). Then choose Look again."
+        #endif
     }
 
     // MARK: Actions

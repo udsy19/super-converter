@@ -19,7 +19,12 @@ struct QuickActionSwitches: Sendable {
     private static let workFolder = FileManager.default.temporaryDirectory.appendingPathComponent("SuperConverter-pluginkit", isDirectory: true)
 
     private func pluginkit(_ arguments: [String]) async throws -> HelperRunResult {
-        try await tools.run(ToolInvocation(tool: .pluginkit, arguments: arguments, workFolder: Self.workFolder, timeLimit: 15))
+        #if APP_STORE
+        // pkd answers no sandboxed client; the Store edition never asks (`current` is nil).
+        throw ConversionError.failed("pluginkit isn’t available.")
+        #else
+        return try await tools.run(ToolInvocation(tool: .pluginkit, arguments: arguments, workFolder: Self.workFolder, timeLimit: 15))
+        #endif
     }
 
     /// The action's election as macOS has it now; nil when macOS doesn't list the extension (or pluginkit failed).

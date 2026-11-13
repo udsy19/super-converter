@@ -16,7 +16,14 @@ final class HelperRuntime: @unchecked Sendable {
     /// Helpers found but not usable, with the reason (an FFmpeg without GPL encoders).
     private var blocked: [HelperID: String] = [:]
 
-    init(detector: HelperDetector, libreOfficeProfile: URL, tectonicCache: URL, osascript: URL = URL(fileURLWithPath: "/usr/bin/osascript")) {
+    #if APP_STORE
+    /// The Store edition sends no Apple Events; nothing runs this.
+    static let systemOsascript = URL(fileURLWithPath: "/usr/bin/false")
+    #else
+    static let systemOsascript = URL(fileURLWithPath: "/usr/bin/osascript")
+    #endif
+
+    init(detector: HelperDetector, libreOfficeProfile: URL, tectonicCache: URL, osascript: URL = HelperRuntime.systemOsascript) {
         self.detector = detector
         self.libreOfficeProfile = libreOfficeProfile
         self.tectonicCache = tectonicCache

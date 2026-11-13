@@ -37,11 +37,16 @@ struct HelperDetector: Sendable {
     /// False looks only at the override and our own installs (the self-test, which must not find what is on this Mac).
     var searchKnownPlaces = true
 
+    #if APP_STORE
+    /// None in the Store edition, which runs no outside programs.
+    static let defaultExtras: [HelperID: [String]] = [:]
+    #else
     static let defaultExtras: [HelperID: [String]] = [
         .libreoffice: ["/opt/homebrew/bin/soffice", "/usr/local/bin/soffice"],
         .oda: ["~/Applications/ODAFileConverter.app"],
         .iwork: ["~/Applications/Pages.app", "~/Applications/Numbers.app", "~/Applications/Keynote.app"],
     ]
+    #endif
 
     func locate(_ helper: HelperID) -> HelperLocation? {
         if let url = override(helper), let found = location(of: helper, at: url, installedByUs: false) { return found }
@@ -108,7 +113,12 @@ struct HelperDetector: Sendable {
     /// our own installs are `…/Helpers/<id>/<version>/<tool>`.
     static func pathVersion(_ resolved: URL) -> String? {
         let parts = resolved.pathComponents
-        for marker in ["Cellar", "Caskroom", "Helpers"] {
+        #if APP_STORE
+        let markers: [String] = []   // the Store edition finds no helpers
+        #else
+        let markers = ["Cellar", "Caskroom", "Helpers"]
+        #endif
+        for marker in markers {
             guard let i = parts.firstIndex(of: marker) else { continue }
             let versionIndex = i + 2
             guard versionIndex < parts.count - 1, let first = parts[versionIndex].first, first.isNumber else { continue }
