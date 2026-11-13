@@ -39,3 +39,15 @@ Deleting those folders and the app removes everything Super Converter keeps.
 - **Desktop, Documents, Downloads, removable and network drives**: to read the files you convert from there and save
   the results next to them.
 - **Notifications**: to say when a conversion started from Finder, the menu bar or a link has finished.
+
+## Mac App Store edition
+
+Super Converter from the Mac App Store (`com.udsy.superconverter.appstore`) differs from the direct download as follows:
+
+- **Data collected by the developer: none.** No account, analytics, crash upload or servers.
+- **No network traffic of its own.** There is no updater (the App Store updates it) and nothing is downloaded: no helper apps, no codecs. FFmpeg is built without network support. The app has the outgoing-network entitlement only because WebKit needs it to render a local HTML file; every non-local load is blocked unless you turn on "Load web resources" for that one HTML file, which then loads only that page's own pictures and styles.
+- **No outside apps.** Conversions that need LibreOffice, calibre, Pandoc, Pages or similar are not offered in this edition, and nothing is installed.
+- **Files:** it reads only the files and folders you drop, open or pick, and saves next to them when it is allowed to, otherwise in Downloads (and says so). Folder choices are remembered as macOS security-scoped bookmarks.
+- **Permissions:** none beyond file access, plus the standard notification permission for "conversion finished".
+- **Where data lives:** settings and temporary files inside the app's sandbox container, `~/Library/Containers/com.udsy.superconverter.appstore/`. Importing the direct download's settings is a copy you start; nothing is moved or deleted.
+- **Removing everything:** delete the app, then the container folder above.
