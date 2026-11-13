@@ -42,9 +42,9 @@ Results: test-results.md.
 3. Settings › General › Save To › choose a folder; quit/relaunch; convert → result in that folder.
 4. Finder › right-click a HEIC in a never-granted folder › Quick Actions › Convert to JPG → "Allow" panel at that folder →
    Allow → JPG next to the HEIC, notification shown. Repeat in the same folder → no panel.
-5. App menu › Import Settings from the Direct Download… → panel opens at `~/Library/Preferences`, pick
+5. App menu › Import Settings from Another Copy… → panel opens at `~/Library/Preferences`, pick
    `com.udsy.superconverter.plist` → "Imported N settings".
-6. Settings › Helpers shows the Store explanation; Settings › Quick Actions points to System Settings; About has no
+6. Settings › Helpers shows the neutral explanation (no link); Settings › Quick Actions points to System Settings; About has no
    update rows; the app menu has no "Check for Updates…".
 Check `log show --predicate 'sender == "Sandbox"' --last 10m` after each for `SuperConverter` denials.
 

@@ -202,11 +202,12 @@ if [ "$DISTRIBUTION" = appstore ]; then
   grep -q "\"$BUNDLE_ID\"" "$ROOT/Sources/SuperConverterCore/SuperConverterPaths.swift" || fail "SuperConverterPaths.bundleID (APP_STORE) differs from APPSTORE_BUNDLE_ID $BUNDLE_ID"
   if grep -q NSAppleEventsUsageDescription "$APP/Contents/Info.plist"; then fail "the Store edition's Info.plist asks for Apple Events"; fi
   # Nothing of the direct edition's outside world may be compiled in: the updater, helper downloads and install pages,
-  # Homebrew and /usr/local places, osascript and AppleScript, hdiutil's attach.
+  # Homebrew and /usr/local/bin places, osascript and AppleScript, hdiutil's attach. (libaom inside the AVIF library
+  # carries a /usr/local/share VMAF model path of its own; it is not ours and is never used.)
   for bin in "$APP/Contents/MacOS/$APP_EXE" "${EXTENSIONS[0]}/Contents/MacOS/$EXT_EXE"; do
     found="$(strings "$bin")"
-    for marker in 'api.github.com' 'LibreOffice_' 'pandoc-3' 'tectonic-0' 'calibre-9' 'documentfoundation' 'calibre-ebook' \
-                  'rarlab.com' 'opendesign.com' '/opt/homebrew' '/usr/local/' 'brew install' '/usr/bin/osascript' 'tell application' \
+    for marker in 'api.github.com' 'LibreOffice_' 'pandoc-3' 'tectonic-0' 'calibre-9' 'download.documentfoundation' 'download.calibre-ebook' \
+                  'rarlab.com' 'opendesign.com' '/opt/homebrew' '/usr/local/bin' 'brew install' '/usr/bin/osascript' 'tell application' \
                   '-mountrandom' 'Caskroom'; do
       if grep -qF -- "$marker" <<< "$found"; then fail "the Store edition's $(basename "$bin") contains '$marker' (direct-edition code)"; fi
     done

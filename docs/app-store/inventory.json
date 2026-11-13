@@ -2,7 +2,7 @@
  "app": "Super Converter",
  "repo": "udsy19/super-converter",
  "branch": "release/macos-app-store",
- "commit": "ca942e9",
+ "commit": "see git log release/macos-app-store",
  "bundleIds": {
   "direct": "com.udsy.superconverter",
   "appstore": "com.udsy.superconverter.appstore"
@@ -18,7 +18,7 @@
    "name": "Media via bundled LGPL FFmpeg (Contents/Helpers, app-sandbox+inherit)",
    "classification": "compatible-with-config",
    "storeStatus": "enabled",
-   "evidence": "§4: 11/11 PASS; LGPL-3.0+ licence decision pending"
+   "evidence": "test-results §4: 11/11 PASS; rebuilt LGPL-2.1-or-later, no build paths (§8)"
   },
   {
    "name": "Media via AVFoundation",
@@ -54,12 +54,12 @@
    "name": "Input staging for bundled tools",
    "classification": "compatible-after-architecture-change",
    "storeStatus": "enabled",
-   "evidence": "§3 grant experiment + Downloads cases"
+   "evidence": "§4b: 11/11 PASS from Downloads, 6 staged copies logged, burned-in subtitles PASS; §3 token experiment inconclusive"
   },
   {
    "name": "Outside helpers (LibreOffice, calibre, Pandoc, Tectonic, Ghostscript, DjVuLibre, ODA, LibreDWG, GPL FFmpeg, RAR write, sfArk)",
    "classification": "incompatible-confirmed",
-   "storeStatus": "gated with in-app explanation",
+   "storeStatus": "gated; neutral in-app explanation, no link",
    "evidence": "§4 'Needs Tectonic/Pandoc/calibre'; §5 460/2252 pairs, 40/212 input formats unavailable"
   },
   {
@@ -89,8 +89,8 @@
   {
    "name": "Finder Quick Actions",
    "classification": "unverified-needs-experiment",
-   "storeStatus": "enabled; app asks for folder access",
-   "evidence": "extensions build+sign sandboxed; Finder run needs a human"
+   "storeStatus": "enabled; access panel only for own extensions, files' own folder, rate-limited",
+   "evidence": "self-test MenuBarKit.accessRequests; Finder run needs a human"
   },
   {
    "name": "Quick Action switches in Settings (pluginkit)",
@@ -145,7 +145,7 @@
   {
    "name": "FFmpeg (ffmpeg, ffprobe)",
    "version": "7.1.5",
-   "license": "LGPL-3.0-or-later (--enable-version3 --disable-gpl --disable-nonfree)",
+   "license": "LGPL-2.1-or-later (--disable-gpl --disable-nonfree, no --enable-version3)",
    "kind": "executable",
    "bundled": "Contents/Helpers",
    "sandboxOK": true

@@ -1,0 +1,14 @@
+# Run with FIXTURES_DIR=~/Downloads/sc-store-matrix: fixtures outside the container, read through the Downloads
+# entitlement, so every bundled-tool run goes through ToolStaging.
+# Burned-in subtitles (a path inside FFmpeg's filter string) are run by hand, see test-results.md §4b.
+media-ffmpeg|media/sample.webm|mp4|
+media-ffmpeg|media/sample.mkv|mp4|
+media-ffmpeg|media/sample.flac|mp3|
+media-ffmpeg|media/sample.mp4|gif|
+media-avf|media/sample.mov|mp4|
+archive|archives/tree.7z|zip|
+archive|archives/stored.rar|zip|
+archive|archives/tree.dmg|zip|
+archive|archives/aes.zip|7z|password=sesame
+image|synthetic.dng|jpg|
+document|sample.docx|pdf|

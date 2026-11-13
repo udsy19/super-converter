@@ -38,19 +38,14 @@ Sandbox: hdiutil(29995) deny(1) mach-lookup com.apple.system.hdiejectd.xpc
 Consequences implemented: no `sandbox-exec` in the Store build; DMG goes through 7-Zip; Quick Action switches only in
 System Settings.
 
-## 3. Grant inheritance experiment (ADDENDUM 2)
+## 3. Grant inheritance experiment (ADDENDUM 2) — inconclusive, superseded by staging
 
-`sandbox-tests/grant.c`: an unsandboxed issuer creates a `com.apple.app-sandbox.read-write` extension for
-`~/sc-grant-test/sample.mp3` (what powerbox does for an open panel); the sandboxed parent consumes it, opens the file,
-and spawns `Contents/Helpers/ffprobe` (signed app-sandbox + inherit) on it.
-```
-consume=2 / parent open=ok / ffprobe printed [FORMAT]…[/FORMAT] / child exit=0     (granted file)
-consume=-1 / parent open=DENIED                                                   (bogus token: control)
-```
-So on 26.5.1 a grant consumed **before** the spawn reached the inherit child. We nevertheless stage inputs (see
-architecture.md "Deviation"), because this is undocumented and does not cover grants obtained after a child started.
-Staging path exercised: inputs in `~/Downloads/sc-store-test/` (outside the container) → `sample.mkv → mp4` (FFmpeg)
-and `tree.7z → zip` (7-Zip) both exit 0, results written next to the originals in Downloads.
+`sandbox-tests/grant.c`: an unsandboxed issuer creates a `com.apple.app-sandbox.read-write` extension with the
+**private** `sandbox_extension_issue_file` call; the sandboxed parent consumes it and spawns `Contents/Helpers/ffprobe`
+(app-sandbox + inherit), which read the file (exit 0). **This does not show what happens with a real grant** (an open
+panel, a drop, a resolved security-scoped bookmark): those are issued by powerbox / Launch Services, not by this private
+token path, and could not be exercised without a person. So no conclusion is drawn; the app follows ADDENDUM 2 and
+stages every input (§4b). The earlier claim that "a child reads parent-granted files" is withdrawn.
 
 Negative control (sandbox is real): sandboxed sconv on `~/sc-grant-test/checker-512.png` (never granted) fails, log:
 `Sandbox: sconv(38543) deny(1) file-read-data /Users/udsy/sc-grant-test/checker-512.png`. (Its message says "permission
@@ -64,7 +59,8 @@ so it runs in the **same container and sandbox profile**, with the same `Content
 each fixture from `Tests/Corpus/generated` (made by `scripts/make-fixtures.swift` / `make-archive-fixtures.py`) inside
 the container and converts it. PASS = exit 0 and a non-empty output file (type shown by `file`).
 
-**Result: 83 PASS of 87 runs; the 4 "FAIL" are the expected Store behaviour** (3 helper-only conversions refused with
+**Result: 83 PASS of 87 runs; the 4 "FAIL" are the expected Store behaviour** (re-run after the review fixes with the
+rebuilt LGPL-2.1 FFmpeg: same 83/87) (3 helper-only conversions refused with
 "Needs …", 1 decompression bomb refused pending confirmation).
 
 | Family | Pass |
@@ -178,6 +174,35 @@ Full per-case table:
 | archive | tree.zip → 7z | 0 | PASS | 1 file(s), 33760 B, 7-zip archive data, version 0.4 |
 | safety | zip-slip.zip → 7z | 0 | PASS | 1 file(s), 186 B, 7-zip archive data, version 0.3 |
 
+### 4b. Files outside the container (staging), after the review fixes
+
+`FIXTURES_DIR=~/Downloads/sc-store-matrix sandbox-tests/run-matrix.sh … sandbox-tests/cases-outside.txt`: the fixtures
+sit in Downloads, outside the container, read through the app's `files.downloads.read-write` entitlement (the one grant
+that needs no person; open-panel / drop grants need a human run). Every bundled-tool job goes through `ToolStaging`.
+**11/11 PASS**, no sandbox denials for sconv/ffmpeg/ffprobe/7zz, and the unified log shows one
+"Staged a working copy … for the bundled tools" per tool-using job (6 lines for the 6 jobs whose readers are bundled
+tools; probe, analysis and encode runs of one video share the copy):
+
+| Family | Case | Exit | Result | Detail |
+|---|---|---|---|---|
+| media-ffmpeg | sample.webm → mp4 | 0 | PASS | 1 file(s), 24113 B, ISO Media, MP4 Base Media v1 [ISO 14496-12:2003] |
+| media-ffmpeg | sample.mkv → mp4 | 0 | PASS | 1 file(s), 64985 B, ISO Media, MP4 Base Media v1 [ISO 14496-12:2003] |
+| media-ffmpeg | sample.flac → mp3 | 0 | PASS | 1 file(s), 14348 B, Audio file with ID3 version 2.4.0, contains: MPEG ADTS, laye |
+| media-ffmpeg | sample.mp4 → gif | 0 | PASS | 1 file(s), 101604 B, GIF image data, version 89a, 160 x 120 |
+| media-avf | sample.mov → mp4 | 0 | PASS | 1 file(s), 74423 B, ISO Media, MP4 v2 [ISO 14496-14] |
+| archive | tree.7z → zip | 0 | PASS | 1 file(s), 34670 B, Zip archive data, at least v2.0 to extract, compression meth |
+| archive | stored.rar → zip | 0 | PASS | 1 file(s), 221 B, Zip archive data, at least v2.0 to extract, compression meth |
+| archive | tree.dmg → zip | 0 | PASS | 1 file(s), 38126 B, Zip archive data, at least v2.0 to extract, compression meth |
+| archive | aes.zip → 7z | 0 | PASS | 1 file(s), 33518 B, 7-zip archive data, version 0.3 |
+| image | synthetic.dng → jpg | 0 | PASS | 1 file(s), 10636 B, JPEG image data, JFIF standard 1.01, resolution (DPI), densi |
+| document | sample.docx → pdf | 0 | PASS | 1 file(s), 79148 B, PDF document, version 1.3, 1 pages |
+
+Burned-in subtitles, where the source path sits inside FFmpeg's filter string (`subtitles=filename=…:si=0`):
+`~/Downloads/sc-store-matrix/with-subs.mkv` (sample.mkv + an SRT track, muxed with the bundled ffmpeg) →
+`sconv … --to mp4 --option subtitles=hard` → exit 0, `with-subs.mp4` 26 KB, no denials. (`subtitleFile`, an external
+subtitle file, is read by MediaSettings but offered by no option profile, so neither the app nor sconv can set it; its
+path is staged the same way in `MediaRun`.)
+
 ### Unsafe archive extraction (in the sandbox)
 
 - `zip-slip.zip` (`../evil.txt`, `/tmp/absolute.txt`, `a/../../evil2.txt`, `ok/fine.txt`) → 7Z containing only
@@ -213,3 +238,23 @@ The other engines' self-tests were not re-run (their code is untouched except `D
 
 No GUI automation was used (no synthetic keystrokes or clicks). The app window was only launched and quit (§1).
 GUI paths left for a human run are listed in README.md "Human runs".
+
+## 8. Review fixes (2026-11-12, second round)
+
+- **FFmpeg rebuilt LGPL-2.1-or-later** with `scripts/build-ffmpeg.sh build` (Command Line Tools; ~7 min per run):
+  `-buildconf` has `--disable-gpl --disable-nonfree --disable-network` and no `--enable-version3`; `ffmpeg -L` says
+  "version 2.1 of the License, or (at your option) any later version"; `scripts/tools.sh check` (licence, linkage,
+  slices) and `scripts/tools.sh smoke` (15 FFmpeg conversions, 6 7-Zip checks) pass. Build-machine paths:
+  `strings -a` on each slice of ffmpeg and ffprobe finds 0 matches for `/private/tmp`, `/var/folders`, `/Users/`
+  (the old v3 build had 125: FFmpeg's recorded configure line, SVT-AV1 `__FILE__`s, libvpx's configure line). The
+  script now fails if its work folder shows up in a binary.
+- **Store binary check** (build-app.sh): no `api.github.com`, helper file names, `download.documentfoundation`,
+  `download.calibre-ebook`, `rarlab.com`, `opendesign.com`, `/opt/homebrew`, `/usr/local/bin`, `brew install`,
+  `/usr/bin/osascript`, `tell application`, `-mountrandom`, `Caskroom` in the app or extension binary — passes. (A
+  `/usr/local/share/model/vmaf_v0.6.1.json` default inside libaom remains; third-party, unused.)
+- **Direct edition, full self-test** (`swift run SuperConverterSelfTest`, all modules): 410 passed, 1 failed:
+  `MathKit.speed` (200 formulas in 2.20 s, over its budget). Alone it passed once (1.79 s) and failed once (2.86 s) at a
+  load average of ~35 (other teams' builds). MathKit, TypesetKit and MathJax are byte-identical to `main`
+  (`git diff main -- Sources/MathKit Sources/TypesetKit Resources/MathJax` is empty), so main behaves the same; the
+  budget was not loosened.
+- New self-test `MenuBarKit.accessRequests` passes (in the full run).

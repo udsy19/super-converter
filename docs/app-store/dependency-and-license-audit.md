@@ -29,10 +29,12 @@ the signed bundle; they are fine for the Store.
 
 ## FFmpeg build configuration (recorded exactly)
 
-From `Vendor/Tools/ffmpeg -hide_banner -buildconf` (the binary that is bundled):
+From `Vendor/Tools/ffmpeg -hide_banner -buildconf` after the rebuild of 2026-11-12 (`scripts/build-ffmpeg.sh build`;
+the earlier published build also had `--enable-version3`; `--prefix`/`--extra-cflags` with build-machine paths are
+rewritten to `.`/`SDK` by the build script):
 
 ```
---enable-version3 --disable-gpl --disable-nonfree --disable-autodetect
+--disable-gpl --disable-nonfree --disable-autodetect
 --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay
 --disable-network --disable-indevs --enable-indev=lavfi --disable-outdevs
 --enable-zlib --enable-bzlib --enable-iconv --enable-audiotoolbox --enable-videotoolbox
@@ -44,25 +46,19 @@ From `Vendor/Tools/ffmpeg -hide_banner -buildconf` (the binary that is bundled):
 - **No GPL code**: `--disable-gpl`, no x264/x265/xvid/rubberband/etc. `scripts/build-app.sh` fails the build if
   `--enable-gpl` or `--enable-nonfree` ever shows up (both editions).
 - **No network**: `--disable-network` (matches the Store edition having no network entitlement).
-- **Licence of the bundled executable: LGPL-3.0-or-later as a whole** because of `--enable-version3`. Static
-  components: LAME (LGPL-2.0+), soxr (LGPL-2.1+), FriBidi (LGPL-2.1+), the rest BSD/MIT/ISC/FTL/WTFPL.
+- **Licence of the bundled executable: LGPL-2.1-or-later as a whole** (`ffmpeg -L`). Static components: LAME
+  (LGPL-2.0+), soxr (LGPL-2.1+), FriBidi (LGPL-2.1+), the rest BSD/MIT/ISC/FTL/WTFPL.
 - The tool is a separate executable launched with `Process`, not linked into the app, so the app's own code is not a
   "combined work" with FFmpeg. Source for every component is published as `tools-sources.tar.gz` on the
   `tools-2026-10-29` release (pinned in `Tools.lock`), with a written offer in `THIRD_PARTY_NOTICES.md`.
 
-### OWNER DECISION 1 — (L)GPLv3 FFmpeg in a Mac App Store app
+### Decision taken — LGPL-2.1+ FFmpeg
 
-The known GPL/App Store conflict is that Apple's Usage Rules impose restrictions on recipients that (L)GPL forbid
-adding ("no further restrictions", GPLv3 §10/§12; LGPLv3 incorporates GPLv3). It is most acute for GPL; LGPL-licensed
-FFmpeg builds do ship in Store apps, but **v3** adds the Installation Information clause and is the stricter variant.
-Options, in order of increasing effort:
-1. Ship as is (LGPL-3.0+ executable, source + offer published). Lowest effort; some legal risk.
-2. Rebuild FFmpeg **without `--enable-version3`** (LGPL-2.1+ as a whole). Nothing in the current recipe needs v3
-   (no opencore-amr/vo-amrwbenc/gmp), so this is a one-flag change in `scripts/build-ffmpeg.sh`; then republish the
-   `tools-*` release and update `Tools.lock`. Recommended before submission. Not done here because it changes the
-   direct edition's published artifacts too (owner's call).
-3. Drop FFmpeg from the Store edition and route media only through AVFoundation (loses WebM/MKV/OGG/FLAC-encode/AV1
-   and many legacy containers; see the matrix in test-results.md for what FFmpeg carries).
+Done on review: rebuilt without `--enable-version3` (nothing in the recipe needs v3). The App Store's usage rules vs
+"no further restrictions" remains a question of legal opinion for any LGPL code (FFmpeg, LAME, soxr, FriBidi, 7-Zip,
+LibRaw); LGPL-2.1 avoids v3's installation-information clause. THIRD_PARTY_NOTICES.md has a Mac App Store section
+(written source offer; no "replace the file and re-sign" claim for the sealed Store app; build-from-source path instead).
+The owner must publish the new `tools-*` release so `Tools.lock` and the source asset match the shipped binaries.
 
 ### OWNER DECISION 2 — unRAR licence restriction in 7-Zip
 
@@ -76,7 +72,7 @@ question as above, weaker form).
 
 | Component | Version | Licence | Kind | Bundled | Sandbox OK |
 |---|---|---|---|---|---|
-| FFmpeg (ffmpeg, ffprobe) | 7.1.5 | LGPL-3.0-or-later (as built) | executable | yes, Contents/Helpers | yes (tested) |
+| FFmpeg (ffmpeg, ffprobe) | 7.1.5 | LGPL-2.1-or-later (as built) | executable | yes, Contents/Helpers | yes (tested) |
 | libvpx | 1.15.2 | BSD-3-Clause + patent grant | static in ffmpeg | yes | yes |
 | SVT-AV1 | 3.1.2 (ffmpeg) / 4.2.0 (AVIF) | BSD-3-Clause-Clear + AOM patent licence | static | yes | yes |
 | dav1d | 1.5.1 / 1.5.4 | BSD-2-Clause | static | yes | yes |
