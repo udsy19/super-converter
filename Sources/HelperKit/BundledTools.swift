@@ -25,12 +25,15 @@ public struct BundledTools: ToolRunning {
 
     public func location(of tool: BundledTool) -> URL? {
         if tool == .hdiutil || tool == .pluginkit {
+            #if APP_STORE
             // Store edition: the App Sandbox denies hdiutil's attach (mach-lookup com.apple.system.hdiejectd.xpc,
             // sysctl-write vfs.generic.noremotehang) and pkd answers no sandboxed client ("unauthorized discovery
             // flag"); disk images go through 7-Zip and the Quick Action switches through System Settings.
-            if Distribution.isAppStore { return nil }
+            return nil
+            #else
             let url = URL(fileURLWithPath: "/usr/bin/" + tool.rawValue)
             return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+            #endif
         }
         return folders.map { $0.appendingPathComponent(tool.rawValue) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
@@ -38,7 +41,7 @@ public struct BundledTools: ToolRunning {
     public func run(_ invocation: ToolInvocation) async throws -> HelperRunResult {
         let name = Self.name(of: invocation.tool)
         guard let executable = location(of: invocation.tool) else { throw ConversionError.failed("\(name) isn’t part of this build.") }
-        var spec = ProcessSpec(executable: executable, arguments: Self.staged(invocation.arguments, in: invocation.workFolder), workFolder: invocation.workFolder,
+        var spec = ProcessSpec(executable: executable, arguments: try Self.staged(invocation.arguments, in: invocation.workFolder), workFolder: invocation.workFolder,
                                writable: invocation.writable, timeLimit: invocation.timeLimit,
                                standardInput: invocation.standardInput, outputLimit: invocation.outputLimit)
         // pkd answers no sandboxed client ("unauthorized discovery flag"), and pluginkit itself only asks pkd: it writes
@@ -50,38 +53,15 @@ public struct BundledTools: ToolRunning {
         catch RunFailure.couldNotStart(let why) { throw ConversionError.failed("\(name) couldn’t start: \(why)") }
     }
 
-    /// Store edition: every input file the person granted (outside the container) is cloned into the job's work folder and
-    /// the tool gets the clone, so a bundled tool reads only container files and writes only into the work folder; the app
-    /// itself moves results to the chosen place (OutputRules). The App Sandbox's per-file grants belong to the app (an
-    /// open panel, a drop, a bookmark), and Apple documents no promise that a child sees them (docs/app-store/architecture.md
-    /// records the experiment). On APFS the clone costs no space. The direct edition passes arguments unchanged.
-    static func staged(_ arguments: [String], in workFolder: URL) -> [String] {
-        #if APP_STORE
-        let fm = FileManager.default
-        let container = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path + "/"
-        let bundle = Bundle.main.bundleURL.standardizedFileURL.path + "/"
-        var folder: URL?
-        return arguments.map { argument in
-            guard argument.hasPrefix("/") else { return argument }
-            let path = URL(fileURLWithPath: argument).standardizedFileURL.path
-            var isDirectory: ObjCBool = false
-            guard !path.hasPrefix(container), !path.hasPrefix(bundle), !path.hasPrefix("/dev/"),
-                  fm.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else { return argument }
-            do {
-                let place = try folder ?? {
-                    let made = workFolder.appendingPathComponent(".stage-\(UUID().uuidString.prefix(8))", isDirectory: true)
-                    try fm.createDirectory(at: made, withIntermediateDirectories: true)
-                    folder = made
-                    return made
-                }()
-                let copy = place.appendingPathComponent("\(UUID().uuidString.prefix(4))-" + (path as NSString).lastPathComponent)
-                try fm.copyItem(atPath: path, toPath: copy.path)   // a clone on APFS
-                return copy.path
-            } catch { return argument }
+    /// Store edition: every argument that names a file outside the container becomes the job's copy of it
+    /// (`ToolStaging`), so a bundled tool reads only container files and writes only into the work folder; the app itself
+    /// moves results to the chosen place (OutputRules). The direct edition passes arguments unchanged.
+    static func staged(_ arguments: [String], in workFolder: URL) throws -> [String] {
+        guard Distribution.isAppStore else { return arguments }
+        return try arguments.map { argument in
+            guard argument.hasPrefix("/"), !argument.hasPrefix("/dev/") else { return argument }
+            return try ToolStaging.stage(URL(fileURLWithPath: argument), workFolder: workFolder).path
         }
-        #else
-        return arguments
-        #endif
     }
 
     static func name(of tool: BundledTool) -> String {

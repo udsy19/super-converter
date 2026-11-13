@@ -10,13 +10,10 @@ public enum Distribution {
     public static let isAppStore = false
     #endif
 
-    /// The direct-download edition's bundle id and preferences domain ("Import Settings from the Direct Download…").
+    /// The direct-download edition's bundle id and preferences domain ("Import Settings from Another Copy…").
     public static let directBundleID = "com.udsy.superconverter"
-    /// Where the direct-download edition is offered (the Store edition points people there for helper-run formats).
-    public static let directDownloadPage = URL(string: "https://udsy19.github.io/super-converter/")!
-
-    /// Why a helper-run conversion is missing from the Store edition (Settings › Helpers, the card's notice).
-    public static let helpersUnavailable = "The Mac App Store edition converts with what is built in. Conversions that need LibreOffice, calibre, Pandoc, Tectonic, Ghostscript, DjVuLibre, ODA, LibreDWG, a GPL FFmpeg, RAR, sfArk or Pages, Numbers, Keynote and Microsoft Office are in the direct-download edition, because the App Store doesn't let an app run or install other programs or control other apps."
+    /// Why a conversion that needs another program isn't offered (Settings › Helpers, the card's notice).
+    public static let helpersUnavailable = "This version of Super Converter converts with what is built in. Conversions that need another program — such as Keynote, Pages and Numbers files, older PowerPoint files, Kindle books, DWG drawings, PostScript, DjVu and TeX — aren’t available."
 }
 
 /// Store edition: the folders the person chose (output folders, folders added to the window, folders granted for a Quick
@@ -74,7 +71,7 @@ public enum FolderAccess {
     }
 }
 
-/// Store edition, "Import Settings from the Direct Download…": copies the direct edition's preferences (formats chosen,
+/// Store edition, "Import Settings from Another Copy…": copies the direct edition's preferences (formats chosen,
 /// saved options, Save To, switches) into this edition's. Nothing of the direct edition is moved or changed; keys that
 /// only mean something there (helper locations, the updater, window frames, open panels) are left out.
 public enum DirectEditionImport {
@@ -105,5 +102,61 @@ public enum DirectEditionImport {
             copied += 1
         }
         return copied
+    }
+}
+
+/// Store edition: the copies of the person's files that the bundled tools (`ffmpeg`, `ffprobe`, `7zz`) read. The App
+/// Sandbox's per-file grants (a drop, an open panel, a bookmark) belong to the app, and Apple documents no promise that a
+/// child process sees them, so a tool only ever gets a file inside the app's container. One copy per job and source —
+/// a clone on APFS when the file is on the container's volume, a real copy otherwise (JobRunner counts that space
+/// first) — kept in the job's work folder and removed with it. The direct edition hands out the original.
+public enum ToolStaging {
+    private static let lock = NSLock()
+
+    /// The container (the sandbox's home) and the app bundle: files there need no copy.
+    static var readableRoots: [String] {
+        [URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path + "/", Bundle.main.bundleURL.standardizedFileURL.path + "/"]
+    }
+
+    /// True when a tool needs a copy of `url` (Store edition, a file outside the container and the bundle).
+    public static func needsCopy(_ url: URL) -> Bool {
+        guard Distribution.isAppStore else { return false }
+        let path = url.standardizedFileURL.path
+        return !readableRoots.contains { path.hasPrefix($0) }
+    }
+
+    /// The job folder a step's work folder belongs to (`Jobs/<id>`), so every step of a job shares one copy.
+    static func jobFolder(of workFolder: URL) -> URL {
+        let jobs = SuperConverterPaths.jobs.standardizedFileURL.pathComponents
+        let parts = workFolder.standardizedFileURL.pathComponents
+        guard parts.count > jobs.count, Array(parts.prefix(jobs.count)) == jobs else { return workFolder }
+        return URL(fileURLWithPath: NSString.path(withComponents: Array(parts.prefix(jobs.count + 1))), isDirectory: true)
+    }
+
+    /// The file a bundled tool should read for `url`: `url` itself, or its copy in the job's work folder (made once).
+    /// Throws when the copy can't be made — a tool must never be pointed at a file it can't read.
+    public static func stage(_ url: URL, workFolder: URL) throws -> URL {
+        guard needsCopy(url) else { return url }
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return url }
+        let folder = jobFolder(of: workFolder).appendingPathComponent(".staged", isDirectory: true)
+        // One name per source path, so a job's steps (probe, analysis passes, encode) share the copy.
+        var hasher = Hasher()
+        hasher.combine(url.standardizedFileURL.path)
+        let key = String(UInt64(bitPattern: Int64(hasher.finalize())), radix: 36)
+        let copy = folder.appendingPathComponent(key, isDirectory: true).appendingPathComponent(url.lastPathComponent)
+        return try lock.withLock {
+            if fm.fileExists(atPath: copy.path) { return copy }
+            do {
+                try fm.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: url, to: copy)   // clonefile on APFS
+                Log.helpers.notice("Staged a working copy of \(url.lastPathComponent, privacy: .private) for the bundled tools")
+            } catch {
+                try? fm.removeItem(at: copy)
+                throw ConversionError.failed("Super Converter couldn’t make a working copy of “\(url.lastPathComponent)”: \((error as NSError).localizedDescription)")
+            }
+            return copy
+        }
     }
 }

@@ -176,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(SuperConverterPaths.repository.appendingPathComponent("blob/main/README.md"))
     }
 
-    /// Store edition: "Import Settings from the Direct Download…" copies the direct edition's preferences file, which the
+    /// Store edition: "Import Settings from Another Copy…" copies the direct edition's preferences file, which the
     /// person picks (the open panel starts at it), into this edition's. The direct edition's files stay as they are.
     @objc func importDirectSettings(_ sender: Any?) {
         let panel = NSOpenPanel()
@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.nameFieldStringValue = DirectEditionImport.preferencesFile.lastPathComponent
         panel.allowedContentTypes = [.propertyList]
         panel.prompt = "Import"
-        panel.message = "Choose \(DirectEditionImport.preferencesFile.lastPathComponent), the settings of Super Converter from the direct download. They are copied; nothing there changes."
+        panel.message = "Choose \(DirectEditionImport.preferencesFile.lastPathComponent), the settings of another copy of Super Converter. They are copied; nothing there changes."
         guard panel.runModal() == .OK, let file = panel.url else { return }
         let alert = NSAlert()
         do {

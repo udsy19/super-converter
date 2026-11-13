@@ -16,15 +16,9 @@ struct HelpersPane: View {
         if Distribution.isAppStore { storeBody } else { directBody }
     }
 
-    /// The Store edition can't run or install other programs: what that means, and where the full set is.
+    /// This edition converts with what is built in: what that leaves out.
     private var storeBody: some View {
-        PaneScroll {
-            PaneNote(Distribution.helpersUnavailable)
-            HStack {
-                Button("Open the Direct Download Page…") { context.open(Distribution.directDownloadPage) }
-                Spacer()
-            }
-        }
+        PaneScroll { PaneNote(Distribution.helpersUnavailable) }
     }
 
     private var directBody: some View {

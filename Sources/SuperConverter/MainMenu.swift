@@ -14,7 +14,7 @@ enum MainMenu {
         add(app, [
             item("About \(Strings.appName)", "showAbout:"),
             // The Mac App Store updates the Store edition; it imports the direct edition's settings instead.
-            Distribution.isAppStore ? item("Import Settings from the Direct Download…", "importDirectSettings:")
+            Distribution.isAppStore ? item("Import Settings from Another Copy…", "importDirectSettings:")
                                     : item("Check for Updates…", "checkForUpdates:"),
             .separator(),
             item("Settings…", "showSettings:", ","),

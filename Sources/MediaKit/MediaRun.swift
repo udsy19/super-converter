@@ -15,7 +15,9 @@ struct MediaRun {
         return try await ffmpeg(url, probe: probe, sourceFormat: sourceFormat, target: target)
     }
 
-    func ffmpeg(_ url: URL, probe: MediaProbe, sourceFormat: FormatID, target: FormatID) async throws -> StepOutput {
+    func ffmpeg(_ original: URL, probe: MediaProbe, sourceFormat: FormatID, target: FormatID) async throws -> StepOutput {
+        // Store edition: FFmpeg reads the job's copies, also where a path sits inside a filter (`subtitles=filename=…`).
+        let url = try ToolStaging.stage(original, workFolder: context.workFolder)
         let animation = MediaRoutes.animationTargets.contains(target)
         let settings = MediaSettings(context.options, animation: animation)
         let job: FFmpegJob
@@ -26,7 +28,7 @@ struct MediaRun {
             guard let container = MediaContainer.of(target) else { throw ConversionError.unsupportedPair(from: sourceFormat, to: target) }
             let facts = try await facts(url, probe: probe, sourceFormat: sourceFormat, container: container, settings: settings)
             job = try FFmpegPlanner.job(source: url, sourceFormat: sourceFormat, probe: probe, target: container, settings: settings, facts: facts,
-                                        externalSubtitles: settings.subtitleFile)
+                                        externalSubtitles: try settings.subtitleFile.map { try ToolStaging.stage($0, workFolder: context.workFolder) })
         }
         let output = try Self.outputURL(context, target)
         try await tools.encode(job.arguments, format: job.muxer, to: output, duration: job.duration, context: context)
